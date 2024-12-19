@@ -21,6 +21,7 @@ import os.path
 from pymol import Qt
 
 
+
 #
 # INSTALL FPOCKET
 #
@@ -47,6 +48,7 @@ if not os.path.exists(fpocket_bin):
     os.chmod(fpocket_bin, stat.S_IEXEC)
 
 
+
 #
 # INSTALL OTHER REQUIREENTS
 #
@@ -61,6 +63,7 @@ try:
     import seaborn as sb
     from strenum import StrEnum
 
+    
 except ImportError:
     subprocess.check_call(
         [
@@ -78,6 +81,7 @@ except ImportError:
             "StrEnum",
         ],
     )
+
 
 
 #
@@ -703,12 +707,13 @@ def fp_sim(
     if plot_dendrogram or plot_fingerprints:
         if plot_fingerprints and plot_dendrogram:
             fig, axd = plt.subplot_mosaic(
-                list(zip(range(len(proteins)), ["DENDRO"] * len(proteins)))
+                list(zip(range(len(proteins)), ["DENDRO"] * len(proteins))),
+                constrained_layout=True
             )
         elif plot_fingerprints and not plot_dendrogram:
-            fig, axd = plt.subplot_mosaic(list(zip(range(len(proteins)))))
+            fig, axd = plt.subplot_mosaic(list(zip(range(len(proteins)))), constrained_layout=True)
         elif not plot_fingerprints and plot_dendrogram:
-            fig, axd = plt.subplot_mosaic([["DENDRO"]])
+            fig, axd = plt.subplot_mosaic([["DENDRO"]], constrained_layout=True)
 
     # First protein never needs alignment
     resis = {}
@@ -733,7 +738,7 @@ def fp_sim(
         resi_map_list.extend([resi_map] * (len(proteins)-1))
     else:
         # Align protein structures, very tricky
-        for p in proteins[:1]:
+        for p in proteins[1:]:
             try:
                 aln_obj = pm.get_unused_name()
                 pm.cealign(p0, p, transform=0, object=aln_obj)
@@ -773,10 +778,10 @@ def fp_sim(
             resn = ONE_LETTER.get(resn, "X")
             labels.append(f"{resn}{resi}{chain}")
         fp_list.append(fp)
-
+        
         if plot_fingerprints:
             ax = axd[i]
-            ax.set_ylabel(hs)
+            ax.set_title(hs)
             ax.bar(np.arange(len(fp)), fp)
             ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
             ax.set_xticks(np.arange(len(fp)), labels=labels, rotation=45)
@@ -816,8 +821,6 @@ def fp_sim(
             for label in ax.xaxis.get_majorticklabels():
                 label.set_horizontalalignment("right")
 
-
-    plt.tight_layout()
     plt.show()
     return fp_list
 
@@ -1091,11 +1094,12 @@ def plot_dendrogram(
         exprs           space separated list of object expressions
         com_weight      center-of-mass (x, y, z) weight
         residue_radius  maximum distance for residue_similarity (default: 4)
-        residue_weight  residue similarity weight (default: 5)
-        method          linkage method: single, complete, average, or
+        residue_weight  residue similarity weight (default: 1)
+        residue_align   enable residue alignment (default: true)
+        linkage_method  linkage method: single, complete or average
                         (default: single)
     EXAMPLES
-        plot_similarity *.D_* *.DS_*, method=complete
+        plot_similarity *.K15_D_* *.K15_DS_*, linkage_method=average
     """
 
     def _get_property_vector(hs_type, obj):
@@ -1151,7 +1155,7 @@ def plot_dendrogram(
             if fnmatch(obj.lower(), expr.lower()):
                 object_list.append(obj)
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1
-
+    
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "K15":
         n_props = 4
@@ -1178,7 +1182,7 @@ def plot_dendrogram(
         for idx2, obj2 in enumerate(object_list):
             if idx1 >= idx2:
                 continue
-
+            
             p1 = p[idx1, :]
             p2 = p[idx2, :]
             if residue_weight != 0:
@@ -1205,6 +1209,7 @@ def plot_dendrogram(
     plt.tight_layout()
     plt.show()
     return X, labels
+
 
 
 #
