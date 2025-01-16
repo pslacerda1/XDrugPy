@@ -778,16 +778,21 @@ def fp_sim(
             resn = ONE_LETTER.get(resn, "X")
             labels.append(f"{resn}{resi}{chain}")
         fp_list.append(fp)
-        
+
         if plot_fingerprints:
             ax = axd[i]
-            ax.set_title(hs)
             ax.bar(np.arange(len(fp)), fp)
+            ax.set_title(hs)
             ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
             ax.set_xticks(np.arange(len(fp)), labels=labels, rotation=45)
             ax.locator_params(axis="x", tight=True, nbins=nbins)
             for label in ax.xaxis.get_majorticklabels():
                 label.set_horizontalalignment("right")
+
+    if plot_fingerprints:
+        for i in range(len(proteins)):
+            ax = axd[i]
+            ax.set_ylim(top=np.max(fp_list))
 
     fp0 = fp_list[0]
     if not all([len(fp0) == len(fp) for fp in fp_list]):
@@ -1212,6 +1217,19 @@ def plot_dendrogram(
 
 
 
+@declare_command
+def align_groups(
+    mobile_groups: Selection,
+    target: Selection,
+):
+    for mobile in mobile_groups.split():
+        pm.super(f"{mobile}.protein", f"{target}.protein")
+        for inner in pm.get_object_list(f"{mobile}.*"):
+            if ".protein" in inner:
+                continue
+            pm.matrix_copy(f"{mobile}.protein", inner)
+
+    
 #
 # GRAPHICAL USER INTERFACE
 #
