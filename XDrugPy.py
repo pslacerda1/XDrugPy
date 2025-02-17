@@ -761,22 +761,26 @@ def fp_sim(
     resi_inter = site_index
     for resi_map in resi_map_list[1:]:
         resi_inter.intersection_update(resi_map)
-    
+
     # Compute the fingerprints
     fp_list = []
     for i, (p, hs, resi_map) in enumerate(zip(proteins, hotspots, resi_map_list)):
-        fp = []
-        labels = []
+        fp = {}
+        labels = {}
         for index in resi_map:
             if index not in resi_inter:
                 continue
             model, mapped_index, resn, resi, chain = resi_map[index]
             cnt = count_molecules(
-                f"({hs}) within {radius} from (byres %{model} and index {mapped_index})"
+                f"({hs}) within {radius} from (byres %{model} & resn {resn} & resi {resi} & chain {chain})"
             )
-            fp.append(cnt)
             resn = ONE_LETTER.get(resn, "X")
-            labels.append(f"{resn}{resi}{chain}")
+            lbl = f"{resn}{resi}{chain}"
+            fp[lbl] = fp.get(lbl, 0) + cnt
+            labels[lbl] = lbl
+
+        fp = [*fp.values()]
+        labels = [*labels.values    ()]
         fp_list.append(fp)
 
         if plot_fingerprints:
@@ -822,7 +826,7 @@ def fp_sim(
                 ax=ax,
                 leaf_rotation=45,
                 color_threshold=0,
-            )
+            )   
             for label in ax.xaxis.get_majorticklabels():
                 label.set_horizontalalignment("right")
 
@@ -1666,7 +1670,7 @@ class CountWidget(QWidget):
         self.nBinsSpin = QSpinBox()
         self.nBinsSpin.setValue(5)
         self.nBinsSpin.setMinimum(0)
-        self.nBinsSpin.setMaximum(50)
+        self.nBinsSpin.setMaximum(100)
         boxLayout.addRow("Fingerprint bins:", self.nBinsSpin)
 
         self.fingerprintsCheck = QCheckBox()
