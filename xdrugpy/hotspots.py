@@ -1,7 +1,4 @@
-import tempfile
 import os.path
-import re
-import subprocess
 from fnmatch import fnmatch
 from itertools import combinations
 from pathlib import Path
@@ -19,7 +16,7 @@ from matplotlib import pyplot as plt
 import seaborn as sb
 from strenum import StrEnum
 
-from .utils import ONE_LETTER, TEMPDIR, run
+from .utils import ONE_LETTER
 
 matplotlib.use("Qt5Agg")
 
@@ -40,15 +37,6 @@ def _bool_func(value: str):
         return value
     else:
         raise Exception(f"Unsuported boolean flag {value}")
-
-
-def _add_completion(name, idx, sc):
-    try:
-        rec = pm.auto_arg[idx]
-    except IndexError:
-        rec = {}
-        pm.auto_arg.append(rec)
-    rec[name] = [sc, "var", ""]
 
 
 def declare_command(name, function=None, _self=pm):

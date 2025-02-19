@@ -8,22 +8,10 @@ from .utils import run, RESOURCES_DIR
 
 
 #
-# INSTALL FPOCKET AND VINA
+# INSTALL VINA
 #
 
 system = platform.system().lower()
-
-match system:
-    case "windows":
-        bin_fname = "fpocket.exe"
-    case "linux" | "darwin":
-        bin_fname = "fpocket"
-fpocket_bin = f"{RESOURCES_DIR}/{bin_fname}"
-if not exists(fpocket_bin):
-    print(f'Installing Fpocket on', fpocket_bin)
-    fpocket_url = f"https://raw.githubusercontent.com/pslacerda/XDrugPy/master/bin/fpocket.{system}"
-    urlretrieve(fpocket_url, fpocket_bin)
-    os.chmod(fpocket_bin, stat.S_IEXEC)
 
 match system:
     case "windows":
@@ -69,6 +57,8 @@ except ImportError:
 
 def __init_plugin__(app=None):
     print("This version of XDrugPy is intended for non-comercial and academic purposes only.")
+    from pymol import cmd
+    cmd.undo_disable()
     if system == "windows":
         os.environ['PATH'] = "%s;%s" % (RESOURCES_DIR, os.environ['PATH'])
     else:
@@ -79,6 +69,4 @@ def __init_plugin__(app=None):
     __init_docking__()
 
 if __name__ in ["pymol", "pmg_tk.startup.XDrugPy"]:
-    from pymol import cmd
-    cmd.undo_disable()
     __init_plugin__()

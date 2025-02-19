@@ -17,7 +17,7 @@ from collections import Counter, OrderedDict
 
 import pymol
 import pymol.gui
-from pymol import cmd
+from pymol import cmd as pm
 from pymol.cgo import CYLINDER, SPHERE, COLOR
 from pymol import Qt
 import numpy as np
