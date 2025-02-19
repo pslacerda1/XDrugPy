@@ -95,7 +95,7 @@ class BaseThread(QThread):
 
 
 def display_box_sel(name, sel, margin):
-    coords = cmd.get_coords(sel)
+    coords = pm.get_coords(sel)
     max = np.max(coords, axis=0) + margin
     min = np.min(coords, axis=0) - margin
     display_box(name, max, min)
@@ -114,10 +114,10 @@ def display_box(name, max_coords, min_coords):
     cylinder_size = 0.2
     color = [1.0, 1.0, 1.0]
 
-    view = cmd.get_view()
+    view = pm.get_view()
     obj = []
 
-    cmd.delete("_box")
+    pm.delete("_box")
 
     # box_color
     for i in range(2):
@@ -158,8 +158,8 @@ def display_box(name, max_coords, min_coords):
                     obj.append(SPHERE)
                     obj.extend([box[0][i], box[1][j], box[2][k + 1], cylinder_size])
     axes = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]]
-    cmd.load_cgo(obj, name)
-    cmd.set_view(view)
+    pm.load_cgo(obj, name)
+    pm.set_view(view)
 
 
 
@@ -214,23 +214,23 @@ def load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode):
     plip_pdb = '%s/plip.pdb' % TEMPDIR
     plip_pse = '%s/PLIP_PROTEIN_LIG_Z_1.pse' % TEMPDIR
 
-    cmd.delete("*")
-    cmd.load(ligand_pdbqt, 'lig', multiplex=1, zoom=0)
-    cmd.split_states('*')
-    cmd.set_name(f'lig_{mode.zfill(4)}', 'lig')
-    cmd.delete('lig_*')
-    cmd.alter('lig', 'chain="Z"')
-    cmd.alter('lig', 'resn="LIG"')
-    cmd.alter('lig', 'resi=1')
+    pm.delete("*")
+    pm.load(ligand_pdbqt, 'lig', multiplex=1, zoom=0)
+    pm.split_states('*')
+    pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
+    pm.delete('lig_*')
+    pm.alter('lig', 'chain="Z"')
+    pm.alter('lig', 'resn="LIG"')
+    pm.alter('lig', 'resi=1')
     
-    cmd.load(receptor_pdbqt, 'prot')
-    cmd.save(plip_pdb, selection="*")
+    pm.load(receptor_pdbqt, 'prot')
+    pm.save(plip_pdb, selection="*")
     
     command = f'python -m plip.plipcmd -qs -f "{plip_pdb}" -yx -o "{TEMPDIR}"'
     output, success = run(command, cwd=TEMPDIR)
     print(output)
-    cmd.load(plip_pse)
-    cmd.valence('guess', 'all')
+    pm.load(plip_pse)
+    pm.valence('guess', 'all')
 
 
 def load_plip_full(project_dir, max_load, max_mode, tree_model):
@@ -239,11 +239,11 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         map(parse_out_pdbqt, poses)
     )
     poses = list(sorted(poses, key=lambda p: p['affinity']))
-    cmd.set('pdb_conect_all', 'off')
-    cmd.delete('prot')
+    pm.set('pdb_conect_all', 'off')
+    pm.delete('prot')
     fname = f"{project_dir}/receptor.pdb"
-    cmd.load(fname, 'prot')
-    cmd.alter('prot', "type='ATOM'")
+    pm.load(fname, 'prot')
+    pm.alter('prot', "type='ATOM'")
     fnames = []
     xml_l = []
     interactions = []
@@ -265,12 +265,12 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         mode = str(pose["mode"])
         in_fname = project_dir + f'/output/{name}.out.pdbqt'
         out_fname = TEMPDIR + f'/plip.pdb'
-        cmd.load(in_fname, 'lig', multiplex=1, zoom=0)
-        cmd.delete('lig_*')
-        cmd.alter('lig', 'chain="Z"')
-        cmd.alter('lig', 'resn="LIG"')
-        cmd.alter('lig', 'resi=1')
-        cmd.save(out_fname, selection='*')
+        pm.load(in_fname, 'lig', multiplex=1, zoom=0)
+        pm.delete('lig_*')
+        pm.alter('lig', 'chain="Z"')
+        pm.alter('lig', 'resn="LIG"')
+        pm.alter('lig', 'resi=1')
+        pm.save(out_fname, selection='*')
         command = f'python -m plip.plipcmd -qs -f "{out_fname}" -x --nohydro -o "{TEMPDIR}/"'
         print(f"RUNNING COMMAND: {command}")
         proc = subprocess.run(command, cwd=TEMPDIR, shell=True)
@@ -709,7 +709,7 @@ class VinaThread(BaseThread):
         #
         receptor_pdb = f"{project_dir}/receptor.pdb"
         receptor_pdbqt = f"{project_dir}/receptor.pdbqt"
-        cmd.save(receptor_pdb, receptor_sel)
+        pm.save(receptor_pdb, receptor_sel)
         command = (
             f'python -m meeko.cli.mk_prepare_receptor --read_pdb "{receptor_pdb}" -p "{receptor_pdbqt}"'
         )
@@ -717,7 +717,7 @@ class VinaThread(BaseThread):
             command = f"{command} -a"
         if flex_sel != "":
             flex_residues = set()
-            for atom in cmd.get_model(flex_sel).atom:
+            for atom in pm.get_model(flex_sel).atom:
                 flex_residues.add(f"{atom.chain}:{atom.resi}")
             flex_residues = ",".join(flex_residues)
             command = f"{command} -f {flex_residues}"
@@ -821,7 +821,7 @@ class VinaThread(BaseThread):
         #
         # Compute box variables
         #
-        box_coords = cmd.get_coords(box_sel)
+        box_coords = pm.get_coords(box_sel)
 
         max = np.max(box_coords, axis=0)
         min = np.min(box_coords, axis=0)
@@ -968,7 +968,7 @@ class PyMOLComboObjectBox(QComboBox):
 
     def showPopup(self):
         currentText = self.currentText().strip()
-        objects = cmd.get_names("all", enabled_only=True)
+        objects = pm.get_names("all", enabled_only=True)
         self.clear()
         self.addItems(objects)
         if currentText != "":
@@ -1007,7 +1007,7 @@ def new_run_docking_widget():
         palette.setColor(QPalette.Base, QtCore.Qt.white)
         valid = True
         try:
-            if cmd.count_atoms(f"({text}) and polymer") == 0:
+            if pm.count_atoms(f"({text}) and polymer") == 0:
                 raise
         except:
             palette.setColor(QPalette.Base, QtCore.Qt.red)
@@ -1031,7 +1031,7 @@ def new_run_docking_widget():
         valid = True
         if text.strip() != "":
             try:
-                if cmd.count_atoms(f"({text}) and polymer") == 0:
+                if pm.count_atoms(f"({text}) and polymer") == 0:
                     raise
                 palette.setColor(QPalette.Base, QtCore.Qt.white)
                 valid = True
@@ -1055,12 +1055,12 @@ def new_run_docking_widget():
         palette = QApplication.palette(box_sel)
         palette.setColor(QPalette.Base, QtCore.Qt.white)
         try:
-            if cmd.count_atoms(text) == 0:
+            if pm.count_atoms(text) == 0:
                 raise
         except:
             palette.setColor(QPalette.Base, QtCore.Qt.red)
             box_sel.setPalette(palette)
-            cmd.delete("box")
+            pm.delete("box")
             return False
         display_box_sel("box", text, box_margin_spin.value())
         box_sel.setPalette(palette)
@@ -1076,7 +1076,7 @@ def new_run_docking_widget():
     box_margin_spin.setDecimals(1)
     @box_margin_spin.valueChanged.connect
     def display_box(margin):
-        cmd.delete("box")
+        pm.delete("box")
         display_box_sel("box", box_sel.currentText(), margin)
 
     allow_errors_check = QCheckBox(widget)

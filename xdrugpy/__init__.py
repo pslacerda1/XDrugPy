@@ -4,7 +4,7 @@ import stat
 import platform
 from urllib.request import urlretrieve
 
-from .utils import run, RESOURCES_DIR
+from .utils import run_system, RESOURCES_DIR
 
 
 #
@@ -33,21 +33,20 @@ if not exists(vina_exe):
 #
 # INSTALL MORE REQUIREMENTS
 #
-
 try:
     import numpy, pandas, scipy, matplotlib, seaborn, openpyxl, plip, rdkit, lxml, openbabel, strenum
 except ImportError:
-    run(
+    run_system(
         "conda install -y"
-        " matplotlib openpyxl scipy meeko plip openbabel rdkit pandas lxml strenum"
+        " matplotlib openpyxl scipy plip openbabel 'rdkit<2024' pandas lxml strenum seaborn"
     )
 try:
-    import scrubber, meeko
+    import scrubber
 except ImportError:
-    run(
-        "pip --disable-pip-version-check install"
+    run_system(
+        "pip install"
         " https://github.com/pslacerda/molscrub/archive/refs/heads/windows.exe.zip"
-        " https://github.com/forlilab/Meeko/archive/refs/tags/v0.6.1.zip"
+        " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
     )
 
 
