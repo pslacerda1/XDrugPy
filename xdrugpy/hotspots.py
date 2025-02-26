@@ -631,9 +631,9 @@ def ho(
     defined as the overlaped region across a serie of hotspots.
 
     OPTIONS
-        hs1     an hotspot object
-        radius  the distance to consider two atoms in contact (default: 2.5)
-        verbose define verbosity
+        hs_expr     a multi hotspot expression
+        output_sele output selection
+        verbose     define verbosity
     """
     hss = hss.split()
     hs0 = hss[0]
