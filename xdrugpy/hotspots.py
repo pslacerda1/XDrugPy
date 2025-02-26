@@ -240,7 +240,7 @@ def process_eclusters(group, eclusters):
 def load_ftmap(
     filename: Path,
     group: str = "",
-    k15_max_length: int = 8,
+    k15_max_length: int = 5,
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -622,31 +622,33 @@ def fp_sim(
 
 @declare_command
 def ho(
-    hs1: Selection,
-    hs2: Selection,
-    radius: float = 2.5,
+    hss: Selection,
+    output_sele: Selection = "ho_overlap",
     verbose: bool = True,
 ):
     """
-    Compute the Hotspot Overlap (HO) metric. HO is defined as the number of
-    atoms in hs1 in contact with hs2 plus the number of atoms in hs2 in
-    contact with hs1 divided by the total number of atoms in both hotspots.
+    Compute the Hotspot Overlap (HO) betweem two or more hotspost. It is
+    defined as the overlaped region across a serie of hotspots.
 
     OPTIONS
         hs1     an hotspot object
-        hs2     another hotspot object
         radius  the distance to consider two atoms in contact (default: 2.5)
         verbose define verbosity
     """
-    atoms1 = pm.get_coords(f"({hs1}) and not elem H")
-    atoms2 = pm.get_coords(f"({hs2}) and not elem H")
-    dist = distance_matrix(atoms1, atoms2) - radius <= 0
-    num_contacts1 = np.sum(np.any(dist, axis=1))
-    num_contacts2 = np.sum(np.any(dist, axis=0))
-    ho = (num_contacts1 + num_contacts2) / (len(atoms1) + len(atoms2))
+    hss = hss.split()
+    hs0 = hss[0]
+    pm.select(output_sele, hs0)
+    count = 0
+    for hs in hss[1:]:
+        new_count = pm.select(output_sele, f'{output_sele} within 0 of ({hs})')
+        if new_count == 0:
+            return 0
+        else:
+            count += 1
     if verbose:
-        print(f"HO: {ho:.2f}")
-    return ho
+        num_atoms = pm.count_atoms(output_sele)
+        print(f' HO={count} NumAtoms={num_atoms}')
+    return count
 
 
 class ResidueSimilarityMethod(StrEnum):
@@ -784,7 +786,9 @@ def plot_heatmap(
             else:
                 match method:
                     case HeatmapFunction.HO:
-                        ret = ho(obj1, obj2, radius=radius, verbose=False)
+                        ret = ho(f'{obj1} {obj2}', radius=radius, verbose=False)
+                        ret = pm.count_atoms('__ho')
+
                     case HeatmapFunction.RESIDUE_JACCARD:
                         ret = res_sim(
                             obj1,
