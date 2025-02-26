@@ -957,6 +957,7 @@ class VinaThread(BaseThread):
 
         self.done.emit(True)
 
+
 class PyMOLComboObjectBox(QComboBox):
 
     def __init__(self, sele):
@@ -968,8 +969,10 @@ class PyMOLComboObjectBox(QComboBox):
 
     def showPopup(self):
         currentText = self.currentText().strip()
-        objects = pm.get_names("all", enabled_only=True)
+        selections = pm.get_names("selections", enabled_only=True)
+        objects = pm.get_names("objects", enabled_only=True)
         self.clear()
+        self.addItems("(%s)" % s for s in selections)
         self.addItems(objects)
         if currentText != "":
             self.setCurrentText(currentText)
