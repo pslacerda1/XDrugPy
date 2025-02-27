@@ -635,20 +635,19 @@ def ho(
         output_sele output selection
         verbose     define verbosity
     """
-    hss = hss.split()
-    hs0 = hss[0]
+    hss_l = hss.split()
+    hs0 = hss_l[0]
     pm.select(output_sele, hs0)
     count = 0
-    for hs in hss[1:]:
+    for hs in hss_l[1:]:
         new_count = pm.select(output_sele, f'{output_sele} within 0 of ({hs})')
         if new_count == 0:
             return 0
-        else:
-            count += 1
+    sel = f'({hss}) within 1 of ({output_sele})'
+    num_atoms = pm.select(output_sele, sel)
     if verbose:
-        num_atoms = pm.count_atoms(output_sele)
-        print(f' HO={count} NumAtoms={num_atoms}')
-    return count
+        print(f' HO={num_atoms}')
+    return num_atoms
 
 
 class ResidueSimilarityMethod(StrEnum):
