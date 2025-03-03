@@ -351,10 +351,13 @@ def fo(
     """
     atoms1 = pm.get_coords(f"({sel1}) and not elem H", state=state1)
     atoms2 = pm.get_coords(f"({sel2}) and not elem H", state=state2)
-    dist = distance_matrix(atoms1, atoms2) - radius <= 0
-    num_contacts = np.sum(np.any(dist, axis=1))
-    total_atoms = len(atoms1)
-    fo_ = num_contacts / total_atoms
+    if atoms1 is None or atoms2 is None:
+        fo_ = 0
+    else:
+        dist = distance_matrix(atoms1, atoms2) - radius <= 0
+        num_contacts = np.sum(np.any(dist, axis=1))
+        total_atoms = len(atoms1)
+        fo_ = num_contacts / total_atoms
     if verbose:
         print(f"FO: {fo_:.2f}")
     return fo_
@@ -623,6 +626,7 @@ def fp_sim(
 @declare_command
 def ho(
     hss: Selection,
+    radius: float = 1.0,
     output_sele: Selection = "ho_overlap",
     verbose: bool = True,
 ):
@@ -639,12 +643,15 @@ def ho(
     hs0 = hss_l[0]
     pm.select(output_sele, hs0)
     count = 0
-    for hs in hss_l[1:]:
-        new_count = pm.select(output_sele, f'{output_sele} within 0 of ({hs})')
-        if new_count == 0:
-            return 0
-    sel = f'({hss}) within 1 of ({output_sele})'
-    num_atoms = pm.select(output_sele, sel)
+    for hs in hss_l:
+        count = pm.select(output_sele, f'{output_sele} within 0 of ({hs})')
+        if count == 0:
+            break
+    if count != 0:
+        sel = f'({hss}) within {radius} of ({output_sele})'
+        num_atoms = pm.select(output_sele, sel)
+    else:
+        num_atoms = 0
     if verbose:
         print(f' HO={num_atoms}')
     return num_atoms
@@ -659,7 +666,7 @@ class ResidueSimilarityMethod(StrEnum):
 def res_sim(
     hs1: Selection,
     hs2: Selection,
-    radius: int = 2,
+    radius: float = 2,
     align: bool = True,
     method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
     verbose: bool = True,
@@ -683,6 +690,15 @@ def res_sim(
     group1 = hs1.split(".", maxsplit=1)[0]
     group2 = hs2.split(".", maxsplit=1)[0]
 
+    if group1 == hs1:
+        group1 = "polymer"
+        if verbose:
+            print(f"Using ungrouped ({hs1})")
+    if group2 == hs2:
+        group2 = "polymer"
+        if verbose:
+            print(f"Using ungrouped ({hs2})")
+    
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
     sel2 = f"{group2}.protein within {radius} from ({hs2})"
 
@@ -726,6 +742,61 @@ def res_sim(
     if verbose:
         print(f"{method} similarity: {ret:.2}")
     return ret
+
+
+class EFtmapOverlapType(StrEnum):
+    donor = "donor"
+    acceptor = "acceptor"
+    apolar = "apolar"
+    aromatic = "aromatic"
+
+
+def _eftmap_overlap_get_aromatic(lig):
+    lig_model = pm.get_model(lig)
+    aromatic = set()
+    for bond in lig_model.bond:
+        if bond.order == 4:   # ChemPy??
+            aromatic.update(bond.index)
+    xyz = []
+    for idx in aromatic:
+        atom = lig_model.atom[idx]
+        xyz.append(atom.coord)
+    return np.array(xyz)
+
+
+def _eftmap_overlap_get_donor(lig):
+    return pm.get_coords(f"({lig}) and donor")
+
+
+def _eftmap_overlap_get_acceptor(lig):
+    return pm.get_coords(f"({lig}) and acceptor")
+
+
+def _eftmap_overlap_get_apolar(lig):
+    return pm.get_coords(f"({lig}) and elem C")
+
+
+def _eftmap_overlap_get_halogen(lig):
+    return pm.get_coords(f"({lig}) and elem F+Br+Cl+I")
+
+
+def eftmap_overlap(lig, hs, radius=2):
+    if '.ACS_donor_' in hs:
+        lig_xyz = _eftmap_overlap_get_donor(lig)
+    elif '.ACS_acceptor_' in hs:
+        lig_xyz = _eftmap_overlap_get_acceptor(lig)
+    elif '.ACS_apolar_' in hs:
+        lig_xyz = _eftmap_overlap_get_apolar(lig)
+    elif '.ACS_halogen' in hs:
+        lig_xyz = _eftmap_overlap_get_halogen(lig)
+    elif '.ACS_aromatic' in hs:
+        lig_xyz = _eftmap_overlap_get_aromatic(lig)
+    else:
+        raise RuntimeError(f"Unknown hotspot type: {hs}")
+    hs_xyz = pm.get_coords(hs)
+    dist = distance_matrix(lig_xyz, hs_xyz)
+    contacts = np.any(dist - radius <= 0, axis=1)
+    return np.sum(contacts)
 
 
 class HeatmapFunction(StrEnum):
@@ -786,8 +857,6 @@ def plot_heatmap(
                 match method:
                     case HeatmapFunction.HO:
                         ret = ho(f'{obj1} {obj2}', radius=radius, verbose=False)
-                        ret = pm.count_atoms('__ho')
-
                     case HeatmapFunction.RESIDUE_JACCARD:
                         ret = res_sim(
                             obj1,
@@ -808,6 +877,11 @@ def plot_heatmap(
                         )
             mat[-1].append(round(ret, 2))
 
+    if method == HeatmapFunction.HO:
+        mat_max = np.max(mat)
+    else:
+        mat_max = 1
+    
     plt.close()
     fig, ax = plt.subplots(1)
     sb.heatmap(
@@ -816,6 +890,7 @@ def plot_heatmap(
         xticklabels=obj1s,
         cmap="viridis",
         annot=annotate,
+        vmax=mat_max,
         ax=ax,
     )
     plt.xticks(rotation=45)

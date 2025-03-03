@@ -1,5 +1,5 @@
 from pymol import cmd as pm
-from xdrugpy.hotspots import load_ftmap, ho
+from xdrugpy.hotspots import load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic
 
 
 def test_ho():
@@ -11,3 +11,12 @@ def test_ho():
     assert pm.count_atoms('__a') == count
     count = ho('*D_00 *B_04', output_sele='__a', verbose=False)
     assert pm.count_atoms('*D_00') > pm.count_atoms('*B_04') > count
+
+
+def test_eftmap_overlap():
+    load_ftmap('data/p38_1R39.pdb')
+    aro_xyz = _eftmap_overlap_get_aromatic('ligand')
+    assert aro_xyz.shape == (17, 3)
+
+    aro_contacts = eftmap_overlap('ligand', 'p38_1R39.ACS_aromatic_*')
+    assert aro_contacts == 12
