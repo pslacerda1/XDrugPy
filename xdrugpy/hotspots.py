@@ -755,7 +755,7 @@ def _eftmap_overlap_get_aromatic(lig):
     lig_model = pm.get_model(lig)
     aromatic = set()
     for bond in lig_model.bond:
-        if bond.order == 4:   # ChemPy??
+        if bond.order == 4:   # This is how ChemPy detect aromatic bonds
             aromatic.update(bond.index)
     xyz = []
     for idx in aromatic:
