@@ -947,7 +947,7 @@ def hs_proj(
             pm.show("surface", protein)
         case PrioritizationType.ATOM:
             pm.show("cartoon", protein)
-            pm.show("sticks", "byres q>0")
+            pm.show("sticks", "q>0")
     pm.spectrum("q", palette=palette, selection=protein)
 
 
