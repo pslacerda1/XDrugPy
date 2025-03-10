@@ -137,6 +137,12 @@ def get_clusters():
     return clusters, eclusters
 
 
+def set_properties(obj, obj_name, properties):
+    for prop, value in properties.items():
+        pm.set_property(prop, value, obj_name)
+        setattr(obj, prop, value)
+
+
 def get_kozakov2015(group, clusters, max_length):
     k15 = []
     for length in range(max_length, 1, -1):
@@ -191,16 +197,17 @@ def get_kozakov2015(group, clusters, max_length):
         pm.create(new_name, hs.selection)
         pm.group(group, new_name)
         hs.selection = new_name
-
-        pm.set_property("Type", "K15", new_name)
-        pm.set_property("Group", group, new_name)
-        pm.set_property("Class", hs.kozakov_class, new_name)
-        pm.set_property("S", hs.strength, new_name)
-        pm.set_property("S0", hs.strength0, new_name)
-        pm.set_property("CD", round(hs.center_center, 2), new_name)
-        pm.set_property("MD", round(hs.max_dist, 2), new_name)
-        pm.set_property("Length", hs.length, new_name)
-
+        set_properties(hs, new_name, {
+            "Type": "K15",
+            "Group": group,
+            'Selection': new_name,
+            "Class": hs.kozakov_class,
+            "S": hs.strength,
+            "S0": hs.strength0,
+            "CD": round(hs.center_center, 2),
+            "MD": round(hs.max_dist, 2),
+            "Length": hs.length,
+        })
     return k15
 
 
@@ -208,12 +215,13 @@ def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
         new_name = f"{group}.CS_{idx:02}"
         pm.create(new_name, cs.selection)
+        cs.selection = new_name
         pm.group(group, new_name)
-
-        pm.set_property("Type", "CS", new_name)
-        pm.set_property("Group", group, new_name)
-        pm.set_property("S", cs.strength, new_name)
-
+        set_properties(cs, new_name, {
+            "Type": "CS",
+            "Group": group,
+            "S": cs.strength,
+        })
     pm.delete("consensus.*")
     pm.delete("crosscluster.*")
 
@@ -222,17 +230,19 @@ def process_eclusters(group, eclusters):
     for acs in eclusters:
         new_name = f"{group}.ACS_{acs.probe_type}_{acs.idx:02}"
         pm.create(new_name, acs.selection)
+        acs.selection = new_name
         pm.group(group, new_name)
 
         coords = pm.get_coords(new_name)
         md = distance_matrix(coords, coords).max()
 
-        pm.set_property("Type", "ACS", new_name)
-        pm.set_property("Group", group, new_name)
-        pm.set_property("Class", acs.probe_type, new_name)
-        pm.set_property("S", acs.strength, new_name)
-        pm.set_property("MD", round(md, 2), new_name)
-
+        set_properties(acs, new_name, {
+            "Type": "ACS", 
+            "Group": group, 
+            "Class": acs.probe_type, 
+            "S": acs.strength, 
+            "MD": round(md, 2)
+        })
     pm.delete("clust.*")
 
 
