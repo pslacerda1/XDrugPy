@@ -244,8 +244,6 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
     fname = f"{project_dir}/receptor.pdb"
     pm.load(fname, 'prot')
     pm.alter('prot', "type='ATOM'")
-    fnames = []
-    xml_l = []
     interactions = []
     interactions_type = [
         "hydrophobic_interaction",
@@ -271,9 +269,10 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         pm.alter('lig', 'chain="Z"')
         pm.alter('lig', 'resn="LIG"')
         pm.alter('lig', 'resi=1')
+        pm.alter('lig', 'type="HETATM"')
         pm.save(out_fname, selection='*')
         command = f'python -m plip.plipcmd -qs -f "{out_fname}" -x --nohydro -o "{TEMPDIR}/"'
-        print(f"RUNNING COMMAND: {command}")
+        print(f"RUNNING COMMAND [{idx}/{len(poses)}]: {command}")
         proc = subprocess.run(command, cwd=TEMPDIR, shell=True)
         with open(TEMPDIR + '/report.xml') as fp:
             plip = etree.parse(fp)
@@ -532,7 +531,7 @@ def new_load_results_widget():
     # Only the best poses of each ligand
     #
     max_mode_spin = QSpinBox(widget)
-    max_mode_spin.setRange(1, 20)
+    max_mode_spin.setRange(1, 50)
     max_mode_spin.setValue(9)
     max_mode_spin.setGroupSeparatorShown(True)
 
@@ -1097,7 +1096,7 @@ def new_run_docking_widget():
     exhaustiveness_spin.setValue(8)
 
     num_modes_spin = QSpinBox(widget)
-    num_modes_spin.setRange(1, 20)
+    num_modes_spin.setRange(1, 50)
     num_modes_spin.setValue(9)
 
     min_rmsd_spin = QDoubleSpinBox(widget)
