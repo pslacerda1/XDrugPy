@@ -9,8 +9,9 @@ import numpy as np
 import pandas as pd
 import matplotlib
 from scipy.spatial import distance_matrix, distance
-from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.stats import pearsonr
+from sklearn.cluster import AgglomerativeClustering
 from pymol import cmd as pm, parsing
 from matplotlib import pyplot as plt
 import seaborn as sb
@@ -969,7 +970,7 @@ def plot_dendrogram(
     residue_weight: float = 1,
     residue_align: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    color_threshold: float = 0,
+    cluster_threshold: bool = 1,
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1080,20 +1081,111 @@ def plot_dendrogram(
                 j = 0
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
+    
+    X = distance.squareform(X)
+    np.fill_diagonal(X, 1)
+    Z = linkage(X, method=linkage_method, optimal_ordering=False)
 
-    plt.close()
-    dendrogram(
-        linkage(X, method=linkage_method),
-        labels=labels,
-        color_threshold=color_threshold,
-        orientation="right",
+    # def path(Z, i, P):
+    #     n = len(Z)
+    #     aa = np.floor(Z[i - n, 0])
+    #     for line in Z:
+
+    #     for j in range(n):
+    #         if Z[j, 0] == i:
+    #             return path(Z, n+i, [*P, Z[j, 2]])
+    #         if Z[j, 1] == i:
+    #             return path(Z, n+i, [*P, Z[j, 2]])
+    #     return P
+    # ret = path(Z, 0, [])
+    # return ret
+    
+
+
+    def plot_dendrogram(model, **kwargs):
+        # Create linkage matrix and then plot the dendrogram
+
+        # create the counts of samples under each node
+        counts = np.zeros(model.children_.shape[0])
+        n_samples = len(model.labels_)
+        for i, merge in enumerate(model.children_):
+            current_count = 0
+            for child_idx in merge:
+                if child_idx < n_samples:
+                    current_count += 1  # leaf node
+                else:
+                    current_count += counts[child_idx - n_samples]
+            counts[i] = current_count
+
+        linkage_matrix = np.column_stack(
+            [model.children_, model.distances_, counts]
+        ).astype(float)
+
+        # Plot the corresponding dendrogram
+        dendrogram(linkage_matrix, **kwargs)
+
+    model = AgglomerativeClustering(
+        metric='precomputed',
+        n_clusters=None,
+        linkage=linkage_method,
+        distance_threshold=cluster_threshold
     )
-    plt.axvline(x=color_threshold, c="grey", lw=1, linestyle="dashed")
-    plt.tight_layout()
+    print(labels)
+    y_predict = model.fit_predict(X)
+    plot_dendrogram(
+        model,
+        color_threshold=cluster_threshold,
+        orientation='right',
+        labels=labels,
+        distance_sort=False,
+    )
+    print()
+    print(y_predict)
+    print(labels)
+
+    print([labels[i] for i in y_predict])
+
+    plot_dendrogram(model)
+    plt.savefig('dendro.png')
     plt.show()
-    return X, labels
 
+    fig, ax = plt.subplots()
+    
+    dendro = dendrogram(
+        Z,
+        color_threshold=cluster_threshold,
+        orientation='right',
+        labels=labels,
+        distance_sort=False,
+        ax=ax
+    )
+    plt.show()
+    # medoids = []
+    # lbls = fcluster(Z, t=cluster_threshold, criterion='distance')
+    # for label in lbls:
+    #     dists = X[lbls == label]
+    #     idx = np.argmin(dists.sum(axis=0))
+    #     medoids.append(idx)
+    # print(medoids)
+    # leaves = np.array(dendro['leaves'])
+    # medoids = []
 
+    # for idx, leaf_id in enumerate(y_pred):
+    #     idxs = np.where(leaf_id == leaves)
+    #     med = np.argmin(X.sum(axis=1)[idxs]) + np.min(idxs)
+    #     medoids.append(med)
+
+    # print(list(enumerate(labels)))
+    # for idx, (leaf, y_ticklabel) in enumerate(zip(medoids, ax.get_yticklabels())):
+    #     print(idx, leaf, y_ticklabel.get_text())
+    #     if idx == leaf:
+    #         color = dendro['leaves_color_list'][idx]
+    #         y_ticklabel.set_color(color)
+    
+    # ax.axvline(x=cluster_threshold, c="grey", lw=1, linestyle="dashed")
+    # plt.tight_layout()
+    # plt.show()
+    # return X, dendro['leaves']
 
 @declare_command
 def align_groups(
@@ -1446,6 +1538,9 @@ class SimilarityWidget(QWidget):
         self.colorThresholdSpin.setMinimum(0)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
+        self.computeMedoidsCheck = QCheckBox()
+        boxLayout.addRow("Compute medoids:", self.computeMedoidsCheck)
+
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_dendrogram)
         boxLayout.addWidget(plotButton)
@@ -1467,6 +1562,7 @@ class SimilarityWidget(QWidget):
         residue_align = self.resiudeAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
+        compute_medoids = self.computeMedoidsCheck.isChecked()
 
         plot_dendrogram(
             expression,
@@ -1476,6 +1572,7 @@ class SimilarityWidget(QWidget):
             residue_align,
             linkage_method,
             color_threshold,
+            compute_medoids
         )
 
 
