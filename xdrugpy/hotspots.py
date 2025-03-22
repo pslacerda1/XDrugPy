@@ -1163,7 +1163,7 @@ class LoadWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.maxLengthSpin = QSpinBox()
-        self.maxLengthSpin.setValue(8)
+        self.maxLengthSpin.setValue(5)
         self.maxLengthSpin.setMinimum(3)
         self.maxLengthSpin.setMaximum(8)
         boxLayout.addRow("Max length:", self.maxLengthSpin)
