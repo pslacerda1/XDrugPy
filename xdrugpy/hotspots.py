@@ -1090,7 +1090,7 @@ def align_groups(
     target: Selection,
 ):
     for mobile in mobile_groups.split():
-        pm.super(f"{mobile}.protein", f"{target}.protein")
+        pm.cealign(f"{mobile}.protein", f"{target}.protein")
         for inner in pm.get_object_list(f"{mobile}.*"):
             if ".protein" in inner:
                 continue
