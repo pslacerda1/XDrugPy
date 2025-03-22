@@ -97,8 +97,10 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
     if kwargs["color_threshold"] > 0:
         if kwargs['orientation'] == 'right':
             axline = ax.axvline
+            ticklabels = ax.get_yticklabels()
         else:
             axline = ax.axhline
+            ticklabels = ax.get_xticklabels()
         axline(kwargs["color_threshold"], color="gray", ls='--')
     groups = {}
     for color, leaf in zip(dendro['leaves_color_list'], dendro['ivl']):
@@ -124,7 +126,7 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         if rms < min_rms:
             min_rms = rms
             medoids[min_color] = leaf
-    for label in ax.get_xticklabels():
+    for label in ticklabels:
         for color, leaf in medoids.items():
             if label.get_text() == leaf:
                 label.set_color(color)
