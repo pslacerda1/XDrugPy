@@ -2,6 +2,7 @@ import subprocess
 import os
 import atexit
 import scipy.cluster.hierarchy as sch
+import numpy as np
 from scipy.spatial.distance import squareform
 from shutil import rmtree
 from tempfile import mkdtemp
@@ -78,16 +79,27 @@ def run_system(command):
 
 
 def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
+    X = np.array(X)
     if ax is None:
         _, ax = plt.subplots()
-    if X.ndims == 1:
+    if X.ndim == 1:
         X = squareform(X)
+    Z = sch.linkage(X, method=method)
+    if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
+        kwargs['color_threshold'] = 0.7 * max(Z[:,2])
+
     dendro = sch.dendrogram(
-        sch.linkage(X, method=method),
+        Z,
         labels=labels,
         ax=ax,
         **kwargs
     )
+    if kwargs["color_threshold"] > 0:
+        if kwargs['orientation'] == 'right':
+            axline = ax.axvline
+        else:
+            axline = ax.axhline
+        axline(kwargs["color_threshold"], color="gray", ls='--')
     groups = {}
     for color, leaf in zip(dendro['leaves_color_list'], dendro['ivl']):
         if color not in groups:

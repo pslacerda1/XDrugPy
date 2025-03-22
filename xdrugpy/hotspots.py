@@ -969,7 +969,7 @@ def plot_dendrogram(
     residue_weight: float = 1,
     residue_align: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    cluster_threshold: bool = 1,
+    color_threshold: bool = -1,
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1081,7 +1081,11 @@ def plot_dendrogram(
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
     
-    dendrogram(X)
+    dendrogram(
+        X,
+        method=linkage_method,
+        color_threshold=color_threshold
+    )
     plt.show()
 
 @declare_command
@@ -1429,14 +1433,11 @@ class SimilarityWidget(QWidget):
         boxLayout.addRow("Linkage:", self.linkageMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
-        self.colorThresholdSpin.setValue(0.0)
+        self.colorThresholdSpin.setMinimum(-0.1)
+        self.colorThresholdSpin.setValue(-0.1)
         self.colorThresholdSpin.setSingleStep(0.1)
         self.colorThresholdSpin.setDecimals(1)
-        self.colorThresholdSpin.setMinimum(0)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
-
-        self.computeMedoidsCheck = QCheckBox()
-        boxLayout.addRow("Compute medoids:", self.computeMedoidsCheck)
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_dendrogram)
@@ -1459,7 +1460,6 @@ class SimilarityWidget(QWidget):
         residue_align = self.resiudeAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
-        compute_medoids = self.computeMedoidsCheck.isChecked()
 
         plot_dendrogram(
             expression,
@@ -1469,7 +1469,6 @@ class SimilarityWidget(QWidget):
             residue_align,
             linkage_method,
             color_threshold,
-            compute_medoids
         )
 
 

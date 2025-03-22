@@ -25,10 +25,9 @@ import numpy as np
 import pandas as pd
 from lxml import etree
 from matplotlib import pyplot as plt
-from scipy.cluster.hierarchy import linkage, dendrogram
 from scipy.spatial.distance import euclidean
 
-from .utils import LIBRARIES_DIR, MAPS_DIR, RESOURCES_DIR, TEMPDIR, run
+from .utils import LIBRARIES_DIR, TEMPDIR, run, dendrogram
 
 
 QWidget = Qt.QtWidgets.QWidget
@@ -265,7 +264,12 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         in_fname = project_dir + f'/output/{name}.pdbqt'
         out_fname = TEMPDIR + f'/plip.pdb'
         pm.load(in_fname, 'lig', multiplex=1, zoom=0)
-        pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
+        print(pm.get_object_list())
+        if pm.count_states('lig') == 1:
+            pass
+        else:
+            pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
+        print(pm.get_object_list())
         pm.delete('lig_*')
         pm.alter('lig', 'chain="Z"')
         pm.alter('lig', 'resn="LIG"')
@@ -286,11 +290,16 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         count += 1
         if count >= max_load:
             break
-    
+
     interactions = sorted(interactions, key=lambda i: (i[4], i[3], i[1]))
     residues_l = ['%s%s%s' % (i[2], i[3], i[4]) for i in interactions]
     interactions_l = [i[1] for i in interactions]
     names_l = [i[0] for i in interactions]
+
+    for inter_type in interactions_type.copy():
+        if len([i for i in interactions if i[1] == inter_type]) == 0:
+            interactions_type.remove(inter_type)
+
 
     fig, axs = plt.subplots(len(interactions_type), layout="constrained", sharex=True)
     for ax, interaction_type in zip(axs, interactions_type):
@@ -300,6 +309,10 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         for res, inter_type in zip(residues_l, interactions_l):
             if inter_type == interaction_type:
                 count[res] += 1
+        for res, inter_type in zip(residues_l.copy(), interactions_l.copy()):
+            if inter_type == interaction_type:
+                if count[res] == 0:
+                    del count[res]
         ax.bar(count.keys(), count.values())
         ax.set_title(interaction_type)
     plt.xticks(rotation=45)
@@ -344,14 +357,13 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         for idx2, mol2 in enumerate(mols):
             if idx1 >= idx2:
                 continue
-            d = euclidean(mol1, mol2) + 0.05
+            d = euclidean(mol1, mol2)
             D.append(d)
-    Z = linkage(D)
     dendrogram(
-        Z,
+        D,
         labels=labels,
         orientation='right',
-        color_threshold=0,
+        color_threshold=-1,
         distance_sort=True,
         ax=ax
     )

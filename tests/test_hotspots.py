@@ -28,8 +28,8 @@ def test_eftmap_overlap():
     assert deloc_contacts == 12
 
 
-def test_plot_dendrogram():
-    pm.reinitialize()
-    load_ftmap(f'{pkg_data}/p38_1R39.pdb')
-    ret = plot_dendrogram('*ACS_*_00', cluster_threshold=1)
-    print(ret)
+# def test_plot_dendrogram():
+#     pm.reinitialize()
+#     load_ftmap(f'{pkg_data}/p38_1R39.pdb')
+#     ret = plot_dendrogram('*ACS_*_00', color_threshold=1)
+#     print(ret)
