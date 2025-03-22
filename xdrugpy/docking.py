@@ -6,6 +6,7 @@ from os.path import (
     basename,
     exists
 )
+from time import sleep
 from glob import glob
 import itertools
 from operator import itemgetter
@@ -79,9 +80,9 @@ QStandardItemModel = Qt.QtGui.QStandardItemModel
 #
 
 class BaseThread(QThread):
-
+    
     numSteps = pyqtSignal(int)
-    currentStep = pyqtSignal(int)
+    incrementStep = pyqtSignal()
 
     logEvent = pyqtSignal(str)
     logCodeEvent = pyqtSignal(str)
@@ -234,7 +235,7 @@ def load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode):
 
 
 def load_plip_full(project_dir, max_load, max_mode, tree_model):
-    poses = glob(f"{project_dir}/output/*.out.pdbqt")
+    poses = glob(f"{project_dir}/output/*.pdbqt")
     poses = itertools.chain.from_iterable(
         map(parse_out_pdbqt, poses)
     )
@@ -261,7 +262,7 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
             continue
         name = pose["name"]
         mode = str(pose["mode"])
-        in_fname = project_dir + f'/output/{name}.out.pdbqt'
+        in_fname = project_dir + f'/output/{name}.pdbqt'
         out_fname = TEMPDIR + f'/plip.pdb'
         pm.load(in_fname, 'lig', multiplex=1, zoom=0)
         pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
@@ -398,7 +399,7 @@ class ResultsWidget(QWidget):
                 name = self.item(item.row(), 0).text()
                 mode = self.item(item.row(), 1).text()
                 receptor_pdbqt = '%s/receptor.pdbqt' % self.project_dir
-                ligand_pdbqt = f'{self.project_dir}/output/{name}.out.pdbqt'
+                ligand_pdbqt = f'{self.project_dir}/output/{name}.pdbqt'
                 load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode)
         
     class SortableItem(QTableWidgetItem):
@@ -462,7 +463,7 @@ class ResultsWidget(QWidget):
         # append new rows
         project_dir = expanduser(self.project_dir)
         results = itertools.chain.from_iterable(
-            map(parse_out_pdbqt, glob(f"{project_dir}/output/*.out.pdbqt"))
+            map(parse_out_pdbqt, glob(f"{project_dir}/output/*.pdbqt"))
         )
         results = sorted(results, key=itemgetter("affinity"))
         count = 0 
@@ -594,13 +595,21 @@ def new_load_results_widget():
 #          Run Docking Pannel                 #
 ###############################################
 
-
 class VinaThreadDialog(QDialog):
     def __init__(self, *vina_args, parent=None):
         super().__init__(parent)
         self.vina = VinaThread(*vina_args)
         self.vina.done.connect(self._done)
-
+        
+        project_dir = vina_args[0]
+        self.progress_thread = ProgressThread(
+            ligands_dir="%s/ligands" % project_dir,
+            output_dir="%s/output" % project_dir,
+        )
+        self.progress_thread.incrementStep.connect(self.vina.incrementStep.emit)
+        self.progress_thread.numSteps.connect(self.vina.numSteps.emit)
+        
+        # self.progress_thread.finished.connect()
         # Setup window
         self.setModal(True)
         self.resize(QDesktopWidget().availableGeometry(self).size() * 0.7)
@@ -614,7 +623,7 @@ class VinaThreadDialog(QDialog):
         self.layout.addWidget(self.progress)
         self.progress.setValue(0)
         self.vina.numSteps.connect(self.progress.setMaximum)
-        self.vina.currentStep.connect(self.progress.setValue)
+        self.vina.incrementStep.connect(lambda *_: self.progress.value() + 1)
 
         # Rich text output
         self.text = QTextEdit(self)
@@ -634,6 +643,7 @@ class VinaThreadDialog(QDialog):
 
         # Start docking
         self.vina.start()
+        self.progress_thread.start()
 
     def _appendHtml(self, html):
         self.text.moveCursor(QTextCursor.End)
@@ -669,6 +679,31 @@ class VinaThreadDialog(QDialog):
 #
 # Run docking software
 #
+class ProgressThread(QThread):
+    numSteps = pyqtSignal(int)
+    incrementStep = pyqtSignal()
+    finished = pyqtSignal()
+
+    def __init__(self, ligands_dir, output_dir):
+        self.ligands_dir = ligands_dir
+        self.output_dir = output_dir
+        self.ligands_done = set()
+        super().__init__()
+
+    def run(self):
+        num_steps = len(glob(f"{self.ligands_dir}/*.pdbqt"))
+        self.numSteps.emit(num_steps)
+        while True:
+            sleep(1)
+            ligands = glob(f"{self.ligands_dir}/*.pdbqt")
+            for ligand_pdbqt in ligands:
+                lig = basename(output_pdbqt)[:-10]
+                output_pdbqt = f"{self.output_dir}/{lig}_out.pdbqt"
+                if lig not in self.ligands_done and exists(output_pdbqt):
+                    self.ligands_done.add(lig)
+                    self.incrementStep.emit()
+            if len(ligands) == glob(f"{self.output_dir}/*_out.dbqt"):
+                self.finished.emit()
 
 
 class VinaThread(BaseThread):
@@ -677,7 +712,6 @@ class VinaThread(BaseThread):
             project_dir,
             ligands_file,
             receptor_sel,
-            flex_sel,
             box_sel,
             box_margin,
             allow_errors,
@@ -715,12 +749,6 @@ class VinaThread(BaseThread):
         )
         if allow_errors:
             command = f"{command} -a"
-        if flex_sel != "":
-            flex_residues = set()
-            for atom in pm.get_model(flex_sel).atom:
-                flex_residues.add(f"{atom.chain}:{atom.resi}")
-            flex_residues = ",".join(flex_residues)
-            command = f"{command} -f {flex_residues}"
         self.logEvent.emit(f"""
             <br/>
             <br/><b>Preparing receptor.</b>
@@ -736,26 +764,26 @@ class VinaThread(BaseThread):
         #
         # Create library
         #
-        ligands_pdbqt_dir = project_dir + "/output"
+        ligands_dir = project_dir + "/queue"
 
         if library:
             library_dir = LIBRARIES_DIR + '/' + library
             try:
-                if exists(ligands_pdbqt_dir):
-                    shutil.rmtree(ligands_pdbqt_dir)
+                if exists(ligands_dir):
+                    shutil.rmtree(ligands_dir)
             except OSError:
-                os.unlink(ligands_pdbqt_dir)
-            os.symlink(library_dir, ligands_pdbqt_dir, receptor_is_directory=True)
+                os.unlink(ligands_dir)
+            shutil.copytree(library_dir, ligands_dir)
             self.logEvent.emit(f"""
                 <br/>
-                <br/><b>Using stored library:</b> {library_dir}
+                <br/><b>Copying stored library:</b> {library_dir}
             """)
         elif ligands_file:
-            if exists(ligands_pdbqt_dir):
+            if exists(ligands_dir):
                 try:
-                    shutil.rmtree(ligands_pdbqt_dir)
+                    shutil.rmtree(ligands_dir)
                 except OSError:
-                    os.unlink(ligands_pdbqt_dir)
+                    os.unlink(ligands_dir)
             
             #
             # Scrubbe isomers
@@ -782,10 +810,10 @@ class VinaThread(BaseThread):
             #
             # Converting to PDBQT
             #
-            if not exists(ligands_pdbqt_dir):
-                os.makedirs(ligands_pdbqt_dir)
+            if not exists(ligands_dir):
+                os.makedirs(ligands_dir)
             command = (
-                f'python -m meeko.cli.mk_prepare_ligand -i "{ligands_sdf}" --multimol_outdir "{ligands_pdbqt_dir}"'
+                f'python -m meeko.cli.mk_prepare_ligand -i "{ligands_sdf}" --multimol_outdir "{ligands_dir}"'
             )
             self.logEvent.emit(
                 f"""
@@ -809,14 +837,24 @@ class VinaThread(BaseThread):
                     shutil.rmtree(library_dir)
                 except:
                     pass
-                shutil.copytree(ligands_pdbqt_dir, library_dir)
+                shutil.copytree(ligands_dir, library_dir)
+
+        #
+        # Create Vina results directory
+        #
+        output_dir = f"{project_dir}/output"
+        try:
+            os.mkdir(output_dir)
+        except FileExistsError:
+            pass
+
+        ligands_dir = f"{project_dir}/ligands"
+        try:
+            os.mkdir(ligands_dir)
+        except FileExistsError:
+            pass
         
-        #
-        # The number of dockings to do
-        #
-        count = len(glob(f"{ligands_pdbqt_dir}/*.pdbqt"))
-        n_ligands = count
-        self.numSteps.emit(n_ligands)
+        
 
         #
         # Compute box variables
@@ -844,116 +882,65 @@ class VinaThread(BaseThread):
             round(float(center_z), 2),
         )
         
-        #
-        # Create Vina results directory
-        #
-        output_dir = f"{project_dir}/output"
-        try:
-            os.mkdir(output_dir)
-        except FileExistsError:
-            pass
-
-        #
-        # Project data
-        #
         project_file = project_dir + "/docking.json"
         project_data = {
             "function": function,
+            "box_sel": box_sel,
+            "box_margin": box_margin,
             "size_x": size_x,
             "size_y": size_y,
             "size_z": size_z,
             "center_x": center_x,
             "center_y": center_y,
             "center_z": center_z,
+            "ph": ph,
+            "exhaustiveness": exhaustiveness,
+            "seed": seed
         }
 
-        #
-        # Prompt for user confirmation
-        #
-
-        base_command = (
+        command = (
             f"vina"
+            f" --receptor '{receptor_pdbqt}'"
             f" --scoring {function}"
-            f" --center_x {center_x}"
-            f" --center_y {center_y}"
-            f" --center_z {center_z}"
+            f" --cpu {cpu}"
+            f" --seed {seed}"
             f" --size_x {size_x}"
             f" --size_y {size_y}"
             f" --size_z {size_z}"
-            f" --cpu {cpu}"
-            f" --seed {seed}"
+            f" --center_x {center_x}"
+            f" --center_y {center_y}"
+            f" --center_z {center_z}"
             f" --exhaustiveness {exhaustiveness}"
             f" --num_modes {num_modes}"
             f" --min_rmsd {min_rmsd}"
             f" --energy_range {energy_range}"
+            f" --dir '{output_dir}'"
+            f" --batch '{ligands_dir}/'*.pdbqt"
         )
-        self.logEvent.emit(
-            f"""
+        self.logEvent.emit(f"""    
             <br/>
-            <b>Vina base command:</b> {base_command}
-        """
-        )
+            <br/><b>Docking ligands.</b>
+            <br/><b>Command:</b> {command}
+        """)
         project_file = f"{project_dir}/docking.json"
         with open(project_file, "w") as docking_file:
             json.dump(project_data, docking_file, indent=4)
 
-        fail_count = 0
-        for idx, ligand_pdbqt in enumerate(glob(f"{ligands_pdbqt_dir}/*.pdbqt")):
-            name, _ = splitext(basename(ligand_pdbqt))
-            output_pdbqt = f"{output_dir}/{name}.out.pdbqt"
-            if exists(output_pdbqt):
-                self.currentStep.emit(idx + 1)
-                continue
+        output, success = run(command)
 
-            command = base_command + (
-                f' --ligand "{ligand_pdbqt}"'
-                f' --out "{output_pdbqt}"'
-            )
-            if exists(f"{project_dir}/flexible.pdbqt"):
-                rigid_pdbqt = f"{project_dir}/rigid.pdbqt"
-                flex_pdbqt = f"{project_dir}/flexible.pdbqt"
-                command += f' --receptor "{rigid_pdbqt}" --flex "{flex_pdbqt}"'
+        @self.finished.connect
+        def finished():
+            output_ligands = len(glob(f"{output_dir}/*_out.pdbqt"))
+            n_ligands = len(glob(f"{ligands_dir}/*.pdbqt"))
+            self.logEvent.emit("<br/><h2>Summary</h2>")
+            summary = f"""
+                <br/><b>Total expected:</b> {n_ligands}
+                <br/><b>Total done:</b> {output_ligands}
+            """
+            if output_ligands < n_ligands:
+                self.logEvent.emit(f"<font color='red'>{summary}</font>")
             else:
-                receptor_pdbqt = f"{project_dir}/receptor.pdbqt"
-                command += f' --receptor "{receptor_pdbqt}"'
-
-            output, success = run(command)
-            self.currentStep.emit(idx + 1)
-            if not success:
-                fail_count += 1
-                if fail_count <= 10:
-                    self.logEvent.emit(
-                        f"""
-                        <br/>
-                        <font color="red">
-                            <b>Vina command failed:</b> {command}
-                            <br/>
-                            <pre>{output}</pre>
-                        </font>
-                    """
-                    )
-                elif fail_count == 11:
-                    self.logEvent.emit(
-                        f"""
-                        <br/>
-                        <font color="red">
-                            <b>Too many errors. Omitting output.</b>
-                        </font>
-                    """
-                    )
-
-        done_ligands = len(glob(f"{output_dir}/*.out.pdbqt"))
-
-        self.logEvent.emit("<br/><h2>Summary</h2>")
-        summary = f"""
-            <br/><b>Total expected runs:</b> {n_ligands}
-            <br/><b>Total failures:</b> {fail_count}
-            <br/><b>Total found PDBQT files:</b> {done_ligands}
-        """
-        if done_ligands < n_ligands or fail_count > 0:
-            self.logEvent.emit(f"<font color='red'>{summary}</font>")
-        else:
-            self.logEvent.emit(f"{summary}")
+                self.logEvent.emit(f"{summary}")
 
         self.done.emit(True)
 
@@ -1016,32 +1003,6 @@ def new_run_docking_widget():
             palette.setColor(QPalette.Base, QtCore.Qt.red)
             valid = False
         receptor_sel.setPalette(palette)
-        return valid
-
-    #
-    # Flexible residues selection
-    #
-    flex_sel = QLineEdit("", widget)
-
-    @flex_sel.textEdited.connect
-    def validate(text):
-        validate_flex_sel()
-
-    def validate_flex_sel():
-        text = flex_sel.text()
-        palette = QApplication.palette(flex_sel)
-        palette.setColor(QPalette.Base, QtCore.Qt.white)
-        valid = True
-        if text.strip() != "":
-            try:
-                if pm.count_atoms(f"({text}) and polymer") == 0:
-                    raise
-                palette.setColor(QPalette.Base, QtCore.Qt.white)
-                valid = True
-            except:
-                palette.setColor(QPalette.Base, QtCore.Qt.red)
-                valid = False
-        flex_sel.setPalette(palette)
         return valid
 
     #
@@ -1188,7 +1149,7 @@ def new_run_docking_widget():
     button = QPushButton("Run", widget)
     @button.clicked.connect
     def run():
-        if not (validate_receptor_sel() & validate_flex_sel() & validate_box_sel()):
+        if not (validate_receptor_sel() & validate_box_sel()):
             return
         if not (project_dir):
             return
@@ -1206,7 +1167,6 @@ def new_run_docking_widget():
             project_dir,
             ligands_file,
             receptor_sel.currentText(),
-            flex_sel.text(),
             box_sel.currentText(),
             box_margin_spin.value(),
             allow_errors_check.isChecked(),
@@ -1232,7 +1192,6 @@ def new_run_docking_widget():
     #
     layout.addRow("Function:", function)
     layout.addRow("Receptor:", receptor_sel)
-    layout.addRow("Flexible residues:", flex_sel)
     layout.addRow("Box:", box_sel)
     layout.addRow("Box margin:", box_margin_spin)
     layout.addRow("Allow Meeko errors:", allow_errors_check)
