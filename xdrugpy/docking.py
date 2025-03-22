@@ -228,7 +228,6 @@ def load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode):
     
     command = f'python -m plip.plipcmd -qs -f "{plip_pdb}" -y -o "{TEMPDIR}"'
     output, success = run(command, cwd=TEMPDIR)
-    print(output)
     pm.load(plip_pse)
     pm.valence('guess', 'all')
 
@@ -264,12 +263,10 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         in_fname = project_dir + f'/output/{name}.pdbqt'
         out_fname = TEMPDIR + f'/plip.pdb'
         pm.load(in_fname, 'lig', multiplex=1, zoom=0)
-        print(pm.get_object_list())
         if pm.count_states('lig') == 1:
             pass
         else:
             pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
-        print(pm.get_object_list())
         pm.delete('lig_*')
         pm.alter('lig', 'chain="Z"')
         pm.alter('lig', 'resn="LIG"')
