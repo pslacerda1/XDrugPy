@@ -15,12 +15,12 @@ system = platform.system().lower()
 
 match system:
     case "windows":
-        bin_fname = "vina_1.2.5_win.exe"
+        bin_fname = "vina_1.2.7_win.exe"
     case "linux":
-        bin_fname = "vina_1.2.5_linux_x86_64"
+        bin_fname = "vina_1.2.7_linux_x86_64"
     case "darwin":
-        bin_fname = "vina_1.2.5_mac_x86_64"
-vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.5/{bin_fname}"
+        bin_fname = "vina_1.2.7_mac_x86_64"
+vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
 vina_exe = f"{RESOURCES_DIR}/vina"
 if system == "windows":
     vina_exe += ".exe"
