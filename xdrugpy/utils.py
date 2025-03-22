@@ -1,10 +1,14 @@
 import subprocess
 import os
 import atexit
+import scipy.cluster.hierarchy as sch
+from scipy.spatial.distance import squareform
 from shutil import rmtree
 from tempfile import mkdtemp
 from pymol import Qt
 from os.path import exists
+from matplotlib import pyplot as plt
+
 
 QStandardPaths = Qt.QtCore.QStandardPaths
 
@@ -70,3 +74,45 @@ def run(command, log=True, cwd=None, env=os.environ):
 def run_system(command):
     print('RUNNING SYSTEM PROCESS:', command)
     os.system(command)
+
+
+
+def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
+    if ax is None:
+        _, ax = plt.subplots()
+    if X.ndims == 1:
+        X = squareform(X)
+    dendro = sch.dendrogram(
+        sch.linkage(X, method=method),
+        labels=labels,
+        ax=ax,
+        **kwargs
+    )
+    groups = {}
+    for color, leaf in zip(dendro['leaves_color_list'], dendro['ivl']):
+        if color not in groups:
+            groups[color] = []
+        groups[color].append(leaf)
+    dists_sum = {}
+    for color, leaves in groups.items():
+        for i1, leaf1 in enumerate(leaves):
+            sum_dists = 0
+            for i2 in range(len(leaves)):
+                if i1 >= i2:
+                    continue
+                d = X[i1, i2]
+                sum_dists += d
+            dists_sum[(color, leaf1)] = sum_dists
+    medoids = {}
+    min_color = None
+    for (color, leaf), rms in dists_sum.items():
+        if color != min_color:
+            min_rms = float('inf')
+            min_color = color
+        if rms < min_rms:
+            min_rms = rms
+            medoids[min_color] = leaf
+    for label in ax.get_xticklabels():
+        for color, leaf in medoids.items():
+            if label.get_text() == leaf:
+                label.set_color(color)
