@@ -952,10 +952,6 @@ def plot_heatmap(
                         )
             mat[-1].append(round(ret, 2))
 
-    if method == HeatmapFunction.HO:
-        mat_max = np.max(mat)
-    else:
-        mat_max = 1
     
     plt.close()
     fig, ax = plt.subplots(1)
@@ -965,7 +961,7 @@ def plot_heatmap(
         xticklabels=obj1s,
         cmap="viridis",
         annot=annotate,
-        vmax=mat_max,
+        vmax=1,
         ax=ax,
     )
     plt.xticks(rotation=45)
