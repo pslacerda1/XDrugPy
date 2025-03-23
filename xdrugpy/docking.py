@@ -261,7 +261,7 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         name = pose["name"]
         mode = str(pose["mode"])
         in_fname = project_dir + f'/output/{name}.pdbqt'
-        out_fname = TEMPDIR + f'/plip.pdb'
+        out_fname = TEMPDIR + f'/plip.{name}-{mode}.pdb'
         pm.load(in_fname, 'lig', multiplex=1, zoom=0)
         if pm.count_states('lig') == 1:
             pass
@@ -273,8 +273,11 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         pm.alter('lig', 'resi=1')
         pm.alter('lig', 'type="HETATM"')
         pm.save(out_fname, selection='*')
+        count += 1
+        if count >= max_load:
+            break
         command = f'python -m plip.plipcmd -qs -f "{out_fname}" -x --nohydro -o "{TEMPDIR}/"'
-        print(f"RUNNING COMMAND [{idx}/{len(poses)}]: {command}")
+        print(f"RUNNING COMMAND: {command}")
         proc = subprocess.run(command, cwd=TEMPDIR, shell=True)
         with open(TEMPDIR + '/report.xml') as fp:
             plip = etree.parse(fp)
@@ -284,9 +287,6 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
             reschain = plip.xpath(f"//{inter_type}/reschain/text()")
             for inter in zip(restype, resnr, reschain):
                 interactions.append([f'{name}_m{mode}', inter_type, *inter])
-        count += 1
-        if count >= max_load:
-            break
 
     interactions = sorted(interactions, key=lambda i: (i[4], i[3], i[1]))
     residues_l = ['%s%s%s' % (i[2], i[3], i[4]) for i in interactions]

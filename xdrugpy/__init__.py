@@ -29,6 +29,25 @@ if not exists(vina_exe):
     urlretrieve(vina_url, vina_exe)
     os.chmod(vina_exe, stat.S_IEXEC)
 
+#
+# INSTALL FPOCKET
+#
+match system:
+    case 'windows':
+        bin_fname = 'fpocket.exe'
+    case 'linux' | 'darwin':
+        bin_fname = 'fpocket'
+fpocket_exe = f"{RESOURCES_DIR}/{bin_fname}"
+if not exists(fpocket_exe):
+    import os
+    import stat
+    from urllib.request import urlretrieve
+
+    print(f'Installing Fpocket on', fpocket_exe)
+    fpocket_url = f"https://raw.githubusercontent.com/pslacerda/XDrugPy/fpocket/bin/fpocket.{system}"
+    urlretrieve(fpocket_url, fpocket_exe)
+    os.chmod(fpocket_exe, stat.S_IEXEC)
+
 
 #
 # INSTALL MORE REQUIREMENTS
