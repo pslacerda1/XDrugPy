@@ -287,12 +287,12 @@ def process_eclusters(group, eclusters):
 
 def get_egbert2019(group, fpo_list, clusters):
     e19 = []
-    idx = 0
-    for i, pocket in enumerate(fpo_list):
+    idx_e19 = 0
+    for pocket in fpo_list:
         sel = f"byobject ({group}.CS_* within 4 of {pocket.selection})"
         objs = pm.get_object_list(sel)
         if len(objs) > 3 and sum([pm.get_property("S", o) >= 16 for o in objs]) > 2:
-            new_name = f"{group}.C_{idx:02}"
+            new_name = f"{group}.C_{idx_e19:02}"
             pm.create(new_name, sel)
             pm.group(group, new_name)
 
@@ -305,8 +305,70 @@ def get_egbert2019(group, fpo_list, clusters):
             pm.set_property("S1", s_list[1])
             pm.set_property("Length", len(objs), new_name)
             e19.append(SimpleNamespace(selection=new_name))
-            idx += 1
+            idx_e19 += 1
     return e19
+
+def get_kozakov2015_large(group, fpo_list, clusters):
+    k15l = []
+    idx = 0
+    for pocket in fpo_list:
+        sel = f"byobject ({group}.CS_* within 4 of {pocket.selection})"
+        objs = pm.get_object_list(sel)
+        if len(objs) == 0:
+            continue
+        # breakpoint()
+        pocket_clusters = [c for c in clusters if c.selection in objs]
+        i_s0 = np.argmax(c.strength for c in pocket_clusters)
+        s0 = pocket_clusters[i_s0].strength
+
+        cd = []
+        cluster1 = pocket_clusters[i_s0]
+        avg1 = np.average(cluster1.coords, axis=0)
+        for cluster2 in pocket_clusters:
+            avg2 = np.average(cluster2.coords, axis=0)
+            cd.append(distance.euclidean(avg1, avg2))
+        cd = max(cd)
+
+        coords = np.concatenate([c.coords for c in pocket_clusters])
+        max_coord = coords.max(axis=0)
+        min_coord = coords.min(axis=0)
+        md = distance.euclidean(max_coord, min_coord)
+
+        strength = sum(c.strength for c in pocket_clusters)
+
+        i_sz = np.argmin(c.strength for c in pocket_clusters)
+        sz = pocket_clusters[i_sz].strength
+
+        if 13 <= s0 < 16 and cd >=8 and md >= 10 and sz >= 5:
+            new_name = f"{group}.K15_BL_{idx:02}"
+            klass = "BL"
+        if s0 >= 16 and cd >=8 and md >= 10 and sz >= 5:
+            new_name = f"{group}.K15_   DL_{idx:02}"
+            klass = "DL"
+        else:
+            continue
+        idx += 1
+
+        hs = SimpleNamespace()
+        hs.kozakov_class = klass
+        pm.create(new_name, sel)
+        pm.group(group, new_name)
+        set_properties(hs, new_name, {
+            "Type": "K15",
+            "Group": group,
+            'Selection': new_name,
+            "Class": klass,
+            "S": strength,
+            "S0": s0,
+            "CD": round(cd, 2),
+            "MD": round(md, 2),
+            "Length": len(pocket_clusters),
+        })
+
+        if hs.kozakov_class:
+            k15l.append(hs)
+        
+    return k15l
 
 
 @declare_command
@@ -314,6 +376,7 @@ def load_ftmap(
     filename: Path,
     group: str = "",
     k15_max_length: int = 5,
+    run_fpocket: bool = False
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -347,10 +410,13 @@ def load_ftmap(
 
     clusters, eclusters = get_clusters()
     k15_list = get_kozakov2015(group, clusters, k15_max_length)
-    fpo_list = get_fpocket(group, f"{group}.protein")
+    if run_fpocket:
+        fpo_list = get_fpocket(group, f"{group}.protein")
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
-    e19_list = get_egbert2019(group, fpo_list, clusters)
+    if run_fpocket:
+        e19_list = get_egbert2019(group, fpo_list, clusters)
+        k15_dl_list = get_kozakov2015_large(group, fpo_list, clusters)
 
     pm.hide("everything", f"{group}.*")
 
@@ -375,13 +441,16 @@ def load_ftmap(
     pm.set("mesh_mode", 1)
     pm.orient("all")
 
-    return SimpleNamespace(
+    ret = SimpleNamespace(
         clusters=clusters,
         eclusters=eclusters,
         kozakov2015=k15_list,
-        egbert2019=e19_list,
-        fpocket=fpo_list,
     )
+    if run_fpocket:
+        ret.kozakov2015 = [*ret.kozakov2015, *k15_dl_list]
+        ret.egbert2019 = e19_list
+        ret.fpocket = fpo_list
+    return ret
 
 
 @pm.extend
@@ -1233,6 +1302,10 @@ class LoadWidget(QWidget):
         self.maxLengthSpin.setMaximum(8)
         boxLayout.addRow("Max length:", self.maxLengthSpin)
 
+        self.runFpocketCheck = QCheckBox()
+        self.runFpocketCheck.setChecked(True)
+        boxLayout.addRow("Run Fpocket:", self.runFpocketCheck)
+
     def pickFile(self):
         fileDIalog = QFileDialog()
         fileDIalog.setFileMode(QFileDialog.ExistingFiles)
@@ -1267,11 +1340,13 @@ class LoadWidget(QWidget):
             for row in range(self.table.rowCount()):
                 group = self.table.item(row, 0).text()
                 filename = self.table.item(row, 1).text()
+                run_fpocket = self.runFpocketCheck.isChecked()
                 try:
                     load_ftmap(
                         filename,
                         group=group,
                         k15_max_length=max_length,
+                        run_fpocket=run_fpocket,
                     )
                 except Exception:
                     try:
@@ -1279,6 +1354,8 @@ class LoadWidget(QWidget):
                             filename,
                             group=group,
                             k15_max_length=max_length,
+                            run_fpocket=run_fpocket,
+
                         )
                     except Exception:
                         if not os.path.exists(filename):
@@ -1339,7 +1416,7 @@ class TableWidget(QWidget):
             ("CS", "CS"): ["S"],
             ("ACS", "ACS"): ["Class", "S", "MD"],
             ("Egbert2019", "E19"): ["Fpocket", "S","S0", "S1", "Length"],
-            ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"]
+            ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
