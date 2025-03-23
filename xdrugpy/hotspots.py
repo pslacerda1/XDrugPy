@@ -1,4 +1,8 @@
 import os.path
+import shutil
+import subprocess
+import re
+from glob import glob
 from fnmatch import fnmatch
 from itertools import combinations
 from pathlib import Path
@@ -209,6 +213,42 @@ def get_kozakov2015(group, clusters, max_length):
         })
     return k15
 
+def get_fpocket(group, protein):
+    pockets = []
+    # with tempfile.TemporaryDirectory() as tempdir:
+    tempdir = "/tmp"
+    if True:
+        protein_pdb = f"{tempdir}/{group}.pdb"
+        pm.save(protein_pdb, selection=protein)
+        subprocess.check_call(
+            [
+                shutil.which('fpocket'),
+                '-f',
+                protein_pdb
+            ],
+        )
+        header_re = re.compile(r'^HEADER\s+\d+\s+-(.*):(.*)$')
+        for pocket_pdb in glob(f"{tempdir}/{group}_out/pockets/pocket*_atm.pdb"):
+            idx = os.path.basename(pocket_pdb).replace('pocket', '').replace('_atm.pdb', '')
+            idx = int(idx)
+            pocket = SimpleNamespace(
+                selection = f'{group}.fpocket_{idx:02}'
+            )
+            pm.delete(pocket.selection)
+            pm.load(pocket_pdb, pocket.selection)
+            pm.set_property("Type", "Fpocket", pocket.selection)
+            pm.set_property("Group", group, pocket.selection)
+            for line in pm.get_property('pdb_header', pocket.selection).split('\n'):
+                if match := header_re.match(line):
+                    prop = match.group(1).strip()
+                    value = float(match.group(2))
+                    setattr(pocket, prop, value)
+                    pm.set_property(prop, value, pocket.selection)
+            pockets.append(pocket)
+
+    return pockets
+
+
 
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
@@ -243,6 +283,30 @@ def process_eclusters(group, eclusters):
             "MD": round(md, 2)
         })
     pm.delete("clust.*")
+
+
+def get_egbert2019(group, fpo_list, clusters):
+    e19 = []
+    idx = 0
+    for i, pocket in enumerate(fpo_list):
+        sel = f"byobject ({group}.CS_* within 4 of {pocket.selection})"
+        objs = pm.get_object_list(sel)
+        if len(objs) > 3 and sum([pm.get_property("S", o) >= 16 for o in objs]) > 2:
+            new_name = f"{group}.C_{idx:02}"
+            pm.create(new_name, sel)
+            pm.group(group, new_name)
+
+            s_list = [pm.get_property("S", o) for o in objs]
+            pm.set_property("Type", "Egbert2019", new_name)
+            pm.set_property("Group", group, new_name)
+            pm.set_property("Fpocket", pocket.selection, new_name)
+            pm.set_property("S", sum(s_list), new_name)
+            pm.set_property("S0", s_list[0])
+            pm.set_property("S1", s_list[1])
+            pm.set_property("Length", len(objs), new_name)
+            e19.append(SimpleNamespace(selection=new_name))
+            idx += 1
+    return e19
 
 
 @declare_command
@@ -283,8 +347,10 @@ def load_ftmap(
 
     clusters, eclusters = get_clusters()
     k15_list = get_kozakov2015(group, clusters, k15_max_length)
+    fpo_list = get_fpocket(group, f"{group}.protein")
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
+    e19_list = get_egbert2019(group, fpo_list, clusters)
 
     pm.hide("everything", f"{group}.*")
 
@@ -304,6 +370,7 @@ def load_ftmap(
 
     pm.disable(f"{group}.CS_*")
     pm.show("line", f"{group}.CS_*")
+    pm.disable(f"{group}.fpocket_*")
 
     pm.set("mesh_mode", 1)
     pm.orient("all")
@@ -312,6 +379,8 @@ def load_ftmap(
         clusters=clusters,
         eclusters=eclusters,
         kozakov2015=k15_list,
+        egbert2019=e19_list,
+        fpocket=fpo_list,
     )
 
 
@@ -633,38 +702,34 @@ def fp_sim(
     return fp_list
 
 
+
 @declare_command
 def ho(
-    hss: Selection,
-    radius: float = 1.0,
-    output_sele: Selection = "ho_overlap",
+    hs1: Selection,
+    hs2: Selection,
+    radius: float = 2.5,
     verbose: bool = True,
 ):
     """
-    Compute the Hotspot Overlap (HO) betweem two or more hotspost. It is
-    defined as the overlaped region across a serie of hotspots.
+    Compute the Hotspot Overlap (HO) metric. HO is defined as the number of
+    atoms in hs1 in contact with hs2 plus the number of atoms in hs2 in
+    contact with hs1 divided by the total number of atoms in both hotspots.
 
     OPTIONS
-        hs_expr     a multi hotspot expression
-        output_sele output selection
-        verbose     define verbosity
+        hs1     an hotspot object
+        hs2     another hotspot object
+        radius  the distance to consider two atoms in contact (default: 2.5)
+        verbose define verbosity
     """
-    hss_l = hss.split()
-    hs0 = hss_l[0]
-    pm.select(output_sele, hs0)
-    count = 0
-    for hs in hss_l:
-        count = pm.select(output_sele, f'{output_sele} within {radius} of ({hs})')
-        if count == 0:
-            break
-    if count != 0:
-        sel = f'({hss}) within {radius} of ({output_sele})'
-        num_atoms = pm.select(output_sele, sel)
-    else:
-        num_atoms = 0
+    atoms1 = pm.get_coords(f"({hs1}) and not elem H")
+    atoms2 = pm.get_coords(f"({hs2}) and not elem H")
+    dist = distance_matrix(atoms1, atoms2) - radius <= 0
+    num_contacts1 = np.sum(np.any(dist, axis=1))
+    num_contacts2 = np.sum(np.any(dist, axis=0))
+    ho = (num_contacts1 + num_contacts2) / (len(atoms1) + len(atoms2))
     if verbose:
-        print(f' HO={num_atoms}')
-    return num_atoms
+        print(f"HO: {ho:.2f}")
+    return ho
 
 
 class ResidueSimilarityMethod(StrEnum):
@@ -866,7 +931,7 @@ def plot_heatmap(
             else:
                 match method:
                     case HeatmapFunction.HO:
-                        ret = ho(f'{obj1} {obj2}', radius=radius, verbose=False)
+                        ret = ho(obj1, obj2, radius=radius, verbose=False)
                     case HeatmapFunction.RESIDUE_JACCARD:
                         ret = res_sim(
                             obj1,
@@ -941,7 +1006,6 @@ def hs_proj(
         protein = f"{group}.protein"
 
     pm.alter(protein, "q=0")
-    print(f"({protein}) within {radius} of ({sel})")
     for prot_atom in pm.get_model(f"({protein}) within {radius} of ({sel})").atom:
         match type:
             case PrioritizationType.RESIDUE:
@@ -1278,6 +1342,8 @@ class TableWidget(QWidget):
             ("Kozakov2015", "K15"): ["Class", "S", "S0", "CD", "MD", "Length"],
             ("CS", "CS"): ["S"],
             ("ACS", "ACS"): ["Class", "S", "MD"],
+            ("Egbert2019", "E19"): ["Fpocket", "S","S0", "S1", "Length"],
+            ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"]
         }
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
