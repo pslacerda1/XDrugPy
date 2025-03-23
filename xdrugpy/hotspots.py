@@ -654,7 +654,7 @@ def ho(
     pm.select(output_sele, hs0)
     count = 0
     for hs in hss_l:
-        count = pm.select(output_sele, f'{output_sele} within 0 of ({hs})')
+        count = pm.select(output_sele, f'{output_sele} within {radius} of ({hs})')
         if count == 0:
             break
     if count != 0:
@@ -1083,6 +1083,7 @@ def plot_dendrogram(
     
     dendrogram(
         X,
+        labels=labels,
         method=linkage_method,
         color_threshold=color_threshold
     )

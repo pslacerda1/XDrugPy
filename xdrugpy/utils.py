@@ -77,7 +77,6 @@ def run_system(command):
     os.system(command)
 
 
-
 def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
     X = np.array(X)
     if ax is None:
@@ -94,13 +93,12 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         ax=ax,
         **kwargs
     )
-    if kwargs["color_threshold"] > 0:
-        if kwargs['orientation'] == 'right':
-            axline = ax.axvline
-            ticklabels = ax.get_yticklabels()
-        else:
-            axline = ax.axhline
-            ticklabels = ax.get_xticklabels()
+    if kwargs.get('orientation') == 'right':
+        axline = ax.axvline
+        ticklabels = ax.get_yticklabels()
+    else:
+        axline = ax.axhline
+        ticklabels = ax.get_xticklabels()
         axline(kwargs["color_threshold"], color="gray", ls='--')
     groups = {}
     for color, leaf in zip(dendro['leaves_color_list'], dendro['ivl']):

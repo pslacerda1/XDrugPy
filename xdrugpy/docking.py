@@ -254,6 +254,7 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         "halogen_bond",
         "metal_complex"
     ]
+    input_files = ""
     count = 0
     for idx, pose in enumerate(poses):
         if pose['mode'] > max_mode:
