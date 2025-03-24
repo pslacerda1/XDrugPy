@@ -79,7 +79,8 @@ QStandardItemModel = Qt.QtGui.QStandardItemModel
 #
 
 class BaseThread(QThread):
-    
+    vinaStarted = pyqtSignal()
+
     numSteps = pyqtSignal(int)
     incrementStep = pyqtSignal()
 
@@ -216,13 +217,17 @@ def load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode):
 
     pm.delete("*")
     pm.load(ligand_pdbqt, 'lig', multiplex=1, zoom=0)
-    pm.split_states('*')
-    pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
+    if pm.get_object_list("%lig") and  pm.count_states('%lig') == 1:
+        pass
+    else:
+        pm.set_name(f'lig_{str(mode).zfill(4)}', 'lig')
+    # pm.split_states('lig')
+    # pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
     pm.delete('lig_*')
     pm.alter('lig', 'chain="Z"')
     pm.alter('lig', 'resn="LIG"')
     pm.alter('lig', 'resi=1')
-    
+
     pm.load(receptor_pdbqt, 'prot')
     pm.save(plip_pdb, selection="*")
     
@@ -254,32 +259,35 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         "halogen_bond",
         "metal_complex"
     ]
-    input_files = ""
     count = 0
-    for idx, pose in enumerate(poses):
+    for pose in poses:
         if pose['mode'] > max_mode:
             continue
+        count += 1
+        if count > max_load:
+            break
+
+        pm.delete('%lig')
         name = pose["name"]
-        mode = str(pose["mode"])
+        mode = pose["mode"]
         in_fname = project_dir + f'/output/{name}.pdbqt'
         out_fname = TEMPDIR + f'/plip.{name}-{mode}.pdb'
         pm.load(in_fname, 'lig', multiplex=1, zoom=0)
-        if pm.count_states('lig') == 1:
+        if pm.get_object_list("%lig") and  pm.count_states('%lig') == 1:
             pass
         else:
-            pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
+            pm.set_name(f'lig_{str(mode).zfill(4)}', 'lig')
         pm.delete('lig_*')
         pm.alter('lig', 'chain="Z"')
         pm.alter('lig', 'resn="LIG"')
         pm.alter('lig', 'resi=1')
         pm.alter('lig', 'type="HETATM"')
         pm.save(out_fname, selection='*')
-        count += 1
-        if count >= max_load:
-            break
-        command = f'python -m plip.plipcmd -qs -f "{out_fname}" -x --nohydro -o "{TEMPDIR}/"'
+        
+        command = f'python -m plip.plipcmd -qs -f "{out_fname}" -x -o "{TEMPDIR}/"'
         print(f"RUNNING COMMAND: {command}")
-        proc = subprocess.run(command, cwd=TEMPDIR, shell=True)
+        subprocess.run(command, cwd=TEMPDIR, shell=True)
+
         with open(TEMPDIR + '/report.xml') as fp:
             plip = etree.parse(fp)
         for inter_type in interactions_type:
@@ -288,7 +296,6 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
             reschain = plip.xpath(f"//{inter_type}/reschain/text()")
             for inter in zip(restype, resnr, reschain):
                 interactions.append([f'{name}_m{mode}', inter_type, *inter])
-
     interactions = sorted(interactions, key=lambda i: (i[4], i[3], i[1]))
     residues_l = ['%s%s%s' % (i[2], i[3], i[4]) for i in interactions]
     interactions_l = [i[1] for i in interactions]
@@ -298,7 +305,6 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         if len([i for i in interactions if i[1] == inter_type]) == 0:
             interactions_type.remove(inter_type)
 
-
     fig, axs = plt.subplots(len(interactions_type), layout="constrained", sharex=True)
     for ax, interaction_type in zip(axs, interactions_type):
         count = {}
@@ -307,10 +313,10 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         for res, inter_type in zip(residues_l, interactions_l):
             if inter_type == interaction_type:
                 count[res] += 1
-        for res, inter_type in zip(residues_l.copy(), interactions_l.copy()):
-            if inter_type == interaction_type:
-                if count[res] == 0:
-                    del count[res]
+        # for res, inter_type in zip(residues_l.copy(), interactions_l.copy()):
+        #     if inter_type == interaction_type:
+        #         if count[res] == 0:
+        #             del count[res]
         ax.bar(count.keys(), count.values())
         ax.set_title(interaction_type)
     plt.xticks(rotation=45)
@@ -321,11 +327,9 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         'name': names_l,
         'residue': residues_l
     })
-    residues_l = list({r: None for r in residues_l})
     labels = []
     mols = []
     prev_name = None
-    
     for cur_name, cur_residues in df.groupby('name'):
         if cur_name != prev_name:
             prev_name = cur_name
@@ -606,6 +610,7 @@ def new_load_results_widget():
 ###############################################
 
 class VinaThreadDialog(QDialog):
+
     def __init__(self, *vina_args, parent=None):
         super().__init__(parent)
         self.vina = VinaThread(*vina_args)
@@ -613,7 +618,7 @@ class VinaThreadDialog(QDialog):
         
         project_dir = vina_args[0]
         self.progress_thread = ProgressThread(
-            ligands_dir="%s/ligands" % project_dir,
+            ligands_dir="%s/queue" % project_dir,
             output_dir="%s/output" % project_dir,
         )
         self.progress_thread.incrementStep.connect(self.vina.incrementStep.emit)
@@ -632,8 +637,12 @@ class VinaThreadDialog(QDialog):
         self.progress = QProgressBar()
         self.layout.addWidget(self.progress)
         self.progress.setValue(0)
-        self.vina.numSteps.connect(self.progress.setMaximum)
-        self.vina.incrementStep.connect(lambda *_: self.progress.value() + 1)
+        @self.vina.numSteps.connect
+        def numSteps(x):
+            self.progress.setMaximum(x)
+        @self.vina.incrementStep.connect
+        def incrementStep():
+            self.progress.setValue(self.progress.value() + 1)
 
         # Rich text output
         self.text = QTextEdit(self)
@@ -653,7 +662,9 @@ class VinaThreadDialog(QDialog):
 
         # Start docking
         self.vina.start()
-        self.progress_thread.start()
+        @self.vina.vinaStarted.connect
+        def vinaStarted():
+            self.progress_thread.start()
 
     def _appendHtml(self, html):
         self.text.moveCursor(QTextCursor.End)
@@ -665,6 +676,7 @@ class VinaThreadDialog(QDialog):
 
     def _abort(self):
         self.vina.terminate()
+        self.progress_thread.terminate()
         self.done(QDialog.Rejected)
 
     def _done(self, success):
@@ -695,25 +707,24 @@ class ProgressThread(QThread):
     finished = pyqtSignal()
 
     def __init__(self, ligands_dir, output_dir):
-        self.ligands_dir = ligands_dir
+        self.queue_dir = ligands_dir
         self.output_dir = output_dir
         self.ligands_done = set()
         super().__init__()
 
     def run(self):
-        num_steps = len(glob(f"{self.ligands_dir}/*.pdbqt"))
-        self.numSteps.emit(num_steps)
         while True:
             sleep(1)
-            ligands = glob(f"{self.ligands_dir}/*.pdbqt")
+            ligands = glob(f"{self.queue_dir}/*.pdbqt")
             for ligand_pdbqt in ligands:
-                lig = basename(output_pdbqt)[:-10]
+                lig = basename(ligand_pdbqt)[:-6]
                 output_pdbqt = f"{self.output_dir}/{lig}_out.pdbqt"
                 if lig not in self.ligands_done and exists(output_pdbqt):
                     self.ligands_done.add(lig)
+                    os.unlink(ligand_pdbqt)
                     self.incrementStep.emit()
-            if len(ligands) == glob(f"{self.output_dir}/*_out.dbqt"):
-                self.finished.emit()
+            # if len(ligands) == glob(f"{self.output_dir}/*_out.dbqt"):
+            #     self.finished.emit()
 
 
 class VinaThread(BaseThread):
@@ -774,26 +785,26 @@ class VinaThread(BaseThread):
         #
         # Create library
         #
-        ligands_dir = project_dir + "/queue"
+        queue_dir = project_dir + "/queue"
 
         if library:
             library_dir = LIBRARIES_DIR + '/' + library
             try:
-                if exists(ligands_dir):
-                    shutil.rmtree(ligands_dir)
+                if exists(queue_dir):
+                    shutil.rmtree(queue_dir)
             except OSError:
-                os.unlink(ligands_dir)
-            shutil.copytree(library_dir, ligands_dir)
+                os.unlink(queue_dir)
+            shutil.copytree(library_dir, queue_dir)
             self.logEvent.emit(f"""
                 <br/>
-                <br/><b>Copying stored library:</b> {library_dir}
+                <br/><b>Copied stored library:</b> {library_dir}
             """)
         elif ligands_file:
-            if exists(ligands_dir):
+            if exists(queue_dir):
                 try:
-                    shutil.rmtree(ligands_dir)
+                    shutil.rmtree(queue_dir)
                 except OSError:
-                    os.unlink(ligands_dir)
+                    os.unlink(queue_dir)
             
             #
             # Scrubbe isomers
@@ -816,14 +827,13 @@ class VinaThread(BaseThread):
                 self.done.emit(False)
                 return
 
-
             #
             # Converting to PDBQT
             #
-            if not exists(ligands_dir):
-                os.makedirs(ligands_dir)
+            if not exists(queue_dir):
+                os.makedirs(queue_dir)
             command = (
-                f'python -m meeko.cli.mk_prepare_ligand -i "{ligands_sdf}" --multimol_outdir "{ligands_dir}"'
+                f'python -m meeko.cli.mk_prepare_ligand -i "{ligands_sdf}" --multimol_outdir "{queue_dir}"'
             )
             self.logEvent.emit(
                 f"""
@@ -847,7 +857,7 @@ class VinaThread(BaseThread):
                     shutil.rmtree(library_dir)
                 except:
                     pass
-                shutil.copytree(ligands_dir, library_dir)
+                shutil.copytree(queue_dir, library_dir)
 
         #
         # Create Vina results directory
@@ -858,12 +868,10 @@ class VinaThread(BaseThread):
         except FileExistsError:
             pass
 
-        ligands_dir = f"{project_dir}/ligands"
         try:
-            os.mkdir(ligands_dir)
+            os.mkdir(queue_dir)
         except FileExistsError:
             pass
-        
         
 
         #
@@ -925,7 +933,7 @@ class VinaThread(BaseThread):
             f" --min_rmsd {min_rmsd}"
             f" --energy_range {energy_range}"
             f" --dir '{output_dir}'"
-            f" --batch '{ligands_dir}/'*.pdbqt"
+            f" --batch '{queue_dir}/'*.pdbqt"
         )
         self.logEvent.emit(f"""    
             <br/>
@@ -935,16 +943,17 @@ class VinaThread(BaseThread):
         project_file = f"{project_dir}/docking.json"
         with open(project_file, "w") as docking_file:
             json.dump(project_data, docking_file, indent=4)
-
+        
+        self.vinaStarted.emit()
         output, success = run(command)
 
         @self.finished.connect
         def finished():
             output_ligands = len(glob(f"{output_dir}/*_out.pdbqt"))
-            n_ligands = len(glob(f"{ligands_dir}/*.pdbqt"))
+            n_ligands = len(glob(f"{queue_dir}/*.pdbqt"))
             self.logEvent.emit("<br/><h2>Summary</h2>")
             summary = f"""
-                <br/><b>Total expected:</b> {n_ligands}
+                <br/><b>Total expected:</b> {n_ligands + output_ligands}
                 <br/><b>Total done:</b> {output_ligands}
             """
             if output_ligands < n_ligands:
