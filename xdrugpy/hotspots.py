@@ -343,7 +343,7 @@ def get_kozakov2015_large(group, fpo_list, clusters):
             new_name = f"{group}.K15_BL_{idx:02}"
             klass = "BL"
         if s0 >= 16 and cd >=8 and md >= 10 and sz >= 5:
-            new_name = f"{group}.K15_   DL_{idx:02}"
+            new_name = f"{group}.K15_DL_{idx:02}"
             klass = "DL"
         else:
             continue
@@ -434,12 +434,20 @@ def load_ftmap(
     pm.color("orange", f"{group}.ACS_aromatic_*")
     pm.color("yellow", f"{group}.ACS_apolar_*")
 
-    pm.disable(f"{group}.CS_*")
     pm.show("line", f"{group}.CS_*")
-    pm.disable(f"{group}.fpocket_*")
+    pm.show("spheres", f"{group}.fpocket_*")
+    pm.set("sphere_scale", 0.25, f"{group}.fpocket_*")
+    pm.color("white", f"{group}.fpocket_*")
 
+    pm.disable(f"{group}.CS_*")
+    pm.disable(f"{group}.fpocket_*")
+    
     pm.set("mesh_mode", 1)
     pm.orient("all")
+
+    pm.order(f"{group}.fpocket_*", location="top")
+    pm.order(f"{group}.K15_*", location="top")
+    pm.order(f"{group}.protein", location="top")
 
     ret = SimpleNamespace(
         clusters=clusters,
