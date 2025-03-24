@@ -363,6 +363,7 @@ def get_kozakov2015_large(group, fpo_list, clusters):
             "CD": round(cd, 2),
             "MD": round(md, 2),
             "Length": len(pocket_clusters),
+            "Fpocket": pocket.selection
         })
 
         if hs.kozakov_class:
@@ -1420,7 +1421,7 @@ class TableWidget(QWidget):
         layout.addWidget(tab)
 
         self.hotspotsMap = {
-            ("Kozakov2015", "K15"): ["Class", "S", "S0", "CD", "MD", "Length"],
+            ("Kozakov2015", "K15"): ["Class", "S", "S0", "CD", "MD", "Length", "Fpocket"],
             ("CS", "CS"): ["S"],
             ("ACS", "ACS"): ["Class", "S", "MD"],
             ("Egbert2019", "E19"): ["Fpocket", "S","S0", "S1", "Length"],
