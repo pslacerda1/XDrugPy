@@ -27,7 +27,7 @@ from lxml import etree
 from matplotlib import pyplot as plt
 from scipy.spatial.distance import euclidean
 
-from .utils import LIBRARIES_DIR, TEMPDIR, run, dendrogram
+from .utils import LIGAND_LIBRARIES_DIR, TEMPDIR, run, dendrogram, RECEPTOR_LIBRARIES_DIR
 
 
 QWidget = Qt.QtWidgets.QWidget
@@ -245,7 +245,7 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
     poses = list(sorted(poses, key=lambda p: p['affinity']))
     pm.set('pdb_conect_all', 'off')
     pm.delete('prot')
-    fname = f"{project_dir}/receptor.pdb"
+    fname = f"{project_dir}/receptor.pdbqt"
     pm.load(fname, 'prot')
     pm.alter('prot', "type='ATOM'")
     interactions = []
@@ -723,8 +723,8 @@ class ProgressThread(QThread):
                     self.ligands_done.add(lig)
                     os.unlink(ligand_pdbqt)
                     self.incrementStep.emit()
-            # if len(ligands) == glob(f"{self.output_dir}/*_out.dbqt"):
-            #     self.finished.emit()
+            if len(ligands) == glob(f"{self.output_dir}/*_out.dbqt"):
+                self.finished.emit()
 
 
 class VinaThread(BaseThread):
@@ -732,6 +732,7 @@ class VinaThread(BaseThread):
         (
             project_dir,
             ligands_file,
+            saved_receptor,
             receptor_sel,
             box_sel,
             box_margin,
@@ -762,33 +763,83 @@ class VinaThread(BaseThread):
         #
         # Prepare receptor
         #
-        receptor_pdb = f"{project_dir}/receptor.pdb"
+        receptor_lib = RECEPTOR_LIBRARIES_DIR + saved_receptor + '.pdbqt'
         receptor_pdbqt = f"{project_dir}/receptor.pdbqt"
-        pm.save(receptor_pdb, receptor_sel)
-        command = (
-            f'python -m meeko.cli.mk_prepare_receptor --read_pdb "{receptor_pdb}" -p "{receptor_pdbqt}"'
-        )
-        if allow_errors:
-            command = f"{command} -a"
-        self.logEvent.emit(f"""
-            <br/>
-            <br/><b>Preparing receptor.</b>
-            <br/><b>Command:</b> {command}
-            <br/>
-        """)
-        output, success = run(command)
-        self.logCodeEvent.emit(output)
-        if not success:
-            self.done.emit(False)
-            return
-
+        receptor_pdb = f"{project_dir}/receptor.pdb"
+        if saved_receptor and exists(receptor_lib):
+            shutil.copy(receptor_lib, receptor_pdbqt)
+            self.logEvent.emit(f"""
+                <br/>
+                <br/><b>Recovered stored receptor:</b> {receptor_lib}
+            """)
+            
+        else:
+            pm.save(receptor_pdb, receptor_sel)
+            command = (
+                f'python -m meeko.cli.mk_prepare_receptor --read_pdb "{receptor_pdb}" -p "{receptor_pdbqt}"'
+            )
+            if allow_errors:
+                command = f"{command} -a"
+            self.logEvent.emit(f"""
+                <br/>
+                <br/><b>Preparing receptor.</b>
+                <br/><b>Command:</b> {command}
+                <br/>
+            """)
+            output, success = run(command)
+            self.logCodeEvent.emit(output)
+            if not success:
+                self.done.emit(False)
+                return
+            
+            if saved_receptor:
+                shutil.copy(receptor_pdbqt, receptor_lib)   
         #
-        # Create library
+        # Compute box variables
+        #
+        box_lib = RECEPTOR_LIBRARIES_DIR + '/' + saved_receptor + '.box'
+        if saved_receptor and exists(box_lib):
+            with open(box_lib) as box_file:
+                size = box_file.readline().split()
+                size_x, size_y, size_z = map(float, size)
+                
+                center = box_file.readline().split()
+                center_x, center_y, center_z = map(float, center)
+            
+        else:
+
+            box_coords = pm.get_coords(box_sel)
+
+            max = np.max(box_coords, axis=0)
+            min = np.min(box_coords, axis=0)
+
+            half_size = (max - min) / 2
+            center = min + half_size
+
+            size_x, size_y, size_z = (half_size + box_margin) * 2
+            center_x, center_y, center_z = center
+
+            size_x, size_y, size_z = (
+                round(float(size_x), 2),
+                round(float(size_y), 2),
+                round(float(size_z), 2),
+            )
+
+            center_x, center_y, center_z = (
+                round(float(center_x), 2),
+                round(float(center_y), 2),
+                round(float(center_z), 2),
+            )
+            with open(box_lib, 'w') as box_file:
+                box_file.write(f"{size_x} {size_y} {size_z}\n")
+                box_file.write(f"{center_x} {center_y} {center_z}")
+        #
+        # Prepare ligands
         #
         queue_dir = project_dir + "/queue"
 
         if library:
-            library_dir = LIBRARIES_DIR + '/' + library
+            library_dir = LIGAND_LIBRARIES_DIR + '/' + library
             try:
                 if exists(queue_dir):
                     shutil.rmtree(queue_dir)
@@ -797,7 +848,7 @@ class VinaThread(BaseThread):
             shutil.copytree(library_dir, queue_dir)
             self.logEvent.emit(f"""
                 <br/>
-                <br/><b>Copied stored library:</b> {library_dir}
+                <br/><b>Recovered stored library:</b> {library_dir}
             """)
         elif ligands_file:
             if exists(queue_dir):
@@ -848,7 +899,7 @@ class VinaThread(BaseThread):
 
             if save_library_check:
                 library_dir = splitext(basename(ligands_file))[0]
-                library_dir = LIBRARIES_DIR + '/' + library_dir
+                library_dir = LIGAND_LIBRARIES_DIR + '/' + library_dir
                 self.logEvent.emit(f"""
                     <br/>
                     <br/><b>Storing compound library at:</b> {library_dir}
@@ -859,6 +910,7 @@ class VinaThread(BaseThread):
                     pass
                 shutil.copytree(queue_dir, library_dir)
 
+        self.numSteps.emit(len(os.listdir(queue_dir)))
         #
         # Create Vina results directory
         #
@@ -873,32 +925,6 @@ class VinaThread(BaseThread):
         except FileExistsError:
             pass
         
-
-        #
-        # Compute box variables
-        #
-        box_coords = pm.get_coords(box_sel)
-
-        max = np.max(box_coords, axis=0)
-        min = np.min(box_coords, axis=0)
-
-        half_size = (max - min) / 2
-        center = min + half_size
-
-        size_x, size_y, size_z = (half_size + box_margin) * 2
-        center_x, center_y, center_z = center
-
-        size_x, size_y, size_z = (
-            round(float(size_x), 2),
-            round(float(size_y), 2),
-            round(float(size_z), 2),
-        )
-
-        center_x, center_y, center_z = (
-            round(float(center_x), 2),
-            round(float(center_y), 2),
-            round(float(center_z), 2),
-        )
         
         project_file = project_dir + "/docking.json"
         project_data = {
@@ -995,16 +1021,23 @@ def new_run_docking_widget():
     widget.setLayout(layout)
     dockWidget.setWidget(widget)
 
+    ##########################################
+    # RECEPTOR OPTIONS
     #
-    # Scoring function
-    #
-    function = QComboBox(widget)
-    function.addItems(["vina", "vinardo"])
+    # TAB 1
 
     #
     # Receptor selection
     #
+    tab_receptor = QTabWidget()
+
+    tab1_widget = QWidget()
+    tab1_layout = QFormLayout(tab1_widget)
+    tab1_widget.setLayout(tab1_layout)
+    tab_receptor.addTab(tab1_widget, "New receptor")
+
     receptor_sel = PyMOLComboObjectBox("polymer")
+    tab1_layout.addRow("Receptor:", receptor_sel)
 
     @receptor_sel.currentTextChanged.connect
     def validate(text):
@@ -1028,7 +1061,8 @@ def new_run_docking_widget():
     # Box selection
     #
     box_sel = PyMOLComboObjectBox("polymer")
-
+    tab1_layout.addRow("Box:", box_sel)
+    
     @box_sel.currentTextChanged.connect
     def validate(text):
         validate_box_sel()
@@ -1048,43 +1082,143 @@ def new_run_docking_widget():
         display_box_sel("box", text, box_margin_spin.value())
         box_sel.setPalette(palette)
         return True
-
-    #
-    # Miscellaneous options
-    #
+        
     box_margin_spin = QDoubleSpinBox(widget)
     box_margin_spin.setRange(0.0, 10.0)
     box_margin_spin.setValue(3.0)
     box_margin_spin.setSingleStep(0.1)
     box_margin_spin.setDecimals(1)
+    tab1_layout.addRow("Box margin:", box_margin_spin)
+
     @box_margin_spin.valueChanged.connect
     def display_box(margin):
         pm.delete("box")
         display_box_sel("box", box_sel.currentText(), margin)
 
+
     allow_errors_check = QCheckBox(widget)
     allow_errors_check.setChecked(False)
+    tab1_layout.addRow("Allow Meeko errors:", allow_errors_check)
+
+    saved_receptor_line = QLineEdit()
+    saved_receptor_line.setPlaceholderText("set a title to save")
+    tab1_layout.addRow("Store receptor:", saved_receptor_line)
+
+    #
+    # TAB 2
+    #
+    rec_tab2_widget = QWidget()
+    rec_tab2_layout = QFormLayout(rec_tab2_widget)
+    rec_tab2_widget.setLayout(rec_tab2_layout)
+    tab_receptor.addTab(rec_tab2_widget, "Stored receptor")
+
+
+    tab_rec_idx = 0
+    rec_library_combo = QComboBox()
+    rec_library_combo.addItems(os.listdir(RECEPTOR_LIBRARIES_DIR))
+    rec_tab2_layout.addRow("Library:", rec_library_combo)
+    @tab_receptor.currentChanged.connect
+    def tab_changed(idx):
+        nonlocal tab_rec_idx
+        tab_rec_idx = idx
+        if idx == 1:
+            rec_library_combo.clear()
+            for lib_fname in os.listdir(RECEPTOR_LIBRARIES_DIR):
+                if lib_fname.endswith(".box"):
+                    continue
+                recetor_lib = lib_fname[:-6]
+                rec_library_combo.addItem(recetor_lib)
+    
+
+    ##########################################
+    # LIGAND OPTIONS
+    #
+    # TAB 1
+    # Choose ligand files
+    #
+    tab_ligand = QTabWidget()
+    
+    tab1_widget = QWidget()
+    tab1_layout = QFormLayout(tab1_widget)
+    tab1_widget.setLayout(tab1_layout)
+    tab_ligand.addTab(tab1_widget, "New library")
+
+    ligands_file = None
+    ligands_button = QPushButton("Choose file...", widget)
+    tab1_layout.addRow("Ligand file:", ligands_button)
 
     ph_spin = QDoubleSpinBox(widget)
     ph_spin.setRange(0.0, 14.0)
     ph_spin.setValue(7.0)
     ph_spin.setSingleStep(0.1)
     ph_spin.setDecimals(1)
+    tab1_layout.addRow("Ligands pH:", ph_spin)
+
+    @ligands_button.clicked.connect
+    def choose_ligands():
+        nonlocal ligands_file
+        ligands_file = str(
+            QFileDialog.getOpenFileName(
+                ligands_button, "Ligand files", expanduser("~"), "Molecular ligand files (*.smi *.sdf *.mol *.mol2)"
+            )[0]
+        )
+        if not ligands_file:
+            return
+        ligands_button.setText(basename(ligands_file))
+
+
+    #
+    # Molecular library
+    #
+    save_library_check = QCheckBox()
+    save_library_check.setChecked(False)
+    tab1_layout.addRow("Store library:", save_library_check)
+
+
+    #
+    # TAB 2
+    # Choose ligand library
+    #
+
+    lig_tab2_widget = QWidget()
+    lig_tab2_layout = QFormLayout(lig_tab2_widget)
+    lig_tab2_widget.setLayout(lig_tab2_layout)
+    tab_ligand.addTab(lig_tab2_widget, "Stored library")
+
+    tab_lig_idx = 0
+    library_combo = QComboBox()
+    library_combo.addItems(os.listdir(LIGAND_LIBRARIES_DIR))
+    lig_tab2_layout.addRow("Library:", library_combo)
+    @tab_ligand.currentChanged.connect
+    def tab_changed(idx):
+        nonlocal tab_lig_idx
+        tab_lig_idx = idx
+        if idx == 1:
+            library_combo.clear()
+            library_combo.addItems(os.listdir(LIGAND_LIBRARIES_DIR))
+
+    ##########################################
+
+    #
+    # Scoring function
+    #
+    function = QComboBox(widget)
+    function.addItems(["vina", "vinardo"])
 
     exhaustiveness_spin = QSpinBox(widget)
     exhaustiveness_spin.setRange(1, 50)
     exhaustiveness_spin.setValue(8)
 
     num_modes_spin = QSpinBox(widget)
-    num_modes_spin.setRange(1, 50)
-    num_modes_spin.setValue(9)
+    num_modes_spin.setRange(1, 100)
+    num_modes_spin.setValue(3)
 
     min_rmsd_spin = QDoubleSpinBox(widget)
     min_rmsd_spin.setRange(0.0, 3.0)
     min_rmsd_spin.setValue(1.0)
 
     energy_range_spin = QDoubleSpinBox(widget)
-    energy_range_spin.setRange(1.0, 10.0)
+    energy_range_spin.setRange(0, 10.0)
     energy_range_spin.setValue(3.0)
 
     cpu_count = QThread.idealThreadCount()
@@ -1096,56 +1230,8 @@ def new_run_docking_widget():
     seed_spin.setRange(1, 10000)
     seed_spin.setValue(1)
 
-    tab = QTabWidget()
-
-    tab1_widget = QWidget()
-    tab1_layout = QFormLayout(tab1_widget)
-    tab1_widget.setLayout(tab1_layout)
-    tab.addTab(tab1_widget, "New library")
-    
     #
-    # Choose ligand files and run docking
-    #
-    ligands_file = None
-    ligands_button = QPushButton("Choose file...", widget)
-    tab1_layout.addRow("Ligand file:", ligands_button)
-
-    @ligands_button.clicked.connect
-    def choose_ligands():
-        nonlocal ligands_file
-        ligands_file = str(
-            QFileDialog.getOpenFileName(
-                ligands_button, "Ligand files", expanduser("~"), "SMILES (*.smi);;SDF (*.sdf);;MOL (*.mol *.mol2)"
-            )[0]
-        )
-        if not ligands_file:
-            return
-        ligands_button.setText(basename(ligands_file))
-    #
-    # Molecular library
-    #
-    save_library_check = QCheckBox()
-    save_library_check.setChecked(False)
-    tab1_layout.addRow("Store library:", save_library_check)
-
-    tab2_widget = QWidget()
-    tab2_layout = QFormLayout(tab2_widget)
-    tab2_widget.setLayout(tab2_layout)
-    tab.addTab(tab2_widget, "Stored library")
-
-    tab_idx = 0
-    library_combo = QComboBox()
-    library_combo.addItems(os.listdir(LIBRARIES_DIR))
-    tab2_layout.addRow("Library:", library_combo)
-    @tab.currentChanged.connect
-    def tab_changed(idx):
-        nonlocal tab_idx
-        tab_idx = idx
-        if idx == 1:
-            library_combo.clear()
-            library_combo.addItems(os.listdir(LIBRARIES_DIR))
-    #
-    # Choose output folder
+    # Choose  output folder
     #
     project_dir = None
     results_button = QPushButton("Choose folder...", widget)
@@ -1168,23 +1254,33 @@ def new_run_docking_widget():
     button = QPushButton("Run", widget)
     @button.clicked.connect
     def run():
-        if not (validate_receptor_sel() & validate_box_sel()):
-            return
-        if not (project_dir):
-            return
         nonlocal ligands_file
+
+        if not project_dir:
+            return
+        
+        if tab_rec_idx == 0:
+            if not (validate_receptor_sel() & validate_box_sel()):
+                return
+            receptor_lib = saved_receptor_line.text().strip()
+                
+        elif tab_rec_idx == 1:
+            receptor_lib = rec_library_combo.currentText()
+        
         library = library_combo.currentText().strip()
-        if tab_idx == 0:
+        if tab_lig_idx == 0:
             if not ligands_file:
                 return
             library = None
-        elif tab_idx == 1:
+        elif tab_lig_idx == 1:
             if not library:
                 return
             ligands_file = None
+
         dialog = VinaThreadDialog(
             project_dir,
             ligands_file,
+            receptor_lib,
             receptor_sel.currentText(),
             box_sel.currentText(),
             box_margin_spin.value(),
@@ -1202,27 +1298,36 @@ def new_run_docking_widget():
         )
         dialog.exec_()
 
-    horizontal_line = QFrame()
-    horizontal_line.setFrameShape(QFrame.HLine)
-    horizontal_line.setFrameShadow(QFrame.Sunken)
+    horizontal_line1 = QFrame()
+    horizontal_line1.setFrameShape(QFrame.HLine)
+    horizontal_line1.setFrameShadow(QFrame.Sunken)
+
+    horizontal_line2 = QFrame()
+    horizontal_line2.setFrameShape(QFrame.HLine)
+    horizontal_line2.setFrameShadow(QFrame.Sunken)
+
+    horizontal_line3 = QFrame()
+    horizontal_line3.setFrameShape(QFrame.HLine)
+    horizontal_line3.setFrameShadow(QFrame.Sunken)
 
     #
     # setup layout
     #
+    layout.setWidget(1, QFormLayout.SpanningRole, tab_receptor)
+    layout.setWidget(2, QFormLayout.SpanningRole, horizontal_line1)
+
+    layout.setWidget(3, QFormLayout.SpanningRole, tab_ligand)
+    layout.setWidget(4, QFormLayout.SpanningRole, horizontal_line2)
+
     layout.addRow("Function:", function)
-    layout.addRow("Receptor:", receptor_sel)
-    layout.addRow("Box:", box_sel)
-    layout.addRow("Box margin:", box_margin_spin)
-    layout.addRow("Allow Meeko errors:", allow_errors_check)
-    layout.addRow("Ligand pH:", ph_spin)
     layout.addRow("Exhaustiveness:", exhaustiveness_spin)
     layout.addRow("Number of modes:", num_modes_spin)
     layout.addRow("Minimum RMSD:", min_rmsd_spin)
     layout.addRow("Energy range:", energy_range_spin)
     layout.addRow("Number of CPUs:", cpu_spin)
     layout.addRow("Seed number:", seed_spin)
-    layout.setWidget(14, QFormLayout.SpanningRole, tab)
-    layout.setWidget(15, QFormLayout.SpanningRole, horizontal_line)
+    
+    layout.setWidget(12, QFormLayout.SpanningRole, horizontal_line3)
     layout.addRow("Output folder:", results_button)
     layout.addWidget(button)
     widget.setLayout(layout)

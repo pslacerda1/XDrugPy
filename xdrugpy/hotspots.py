@@ -733,7 +733,7 @@ def fp_sim(
             ax.bar(np.arange(len(fp)), fp)
             ax.set_title(hs)
             ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-            ax.set_xticks(np.arange(len(fp)), labels=labels, rotation=45)
+            ax.set_xticks(np.arange(len(fp)), labels=labels, rotation=90)
             ax.locator_params(axis="x", tight=True, nbins=nbins)
             for label in ax.xaxis.get_majorticklabels():
                 label.set_horizontalalignment("right")
@@ -770,7 +770,7 @@ def fp_sim(
                 method=linkage_method,
                 labels=hotspots,
                 ax=ax,
-                leaf_rotation=45,
+                leaf_rotation=90,
                 color_threshold=0,
             )   
             for label in ax.xaxis.get_majorticklabels():
@@ -1042,7 +1042,7 @@ def plot_heatmap(
         vmax=1,
         ax=ax,
     )
-    plt.xticks(rotation=45)
+    plt.xticks(rotation=90)
     for label in ax.xaxis.get_majorticklabels():
         label.set_horizontalalignment("right")
 
@@ -1102,9 +1102,7 @@ def hs_proj(
 @declare_command
 def plot_dendrogram(
     exprs: Selection,
-    com_weight: float = 1,
     residue_radius: int = 4,
-    residue_weight: float = 1,
     residue_align: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: bool = -1,
@@ -1147,27 +1145,27 @@ def plot_dendrogram(
                 + (p1[1] - p2[1]) ** 2
                 + (p1[2] - p2[2]) ** 2
                 + (p1[3] - p2[3]) ** 2
-                + com_weight * (p1[4] - p2[4]) ** 2
-                + com_weight * (p1[5] - p2[5]) ** 2
-                + com_weight * (p1[6] - p2[6]) ** 2
-                + residue_weight * (1 - j) ** 2
+                + (p1[4] - p2[4]) ** 2
+                + (p1[5] - p2[5]) ** 2
+                + (p1[6] - p2[6]) ** 2
+                + (1 - j) ** 2
             )
-        elif hs_type == "CS":
+        elif "CS":
             return np.sqrt(
                 (p1[0] - p2[0]) ** 2
-                + com_weight * (p1[1] - p2[1]) ** 2
-                + com_weight * (p1[2] - p2[2]) ** 2
-                + com_weight * (p1[3] - p2[3]) ** 2
-                + residue_weight * (1 - j) ** 2
+                + (p1[1] - p2[1]) ** 2
+                + (p1[2] - p2[2]) ** 2
+                + (p1[3] - p2[3]) ** 2
+                + (1 - j) ** 2
             )
         elif hs_type == "ACS":
             return np.sqrt(
                 (p1[0] - p2[0]) ** 2
                 + (p1[1] - p2[1]) ** 2
-                + com_weight * (p1[2] - p2[2]) ** 2
-                + com_weight * (p1[3] - p2[3]) ** 2
-                + com_weight * (p1[4] - p2[4]) ** 2
-                + residue_weight * (1 - j) ** 2
+                + (p1[2] - p2[2]) ** 2
+                + (p1[3] - p2[3]) ** 2
+                + (p1[4] - p2[4]) ** 2
+                + (1 - j) ** 2
             )
 
     object_list = []
@@ -1206,7 +1204,7 @@ def plot_dendrogram(
             
             p1 = p[idx1, :]
             p2 = p[idx2, :]
-            if residue_weight != 0:
+            if residue_align:
                 j = res_sim(
                     obj1,
                     obj2,
@@ -1223,8 +1221,10 @@ def plot_dendrogram(
         X,
         labels=labels,
         method=linkage_method,
+        leaf_rotation=90,
         color_threshold=color_threshold
     )
+    plt.tight_layout()
     plt.show()
 
 @declare_command
@@ -1312,7 +1312,7 @@ class LoadWidget(QWidget):
         boxLayout.addRow("Max length:", self.maxLengthSpin)
 
         self.runFpocketCheck = QCheckBox()
-        self.runFpocketCheck.setChecked(True)
+        self.runFpocketCheck.setChecked(False)
         boxLayout.addRow("Run Fpocket:", self.runFpocketCheck)
 
     def pickFile(self):
@@ -1551,27 +1551,11 @@ class SimilarityWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.comWeightSpin = QDoubleSpinBox()
-        self.comWeightSpin.setValue(1.0)
-        self.comWeightSpin.setSingleStep(0.1)
-        self.comWeightSpin.setDecimals(1)
-        self.comWeightSpin.setMinimum(0)
-        self.comWeightSpin.setMaximum(20)
-        boxLayout.addRow("COM weight:", self.comWeightSpin)
-
         self.residueRadiusSpin = QSpinBox()
         self.residueRadiusSpin.setValue(4)
         self.residueRadiusSpin.setMinimum(3)
         self.residueRadiusSpin.setMaximum(5)
         boxLayout.addRow("Residue radius:", self.residueRadiusSpin)
-
-        self.residueWeightSpin = QDoubleSpinBox()
-        self.residueWeightSpin.setValue(1.0)
-        self.residueWeightSpin.setSingleStep(0.1)
-        self.residueWeightSpin.setDecimals(1)
-        self.residueWeightSpin.setMinimum(0)
-        self.residueWeightSpin.setMaximum(20)
-        boxLayout.addRow("Residue weight:", self.residueWeightSpin)
 
         self.resiudeAlignCheck = QCheckBox()
         self.resiudeAlignCheck.setChecked(True)
@@ -1603,18 +1587,14 @@ class SimilarityWidget(QWidget):
 
     def plot_dendrogram(self):
         expression = self.hotspotExpressionLine.text()
-        com_weight = self.comWeightSpin.value()
         residue_radius = self.residueRadiusSpin.value()
-        residue_weight = self.residueWeightSpin.value()
         residue_align = self.resiudeAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
 
         plot_dendrogram(
             expression,
-            com_weight,
             residue_radius,
-            residue_weight,
             residue_align,
             linkage_method,
             color_threshold,

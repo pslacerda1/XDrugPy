@@ -18,15 +18,15 @@ RESOURCES_DIR = QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocat
 if not exists(RESOURCES_DIR):
     os.makedirs(RESOURCES_DIR)
 
-LIBRARIES_DIR = RESOURCES_DIR + '/libs/ligands/'
-if not exists(LIBRARIES_DIR):
-    os.makedirs(LIBRARIES_DIR)
+LIGAND_LIBRARIES_DIR = RESOURCES_DIR + '/libs/ligands/'
+if not exists(LIGAND_LIBRARIES_DIR):
+    os.makedirs(LIGAND_LIBRARIES_DIR)
 
-MAPS_DIR = RESOURCES_DIR + '/libs/maps/'
-if not exists(MAPS_DIR):
-    os.makedirs(MAPS_DIR)
+RECEPTOR_LIBRARIES_DIR = RESOURCES_DIR + '/libs/receptors/'
+if not exists(RECEPTOR_LIBRARIES_DIR):
+    os.makedirs(RECEPTOR_LIBRARIES_DIR)
 
-TEMPDIR = mkdtemp(prefix='runvina-')
+TEMPDIR = mkdtemp(prefix='XDrugPy-')
 def clear_temp():
     rmtree(TEMPDIR)
 atexit.register(clear_temp)
@@ -91,6 +91,7 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         Z,
         labels=labels,
         ax=ax,
+        distance_sort=True,
         **kwargs
     )
     if kwargs.get('orientation') == 'right':
