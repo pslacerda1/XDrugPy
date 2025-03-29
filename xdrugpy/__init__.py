@@ -68,10 +68,7 @@ except ImportError:
         " https://github.com/pslacerda/molscrub/archive/refs/heads/windows.exe.zip"
         " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
     )
-try:
-    import lxml
-except:
-    
+
 
 #
 # INITIALIZE THE PLUGIN
