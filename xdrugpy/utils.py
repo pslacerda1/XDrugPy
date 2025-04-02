@@ -1,14 +1,11 @@
 import subprocess
 import os
 import atexit
-import scipy.cluster.hierarchy as sch
 import numpy as np
-from scipy.spatial.distance import squareform
 from shutil import rmtree
 from tempfile import mkdtemp
 from pymol import Qt
 from os.path import exists
-from matplotlib import pyplot as plt
 
 
 QStandardPaths = Qt.QtCore.QStandardPaths
@@ -78,6 +75,10 @@ def run_system(command):
 
 
 def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
+    from scipy.spatial.distance import squareform
+    import scipy.cluster.hierarchy as sch
+    from matplotlib import pyplot as plt
+
     X = np.array(X)
     if ax is None:
         _, ax = plt.subplots()
@@ -91,7 +92,6 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         Z,
         labels=labels,
         ax=ax,
-        distance_sort=True,
         **kwargs
     )
     if kwargs.get('orientation') == 'right':
@@ -129,3 +129,6 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         for color, leaf in medoids.items():
             if label.get_text() == leaf:
                 label.set_color(color)
+    plt.tight_layout()
+    plt.show()
+    return dendro
