@@ -221,12 +221,8 @@ def load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode):
         pass
     else:
         pm.set_name(f'lig_{str(mode).zfill(4)}', 'lig')
-    # pm.split_states('lig')
-    # pm.set_name(f'lig_{mode.zfill(4)}', 'lig')
     pm.delete('lig_*')
-    pm.alter('lig', 'chain="Z"')
-    pm.alter('lig', 'resn="LIG"')
-    pm.alter('lig', 'resi=1')
+    pm.alter('lig', 'chain="Z"; resn="LIG"; resi=1')
 
     pm.load(receptor_pdbqt, 'prot')
     pm.save(plip_pdb, selection="*")
@@ -366,7 +362,6 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         labels=labels,
         orientation='right',
         color_threshold=-1,
-        distance_sort=True,
         ax=ax
     )
     ax.set_xlim(0)
@@ -624,8 +619,6 @@ class VinaThreadDialog(QDialog):
         @self.progress_thread.incrementStep.connect
         def vinaIncrementStep(x):
             self.vina.incrementStep.emit(x)
-
-
         
         @self.vina.numSteps.connect
         def vinaNumSteps(x):
@@ -767,11 +760,12 @@ class VinaThread(BaseThread):
         
         try:
             os.mkdir(output_dir)
-        except FileExistsError:
+        except FileExistsError | Exception:
             pass
+        
         try:
             os.mkdir(queue_dir)
-        except FileExistsError:
+        except FileExistsError | Exception:
             pass
 
         if exists(project_file) and continuation:
@@ -998,7 +992,15 @@ class VinaThread(BaseThread):
         self.incrementStep.emit(len(os.listdir(output_dir)))
         self.vinaStarted.emit()
         output, success = run(vina_command)
-
+        if not success:
+            self.logEvent.emit("""
+                <br/>
+                <br/>
+                <font color="red">
+                    <b>Failure on docking. Outputing on the last chunks.</b>
+                </font> 
+            """)
+            self.logCodeEvent.emit(output[-2048:])
         @self.finished.connect
         def finished():
             output_ligands = len(glob(f"{output_dir}/*_out.pdbqt"))
