@@ -143,8 +143,63 @@ def get_clusters():
 def set_properties(obj, obj_name, properties):
     for prop, value in properties.items():
         pm.set_property(prop, value, obj_name)
+        pm.set_atom_property(prop, value, obj_name)
         setattr(obj, prop, value)
 
+
+def expression_selector(exprs):
+    objects = set()
+    for expr in exprs.split(';'):
+        objects1 = set()
+        objects2 = set()
+        eq_true = set()
+        eq_false = set()
+        count_objects = 0
+        for part in expr.split():
+            for obj in pm.get_names("objects"):
+                if fnmatch(obj, part):
+                    objects1.add(obj)
+                    count_objects += 1
+                else:
+                    match = re.match(r'(Class|S|S0|S1|CD|MD)\s*(>=|<=|==|!=|>|<)\s*(.*)', part)
+                    if match:
+                        m_prop = match.groups()[0]
+                        atom_data = []
+                        pm.iterate(
+                            obj,
+                            "atom_data.append((p.Class, p.S, p.S0, p.S1, p.CD, p.MD))",
+                            space={"atom_data": atom_data}
+                        )
+                        if atom_data[0][0] is None:
+                            continue
+
+                        value = match.groups()[2]
+                        def convert_type(value):
+                            try:
+                                return int(value)
+                            except:
+                                try:
+                                    return float(value)
+                                except:
+                                    return f"'{value}'"
+                        
+                        op = match.groups()[1]
+                        props = ['Class','S','S0','S1','CD','MD']
+                        props = atom_data[0][props.index(m_prop)]
+                        props = convert_type(props)
+                        value = convert_type(value)
+                        if eval(f"{props}{op}{value}"):
+                            eq_true.add(obj)
+                        else:
+                            eq_false.add(obj)
+        objects2 = eq_true.difference(eq_false)
+        if count_objects == 0:
+            objects1 = set(pm.get_names("objects"))
+        if not objects2:
+            objects2 = objects1
+        else:
+            objects = (objects1.intersection(objects2))
+    return objects
 
 def get_kozakov2015(group, clusters, max_length):
     k15 = []
@@ -316,7 +371,6 @@ def get_kozakov2015_large(group, fpo_list, clusters):
         objs = pm.get_object_list(sel)
         if len(objs) == 0:
             continue
-        # breakpoint()
         pocket_clusters = [c for c in clusters if c.selection in objs]
         i_s0 = np.argmax(c.strength for c in pocket_clusters)
         s0 = pocket_clusters[i_s0].strength
@@ -1416,7 +1470,16 @@ class TableWidget(QWidget):
 
         layout = QVBoxLayout()
         self.setLayout(layout)
+        
+        filter_line = QLineEdit()
+        layout.addWidget(filter_line)
 
+        @filter_line.textEdited.connect
+        def textEdited(text):
+            if not text.strip():
+                return
+            self.selected_objs = expression_selector(text)
+            self.refresh()
         tab = QTabWidget()
         layout.addWidget(tab)
 
@@ -1451,9 +1514,14 @@ class TableWidget(QWidget):
 
             # append new rows
             for obj in pm.get_object_list():
-                obj_type = pm.get_property("Type", obj)
+                if not pm.get_property_list(obj):
+                    continue
+                obj_type = pm.get_property('Type', obj)
                 if obj_type == key:
-                    self.appendRow(title, key, obj)
+                    if not self.selected_objs:
+                        self.appendRow(title, key, obj)
+                    elif obj in self.selected_objs:
+                        self.appendRow(title, key, obj)
 
             self.tables[title].setSortingEnabled(True)
 

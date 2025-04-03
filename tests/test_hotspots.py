@@ -1,7 +1,7 @@
 import os.path
 from glob import glob
 from pymol import cmd as pm
-from xdrugpy.hotspots import load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_dendrogram
+from xdrugpy.hotspots import load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic, expression_selector
 
 
 pkg_data = os.path.dirname(__file__) + '/data'
@@ -27,3 +27,17 @@ def test_eftmap_overlap():
     deloc_contacts = eftmap_overlap('ligand', 'p38_1R39.ACS_aromatic_*')
     assert deloc_contacts == 12
 
+
+def test_selector():
+    load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
+    expr = '*K15_D_* S0>20'
+    assert len(expression_selector(expr)) == 0
+
+    expr = "* MD>=14"
+    assert len(expression_selector(expr)) == 5
+
+    expr = "MD<14 S0>=16"
+    assert len(expression_selector(expr)) == 1
+    
+    expr = "MD>14 S0>=16 ; Class==B"
+    assert len(expression_selector(expr)) == 3
