@@ -147,58 +147,57 @@ def set_properties(obj, obj_name, properties):
         setattr(obj, prop, value)
 
 
-def expression_selector(exprs):
+def expression_selector(expr):
     objects = set()
-    for expr in exprs.split(';'):
-        objects1 = set()
-        objects2 = set()
-        eq_true = set()
-        eq_false = set()
-        count_objects = 0
-        for part in expr.split():
-            for obj in pm.get_names("objects"):
-                if fnmatch(obj, part):
-                    objects1.add(obj)
-                    count_objects += 1
-                else:
-                    match = re.match(r'(Class|S|S0|S1|CD|MD)\s*(>=|<=|==|!=|>|<)\s*(.*)', part)
-                    if match:
-                        m_prop = match.groups()[0]
-                        atom_data = []
-                        pm.iterate(
-                            obj,
-                            "atom_data.append((p.Class, p.S, p.S0, p.S1, p.CD, p.MD))",
-                            space={"atom_data": atom_data}
-                        )
-                        if atom_data[0][0] is None:
-                            continue
+    objects1 = set()
+    objects2 = set()
+    eq_true = set()
+    eq_false = set()
+    count_objects = 0
+    for part in expr.split():
+        for obj in pm.get_names("objects"):
+            if fnmatch(obj, part):
+                objects1.add(obj)
+                count_objects += 1
+            else:
+                match = re.match(r'(Class|S|S0|S1|CD|MD)\s*(>=|<=|==|!=|>|<)\s*(.*)', part)
+                if match:
+                    m_prop = match.groups()[0]
+                    atom_data = []
+                    pm.iterate(
+                        obj,
+                        "atom_data.append((p.Class, p.S, p.S0, p.S1, p.CD, p.MD))",
+                        space={"atom_data": atom_data}
+                    )
+                    if atom_data[0][0] is None:
+                        continue
 
-                        value = match.groups()[2]
-                        def convert_type(value):
+                    value = match.groups()[2]
+                    def convert_type(value):
+                        try:
+                            return int(value)
+                        except:
                             try:
-                                return int(value)
+                                return float(value)
                             except:
-                                try:
-                                    return float(value)
-                                except:
-                                    return f"'{value}'"
-                        
-                        op = match.groups()[1]
-                        props = ['Class','S','S0','S1','CD','MD']
-                        props = atom_data[0][props.index(m_prop)]
-                        props = convert_type(props)
-                        value = convert_type(value)
-                        if eval(f"{props}{op}{value}"):
-                            eq_true.add(obj)
-                        else:
-                            eq_false.add(obj)
-        objects2 = eq_true.difference(eq_false)
-        if count_objects == 0:
-            objects1 = set(pm.get_names("objects"))
-        if not objects2:
-            objects2 = objects1
-        else:
-            objects = (objects1.intersection(objects2))
+                                return f"'{value}'"
+                    
+                    op = match.groups()[1]
+                    props = ['Class','S','S0','S1','CD','MD']
+                    props = atom_data[0][props.index(m_prop)]
+                    props = convert_type(props)
+                    value = convert_type(value)
+                    if eval(f"{props}{op}{value}"):
+                        eq_true.add(obj)
+                    else:
+                        eq_false.add(obj)
+    objects2 = eq_true.difference(eq_false)
+    if count_objects == 0:
+        objects1 = set(pm.get_names("objects"))
+    if not objects2:
+        objects2 = objects1
+    else:
+        objects = (objects1.intersection(objects2))
     return objects
 
 def get_kozakov2015(group, clusters, max_length):
@@ -270,6 +269,7 @@ def get_kozakov2015(group, clusters, max_length):
 
 def get_fpocket(group, protein):
     pockets = []
+    # FIXME TODO
     # with tempfile.TemporaryDirectory() as tempdir:
     tempdir = "/tmp"
     if True:

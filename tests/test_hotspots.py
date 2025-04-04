@@ -39,5 +39,5 @@ def test_selector():
     expr = "MD<14 S0>=16"
     assert len(expression_selector(expr)) == 1
     
-    expr = "MD>14 S0>=16 ; Class==B"
+    expr = "*K215_B* MD>14 S0>=13"
     assert len(expression_selector(expr)) == 3
