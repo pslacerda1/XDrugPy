@@ -108,7 +108,6 @@ def get_clusters():
             coords = pm.get_coords(obj)
             clusters.append(
                 SimpleNamespace(
-                    source=FTMapSource.FTMAP,
                     selection=obj,
                     strength=int(s),
                     coords=coords,
@@ -119,7 +118,6 @@ def get_clusters():
             coords = pm.get_coords(obj)
             clusters.append(
                 SimpleNamespace(
-                    source=FTMapSource.ATLAS,
                     selection=obj,
                     strength=int(s),
                     coords=coords,
@@ -127,11 +125,9 @@ def get_clusters():
             )
 
         elif obj.startswith("clust."):
-            source = FTMapSource.EFTMAP
             _, idx, s, probe_type = obj.split(".", maxsplit=4)
             eclusters.append(
                 SimpleNamespace(
-                    source=FTMapSource.EFTMAP,
                     selection=obj,
                     probe_type=probe_type,
                     strength=int(s),
@@ -148,28 +144,25 @@ def set_properties(obj, obj_name, properties):
         setattr(obj, prop, value)
 
 
-def expression_selector(expr):
+def expression_selector(type, expr):
     objects = set()
     objects1 = set()
     objects2 = set()
     eq_true = set()
     eq_false = set()
-    count_objects = 0
     for part in expr.split():
         for obj in pm.get_names("objects"):
             if fnmatch(obj, part):
                 objects1.add(obj)
-                count_objects += 1
             else:
-                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)\s*(>=|<=|!=|=|>|<)\s*(.*)', part)
+                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)\s*(>=|<=|!=|==|>|<)\s*(.*)', part)
                 if match:
-                    m_prop = match.groups()[0]
                     atom_data = {}
                     pm.iterate(
                         obj,
                         dedent("""
                             atom_data[model] = {
-                                'Class':p.Class, 'S':p.S, 'S0':p.S0, 'S1':p.S1, 'CD':p.CD, 'MD':p.MD
+                                'Type': p.Type, 'Class':p.Class, 'S':p.S, 'S0':p.S0, 'S1':p.S1, 'CD':p.CD, 'MD':p.MD
                             }
                         """),
                         space={"atom_data": atom_data}
@@ -177,8 +170,8 @@ def expression_selector(expr):
                     no_data = not atom_data or obj not in atom_data or atom_data[obj]['Class'] is None
                     if no_data:
                         continue
-
-                    value = match.groups()[2]
+                    if type != atom_data[obj]['Type']:
+                        continue
                     def convert_type(value):
                         try:
                             return int(value)
@@ -187,23 +180,24 @@ def expression_selector(expr):
                                 return float(value)
                             except:
                                 return f"'{value}'"
-                    
                     op = match.groups()[1]
-                    prop = atom_data[obj][m_prop]
-                    prop = convert_type(prop)
+                    prop = match.groups()[0]
+                    value = match.groups()[2]
+                    prop = convert_type(atom_data[obj][prop])
                     value = convert_type(value)
+                    print(f"{prop}{op}{value}")
                     if eval(f"{prop}{op}{value}"):
                         eq_true.add(obj)
                     else:
                         eq_false.add(obj)
     objects2 = eq_true.difference(eq_false)
-    if count_objects == 0:
+    if len(objects1) == 0:
         objects1 = set(pm.get_names("objects"))
     if not objects2:
         objects2 = objects1
-    else:
-        objects = (objects1.intersection(objects2))
+    objects = (objects1.intersection(objects2))
     return objects
+
 
 def get_kozakov2015(group, clusters, max_length):
     k15 = []
@@ -1472,7 +1466,9 @@ class TableWidget(QWidget):
 
     def __init__(self):
         super().__init__()
-
+        self.selected_objs = set()
+        self.current_tab = 'K15'
+        
         layout = QVBoxLayout()
         self.setLayout(layout)
         
@@ -1480,14 +1476,14 @@ class TableWidget(QWidget):
         layout.addWidget(filter_line)
 
         @filter_line.textEdited.connect
-        def textEdited(text):
-            if not text.strip():
+        def textEdited(expr):
+            if not expr.strip():
                 return
-            self.selected_objs = expression_selector(text)
+            self.selected_objs = expression_selector(self.current_tab, expr)
             self.refresh()
         tab = QTabWidget()
         layout.addWidget(tab)
-
+        
         self.hotspotsMap = {
             ("Kozakov2015", "K15"): ["Class", "S", "S0", "CD", "MD", "Length", "Fpocket"],
             ("CS", "CS"): ["S"],
@@ -1495,6 +1491,11 @@ class TableWidget(QWidget):
             ("Egbert2019", "E19"): ["Fpocket", "S","S0", "S1", "Length"],
             ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
+
+        @tab.currentChanged.connect
+        def currentChanged(tab_index):
+            self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
+            
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
             table = self.TableWidgetImpl(props)
@@ -1518,12 +1519,12 @@ class TableWidget(QWidget):
                 self.tables[title].removeRow(0)
 
             # append new rows
-            for obj in pm.get_object_list():
+            for obj in pm.get_names("objects"):
                 if not pm.get_property_list(obj):
                     continue
                 obj_type = pm.get_property('Type', obj)
                 if obj_type == key:
-                    if not self.selected_objs:
+                    if len(self.selected_objs) == 0:
                         self.appendRow(title, key, obj)
                     elif obj in self.selected_objs:
                         self.appendRow(title, key, obj)
@@ -1639,9 +1640,9 @@ class SimilarityWidget(QWidget):
         boxLayout.addRow("Linkage:", self.linkageMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
-        self.colorThresholdSpin.setMinimum(-0.1)
-        self.colorThresholdSpin.setValue(-0.1)
-        self.colorThresholdSpin.setSingleStep(0.1)
+        self.colorThresholdSpin.setMinimum(-0.001)
+        self.colorThresholdSpin.setValue(-0.001)
+        self.colorThresholdSpin.setSingleStep(0.001)
         self.colorThresholdSpin.setDecimals(1)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 

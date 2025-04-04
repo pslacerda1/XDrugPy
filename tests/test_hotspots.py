@@ -30,17 +30,24 @@ def test_eftmap_overlap():
 
 def test_selector():
     load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
-    expr = '*K15_D_* S0>20'
-    assert len(expression_selector(expr)) == 0
+    expr = '*K15_D_* S0<22'
+    assert len(expression_selector('K15', expr)) == 4
 
-    expr = "* MD>=14"
-    assert len(expression_selector(expr)) == 5
+    expr = "* S>=34"
+    assert len(expression_selector('K15', expr)) == 2
 
     expr = "MD<14 S0>=16"
-    assert len(expression_selector(expr)) == 1
+    assert len(expression_selector('K15', expr)) == 1
     
     expr = "*K15* CD<9 S0>=20"
-    assert len(expression_selector(expr)) == 3
+    assert len(expression_selector('K15', expr)) == 3
 
     expr = "*K15_[BD]* S0>=15 S0<=16"
-    assert len(expression_selector(expr)) == 4
+    assert len(expression_selector('K15', expr)) == 4
+
+    expr = "group.K15_D_00"
+    assert len(expression_selector('K15',expr)) == 1
+
+    load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group_B')
+    expr = "*.K15_D_00"
+    assert len(expression_selector('K15',expr)) == 2
