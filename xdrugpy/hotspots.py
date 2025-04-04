@@ -8,6 +8,7 @@ from itertools import combinations
 from pathlib import Path
 from types import SimpleNamespace
 from pathlib import Path
+from textwrap import dedent
 
 import numpy as np
 import pandas as pd
@@ -160,16 +161,21 @@ def expression_selector(expr):
                 objects1.add(obj)
                 count_objects += 1
             else:
-                match = re.match(r'(Class|S|S0|S1|CD|MD)\s*(>=|<=|==|!=|>|<)\s*(.*)', part)
+                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)\s*(>=|<=|!=|=|>|<)\s*(.*)', part)
                 if match:
                     m_prop = match.groups()[0]
-                    atom_data = []
+                    atom_data = {}
                     pm.iterate(
                         obj,
-                        "atom_data.append((p.Class, p.S, p.S0, p.S1, p.CD, p.MD))",
+                        dedent("""
+                            atom_data[model] = {
+                                'Class':p.Class, 'S':p.S, 'S0':p.S0, 'S1':p.S1, 'CD':p.CD, 'MD':p.MD
+                            }
+                        """),
                         space={"atom_data": atom_data}
                     )
-                    if atom_data[0][0] is None:
+                    no_data = not atom_data or obj not in atom_data or atom_data[obj]['Class'] is None
+                    if no_data:
                         continue
 
                     value = match.groups()[2]
@@ -183,11 +189,10 @@ def expression_selector(expr):
                                 return f"'{value}'"
                     
                     op = match.groups()[1]
-                    props = ['Class','S','S0','S1','CD','MD']
-                    props = atom_data[0][props.index(m_prop)]
-                    props = convert_type(props)
+                    prop = atom_data[obj][m_prop]
+                    prop = convert_type(prop)
                     value = convert_type(value)
-                    if eval(f"{props}{op}{value}"):
+                    if eval(f"{prop}{op}{value}"):
                         eq_true.add(obj)
                     else:
                         eq_false.add(obj)
