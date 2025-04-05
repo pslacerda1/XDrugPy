@@ -51,3 +51,6 @@ def test_selector():
     load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group_B')
     expr = "*.K15_D_00"
     assert len(expression_selector('K15',expr)) == 2
+
+    expr = "S==20"
+    assert len(expression_selector('CS',expr)) == 2

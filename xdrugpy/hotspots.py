@@ -167,7 +167,7 @@ def expression_selector(type, expr):
                         """),
                         space={"atom_data": atom_data}
                     )
-                    no_data = not atom_data or obj not in atom_data or atom_data[obj]['Class'] is None
+                    no_data = not atom_data or obj not in atom_data or atom_data[obj]['Type'] is None
                     if no_data:
                         continue
                     if type != atom_data[obj]['Type']:
