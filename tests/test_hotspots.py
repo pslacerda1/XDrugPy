@@ -61,3 +61,11 @@ def test_selector():
     expr = "S>500"
     assert len(expression_selector(expr, type='CS')) == 0
     
+
+def test_multiple_selector():
+    load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
+    expr = '*K15_D_* S0<22 ; S>=34'
+    assert len(expression_selector(expr)) == 2
+
+    expr = '*K15_D_* S0<22 ; S==20' 
+    assert len(expression_selector(expr)) == 4

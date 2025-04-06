@@ -185,7 +185,6 @@ def expression_selector(expr, type=None):
                     value = match.groups()[2]
                     prop = convert_type(atom_data[obj][prop])
                     value = convert_type(value)
-                    print(f"{prop}{op}{value}")
                     try:
                         if eval(f"{prop}{op}{value}"):
                             eq_true.add(obj)
@@ -208,6 +207,13 @@ def expression_selector(expr, type=None):
     else:
         objects = (objects1.intersection(objects2))
     return objects
+
+
+def multiple_expression_selector(exprs, type=None):
+    object_list = []
+    for expr in exprs.split(';'):
+        object_list.append(expression_selector(expr, type=type))
+    return object_list
 
 
 def get_kozakov2015(group, clusters, max_length):
@@ -903,19 +909,15 @@ def res_sim(
         res_sim 8DSU.D_001*, 6XHM.D_001*
         res_sim 8DSU.CS_*, 6XHM.CS_*
     """
+    try:
+        group1 = pm.get_property('Group', hs1)
+    except:
+        group1 = hs1
+    try:
+        group2 = pm.get_property('Group', hs2)
+    except:
+        group2 = hs2
 
-    group1 = hs1.split(".", maxsplit=1)[0]
-    group2 = hs2.split(".", maxsplit=1)[0]
-
-    if group1 == hs1:
-        group1 = "polymer"
-        if verbose:
-            print(f"Using ungrouped ({hs1})")
-    if group2 == hs2:
-        group2 = "polymer"
-        if verbose:
-            print(f"Using ungrouped ({hs2})")
-    
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
     sel2 = f"{group2}.protein within {radius} from ({hs2})"
 
@@ -1024,7 +1026,7 @@ class HeatmapFunction(StrEnum):
 
 @declare_command
 def plot_heatmap(
-    objs: Selection,
+    expr: Selection,
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
     align: bool = True,
@@ -1044,28 +1046,18 @@ def plot_heatmap(
         cross_measure *.D_*. align=True
         cross_measure *.D_000_*_* *.DS_*
     """
-    objs = objs.split(" ")
-
-    obj1s = []
-    for obj in pm.get_object_list():
-        for obj_sub in objs:
-            if not fnmatch(obj, obj_sub):
-                continue
-            obj1s.append(obj)
-
     def sort(obj):
         klass = pm.get_property("Class", obj)
         return str(klass), obj
 
-    obj1s = list(sorted(obj1s, key=sort))
-
-    if len(obj1s) == 0:
-        raise ValueError("No objects found")
-
+    objects = []
+    obj_sets = multiple_expression_selector(expr)
+    for obj_set in obj_sets:
+        objects = [*sorted(objects, key=sort)]
     mat = []
-    for idx1, obj1 in enumerate(obj1s):
+    for idx1, obj1 in enumerate(objects):
         mat.append([])
-        for idx2, obj2 in enumerate(obj1s):
+        for idx2, obj2 in enumerate(objects):
             if idx1 == idx2:
                 ret = 1
             elif idx2 > idx1:
@@ -1093,14 +1085,14 @@ def plot_heatmap(
                             verbose=False,
                         )
             mat[-1].append(round(ret, 2))
-
-    
     plt.close()
     fig, ax = plt.subplots(1)
+    print(objects)
+    print(mat)
     sb.heatmap(
         mat,
-        yticklabels=obj1s,
-        xticklabels=obj1s,
+        yticklabels=objects,
+        xticklabels=objects,
         cmap="viridis",
         annot=annotate,
         vmax=1,
