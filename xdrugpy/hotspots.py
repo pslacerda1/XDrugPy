@@ -144,7 +144,7 @@ def set_properties(obj, obj_name, properties):
         setattr(obj, prop, value)
 
 
-def expression_selector(type, expr):
+def expression_selector(expr, type=None):
     objects = set()
     objects1 = set()
     objects2 = set()
@@ -155,7 +155,7 @@ def expression_selector(type, expr):
             if fnmatch(obj, part):
                 objects1.add(obj)
             else:
-                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)\s*(>=|<=|!=|==|>|<)\s*(.*)', part)
+                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|>|<)(.*)', part)
                 if match:
                     atom_data = {}
                     pm.iterate(
@@ -170,7 +170,7 @@ def expression_selector(type, expr):
                     no_data = not atom_data or obj not in atom_data or atom_data[obj]['Type'] is None
                     if no_data:
                         continue
-                    if type != atom_data[obj]['Type']:
+                    if type is not None and type != atom_data[obj]['Type']:
                         continue
                     def convert_type(value):
                         try:
@@ -186,16 +186,27 @@ def expression_selector(type, expr):
                     prop = convert_type(atom_data[obj][prop])
                     value = convert_type(value)
                     print(f"{prop}{op}{value}")
-                    if eval(f"{prop}{op}{value}"):
-                        eq_true.add(obj)
-                    else:
+                    try:
+                        if eval(f"{prop}{op}{value}"):
+                            eq_true.add(obj)
+                        else:
+                            eq_false.add(obj)
+                    except:
                         eq_false.add(obj)
     objects2 = eq_true.difference(eq_false)
-    if len(objects1) == 0:
-        objects1 = set(pm.get_names("objects"))
+    if not objects1 and not objects2:
+        return set()
+    if not objects1:
+        if type is not None:
+            for obj in pm.get_names("objects"):
+                if pm.get_property('Type', obj) == type:
+                    objects1.add(obj)
     if not objects2:
         objects2 = objects1
-    objects = (objects1.intersection(objects2))
+    if objects2 and not objects1:
+        return objects2
+    else:
+        objects = (objects1.intersection(objects2))
     return objects
 
 
@@ -1479,7 +1490,7 @@ class TableWidget(QWidget):
         def textEdited(expr):
             if not expr.strip():
                 return
-            self.selected_objs = expression_selector(self.current_tab, expr)
+            self.selected_objs = expression_selector(expr, self.current_tab)
             self.refresh()
         tab = QTabWidget()
         layout.addWidget(tab)
@@ -1495,6 +1506,9 @@ class TableWidget(QWidget):
         @tab.currentChanged.connect
         def currentChanged(tab_index):
             self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
+            expr = filter_line.text()
+            self.selected_objs = expression_selector(expr, self.current_tab)
+            self.refresh()
             
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
