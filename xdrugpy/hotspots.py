@@ -156,7 +156,7 @@ def expression_selector(expr, type=None):
             if fnmatch(obj, part):
                 objects1.add(obj)
             else:
-                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|>|<)(.*)', part)
+                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|=|>|<)(.*)', part)
                 if match:
                     atom_data = {}
                     pm.iterate(
@@ -182,6 +182,8 @@ def expression_selector(expr, type=None):
                             except:
                                 return f"'{value}'"
                     op = match.groups()[1]
+                    if op == '=':
+                        op = '=='
                     prop = match.groups()[0]
                     value = match.groups()[2]
                     prop = convert_type(atom_data[obj][prop])
@@ -309,7 +311,8 @@ def get_fpocket(group, protein):
             pm.delete(pocket.selection)
             pm.load(pocket_pdb, pocket.selection)
             pm.set_property("Type", "Fpocket", pocket.selection)
-            pm.set_property("Group", group, pocket.selection)
+            pm.set_property("Group", group. pocket.selection)
+            pm.set_property("Selection", pocket.select)
             for line in pm.get_property('pdb_header', pocket.selection).split('\n'):
                 if match := header_re.match(line):
                     prop = match.group(1).strip()
@@ -331,6 +334,7 @@ def process_clusters(group, clusters):
         set_properties(cs, new_name, {
             "Type": "CS",
             "Group": group,
+            "Selection": new_name,
             "S": cs.strength,
         })
     pm.delete("consensus.*")
@@ -350,6 +354,7 @@ def process_eclusters(group, eclusters):
         set_properties(acs, new_name, {
             "Type": "ACS", 
             "Group": group, 
+            "Selection": new_name,
             "Class": acs.probe_type, 
             "S": acs.strength, 
             "MD": round(md, 2)
@@ -371,6 +376,7 @@ def get_egbert2019(group, fpo_list, clusters):
             s_list = [pm.get_property("S", o) for o in objs]
             pm.set_property("Type", "Egbert2019", new_name)
             pm.set_property("Group", group, new_name)
+            pm.set_property("Selection", sel, new_name)
             pm.set_property("Fpocket", pocket.selection, new_name)
             pm.set_property("S", sum(s_list), new_name)
             pm.set_property("S0", s_list[0])
@@ -670,7 +676,7 @@ class LinkageMethod(StrEnum):
 
 @declare_command
 def fp_sim(
-    hotspots: Selection,
+    exprs: Selection,
     site: str = "*",
     radius: int = 4,
     plot_fingerprints: bool = True,
@@ -699,18 +705,21 @@ def fp_sim(
         fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
     """
 
-    expanded_hss = []
-    all_groups = [g.split(".", maxsplit=1)[0] for g in pm.get_object_list("*.protein")]
-    for expr in hotspots.split():
-        expr_g, expr_part = expr.split(".", maxsplit=1)
-        for g in all_groups:
-            if fnmatch(g, expr_g):
-                expanded_hss.append("%s.%s" % (g, expr_part))
+    object_exprs = exprs.split(";")
+    hotspots = []
+    groups = []
+    for expr in object_exprs:
+        object_set = expression_selector(expr)
+        for object in object_set:
+            if pm.get_property('Selection', object):
+                group = object.split(".", maxsplit=1)[0]
+            else:
+                group = None
+            hotspots.append(object)
+            groups.append(group)
 
-    hotspots = expanded_hss
-    groups = [hs.split(".", maxsplit=1)[0] for hs in hotspots]
-    proteins = [f"{g}.protein" for g in groups]
-
+    proteins = [f"{g}.protein" if g else None for g in groups]
+    
     p0 = proteins[0]
     site_index = set()
     pm.iterate(
@@ -796,7 +805,7 @@ def fp_sim(
             labels[lbl] = lbl
 
         fp = [*fp.values()]
-        labels = [*labels.values    ()]
+        labels = [*labels.values()]
         fp_list.append(fp)
 
         if plot_fingerprints:
@@ -822,9 +831,15 @@ def fp_sim(
         )
 
     if verbose or plot_dendrogram:
+        labels = []
         cor_list = []
         for idx1, (fp1, hs1) in enumerate(zip(fp_list, hotspots)):
+            if hs1 is None:
+                continue
+            labels = hs1
             for idx2, (fp2, hs2) in enumerate(zip(fp_list, hotspots)):
+                if hs2 is None:
+                    continue
                 if idx1 >= idx2:
                     continue
                 cor = pearsonr(fp1, fp2).statistic
@@ -836,7 +851,7 @@ def fp_sim(
 
         if plot_dendrogram:
             ax = axd["DENDRO"]
-            dendrogram(
+            dendro = dendrogram(
                 [1 - c for c in cor_list],
                 method=linkage_method,
                 labels=hotspots,
@@ -846,9 +861,8 @@ def fp_sim(
             )   
             for label in ax.xaxis.get_majorticklabels():
                 label.set_horizontalalignment("right")
-
     plt.show()
-    return fp_list
+    return dendro
 
 
 
@@ -1027,11 +1041,11 @@ class HeatmapFunction(StrEnum):
 
 @declare_command
 def plot_heatmap(
-    expr: Selection,
+    exprs: Selection,
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
     align: bool = True,
-    annotate: bool = False,
+    ax: Any = None
 ):
     """
     Compute the similarity between matching objects using a similarity function.
@@ -1051,17 +1065,16 @@ def plot_heatmap(
         klass = pm.get_property("Class", obj)
         return str(klass), obj
 
-    objects = []
-    obj_sets = multiple_expression_selector(expr)
-    for obj_set in obj_sets:
-        objects = [*sorted(objects, key=sort)]
+    objects = expression_selector(exprs)
+    objects = list(sorted(objects, key=sort))
+    
     mat = []
     for idx1, obj1 in enumerate(objects):
         mat.append([])
         for idx2, obj2 in enumerate(objects):
             if idx1 == idx2:
                 ret = 1
-            elif idx2 > idx1:
+            elif idx1 < idx2:
                 ret = np.nan
             else:
                 match method:
@@ -1086,26 +1099,26 @@ def plot_heatmap(
                             verbose=False,
                         )
             mat[-1].append(round(ret, 2))
-    plt.close()
-    fig, ax = plt.subplots(1)
-    print(objects)
-    print(mat)
-    sb.heatmap(
-        mat,
-        yticklabels=objects,
-        xticklabels=objects,
-        cmap="viridis",
-        annot=annotate,
-        vmax=1,
-        ax=ax,
-    )
-    plt.xticks(rotation=90)
-    for label in ax.xaxis.get_majorticklabels():
-        label.set_horizontalalignment("right")
+    if ax is None:
+        ax_file = False
+        fig, ax = plt.subplots()
+    elif isinstance(ax, str):
+        ax_file = ax
+        fig, ax = plt.subplots()
 
-    plt.tight_layout()
-    plt.show()
-    return mat
+    mat_masked = np.ma.masked_invalid(mat)
+    ax.imshow(mat_masked, cmap='viridis')
+    plt.xticks(np.arange(len(mat)), objects, rotation=90)
+    plt.yticks(np.arange(len(mat)), objects)
+    # plt.colorbar()
+    if not ax_file:
+        plt.tight_layout()
+        plt.show()
+    else:
+        plt.tight_layout()
+        plt.savefig(ax_file)
+    
+    return mat, objects
 
 
 class PrioritizationType(StrEnum):
@@ -1163,6 +1176,7 @@ def plot_dendrogram(
     residue_align: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: bool = -1,
+    ax: Any = None
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1225,11 +1239,7 @@ def plot_dendrogram(
                 + (1 - j) ** 2
             )
 
-    object_list = []
-    for expr in exprs.split(" "):
-        for idx, obj in enumerate(pm.get_object_list()):
-            if fnmatch(obj.lower(), expr.lower()):
-                object_list.append(obj)
+    object_list = list(expression_selector(exprs))
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1
     
     hs_type = pm.get_property("Type", object_list[0])
@@ -1239,7 +1249,6 @@ def plot_dendrogram(
         n_props = 1
     elif hs_type == "ACS":
         n_props = 2
-
     labels = []
     p = np.zeros((len(object_list), n_props + 3))
 
@@ -1273,16 +1282,28 @@ def plot_dendrogram(
                 j = 0
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
-    
-    dendrogram(
+    if ax is None:
+        fig, ax = plt.subplots()
+        ax_file = False
+    elif isinstance(ax, str):
+        ax_file = ax
+        fig, ax = plt.subplots()
+
+    dendro = dendrogram(
         X,
         labels=labels,
         method=linkage_method,
         leaf_rotation=90,
-        color_threshold=color_threshold
+        color_threshold=color_threshold,
+        ax=ax
     )
-    plt.tight_layout()
-    plt.show()
+    if not ax_file:
+        plt.tight_layout()
+        plt.show()
+    if ax_file:
+        plt.tight_layout()
+        plt.savefig(ax_file)
+    return dendro
 
 @declare_command
 def align_groups(
@@ -1619,10 +1640,6 @@ class SimilarityWidget(QWidget):
         self.heatmapAlignCheck.setChecked(True)
         boxLayout.addRow("Align:", self.heatmapAlignCheck)
 
-        self.annotateCheck = QCheckBox()
-        self.annotateCheck.setChecked(True)
-        boxLayout.addRow("Annotate:", self.annotateCheck)
-
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_heatmap)
         boxLayout.addWidget(plotButton)
@@ -1661,10 +1678,8 @@ class SimilarityWidget(QWidget):
         expression = self.hotspotExpressionLine.text()
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
-        annotate = self.annotateCheck.isChecked()
         align = self.heatmapAlignCheck.isChecked()
-
-        plot_heatmap(expression, function, radius, align, annotate)
+        plot_heatmap(expression, function, radius, align)
 
     def plot_dendrogram(self):
         expression = self.hotspotExpressionLine.text()
@@ -1673,7 +1688,7 @@ class SimilarityWidget(QWidget):
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
 
-        plot_dendrogram(
+        return plot_dendrogram(
             expression,
             residue_radius,
             residue_align,

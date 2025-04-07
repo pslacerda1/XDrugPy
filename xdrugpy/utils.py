@@ -82,12 +82,16 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
     X = np.array(X)
     if ax is None:
         _, ax = plt.subplots()
-    if X.ndim == 1:
-        X = squareform(X)
     Z = sch.linkage(X, method=method)
     if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
         kwargs['color_threshold'] = 0.7 * max(Z[:,2])
 
+    if ax is None:
+        fig, ax = plt.subplots()
+    elif not isinstance(ax, str):
+        ax_file = ax
+        fig, ax = plt.subplots()
+    
     dendro = sch.dendrogram(
         Z,
         labels=labels,
@@ -107,12 +111,11 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
             groups[color] = []
         groups[color].append(leaf)
     dists_sum = {}
+    X = squareform(X)
     for color, leaves in groups.items():
         for i1, leaf1 in enumerate(leaves):
             sum_dists = 0
             for i2 in range(len(leaves)):
-                if i1 >= i2:
-                    continue
                 d = X[i1, i2]
                 sum_dists += d
             dists_sum[(color, leaf1)] = sum_dists
@@ -129,6 +132,10 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         for color, leaf in medoids.items():
             if label.get_text() == leaf:
                 label.set_color(color)
-    plt.tight_layout()
-    plt.show()
+    if ax is None:
+        plt.tight_layout()
+        plt.show()
+    elif isinstance(ax, str):
+        plt.tight_layout()
+        plt.savefig(ax_file)
     return dendro
