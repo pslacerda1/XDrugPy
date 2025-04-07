@@ -111,7 +111,8 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
             groups[color] = []
         groups[color].append(leaf)
     dists_sum = {}
-    X = squareform(X)
+    if X.ndim == 1:
+        X = squareform(X)
     for color, leaves in groups.items():
         for i1, leaf1 in enumerate(leaves):
             sum_dists = 0
