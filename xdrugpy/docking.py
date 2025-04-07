@@ -716,6 +716,8 @@ class ProgressThread(QThread):
         while True:
             sleep(1)
             ligands = glob(f"{self.queue_dir}/*.pdbqt")
+            if len(ligands) == 0:
+                self.finished.emit()
             for ligand_pdbqt in ligands:
                 lig = basename(ligand_pdbqt)[:-6]
                 output_pdbqt = f"{self.output_dir}/{lig}_out.pdbqt"
@@ -723,8 +725,7 @@ class ProgressThread(QThread):
                     self.ligands_done.add(lig)
                     os.unlink(ligand_pdbqt)
                     self.incrementStep.emit(1)
-            if len(ligands) == glob(f"{self.output_dir}/*_out.dbqt"):
-                self.finished.emit()
+
 
 
 class VinaThread(BaseThread):
@@ -986,7 +987,7 @@ class VinaThread(BaseThread):
             <br/><b>Docking ligands.</b>
             <br/><b>Command:</b> {vina_command}
         """)
- 
+
         total_ligands = len(os.listdir(queue_dir) + os.listdir(output_dir))
         self.numSteps.emit(total_ligands)
         self.incrementStep.emit(len(os.listdir(output_dir)))
@@ -999,6 +1000,7 @@ class VinaThread(BaseThread):
                 <font color="red">
                     <b>Failure on docking. Outputing on the last chunks.</b>
                 </font> 
+                </br>
             """)
             self.logCodeEvent.emit(output[-2048:])
         @self.finished.connect
