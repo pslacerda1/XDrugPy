@@ -760,12 +760,12 @@ class VinaThread(BaseThread):
         
         try:
             os.mkdir(output_dir)
-        except FileExistsError | Exception:
+        except FileExistsError:
             pass
         
         try:
             os.mkdir(queue_dir)
-        except FileExistsError | Exception:
+        except FileExistsError:
             pass
 
         if exists(project_file) and continuation:
