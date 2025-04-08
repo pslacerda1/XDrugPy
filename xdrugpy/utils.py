@@ -86,9 +86,10 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
     if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
         kwargs['color_threshold'] = 0.7 * max(Z[:,2])
 
+    ax_file = False
     if ax is None:
         fig, ax = plt.subplots()
-    elif not isinstance(ax, str):
+    elif isinstance(ax, str):
         ax_file = ax
         fig, ax = plt.subplots()
     
@@ -133,10 +134,7 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         for color, leaf in medoids.items():
             if label.get_text() == leaf:
                 label.set_color(color)
-    if ax is None:
-        plt.tight_layout()
-        plt.show()
-    elif isinstance(ax, str):
+    if ax_file:
         plt.tight_layout()
         plt.savefig(ax_file)
     return dendro
