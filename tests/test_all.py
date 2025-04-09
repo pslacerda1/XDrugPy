@@ -5,6 +5,7 @@ from xdrugpy.hotspots import (
     load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic,
     expression_selector, multiple_expression_selector, plot_dendrogram,
     plot_heatmap, HeatmapFunction)
+from xdrugpy.rmsf import rmsf
 from matplotlib import pyplot as plt
 import PIL.Image, PIL.ImageChops
 
@@ -96,7 +97,7 @@ def test_dendrograma():
     except:
         pass
 
-    dendnro = plot_dendrogram(expr, residue_align=False, ax=img_gen)
+    plot_dendrogram(expr, residue_align=False, ax=img_gen)
     
     ref = PIL.Image.open(img_ref)
     gen = PIL.Image.open(img_gen)
@@ -116,6 +117,26 @@ def test_heatmap():
         pass
     
     plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, ax=img_gen)
+
+    ref = PIL.Image.open(img_ref)
+    gen = PIL.Image.open(img_gen)
+    diff = PIL.ImageChops.difference(ref, gen)
+    assert not diff.getbbox()
+
+
+
+
+def test_rmsf():
+    pm.reinitialize()
+    load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
+    load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
+    load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
+
+    img_ref = f'{pkg_data}/test_rmsf_ref'
+    img_gen = f'{pkg_data}/test_rmsf_gen'
+
+    rmsf("*.K15_D_00", '*.protein', ax=img_gen)
+    rmsf("*.K15_D_00", '*.protein', ax=img_ref)
 
     ref = PIL.Image.open(img_ref)
     gen = PIL.Image.open(img_gen)

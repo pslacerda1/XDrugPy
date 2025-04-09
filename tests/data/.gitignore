@@ -1,3 +1,2 @@
-test_dendrograma_gen.png
-test_heatmap_gen.png
-
+test_*_gen.png
+*.cif
