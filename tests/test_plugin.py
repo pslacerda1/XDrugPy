@@ -2,15 +2,30 @@ import os.path
 from glob import glob
 from pymol import cmd as pm
 from xdrugpy.hotspots import (
-    load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic,
-    expression_selector, multiple_expression_selector, plot_dendrogram,
-    plot_heatmap, HeatmapFunction)
+    load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_dendrogram,
+    plot_heatmap, HeatmapFunction, fp_sim)
 from xdrugpy.rmsf import rmsf
 from xdrugpy.mapping import get_mapping
+from xdrugpy.utils import expression_selector, multiple_expression_selector
 from matplotlib import pyplot as plt
-import PIL.Image, PIL.ImageChops
-
+from PIL import Image
+import numpy as np
 pkg_data = os.path.dirname(__file__) + '/data'
+
+
+
+def images_identical(img1_path, img2_path):
+    """DeepSeek"""
+    img1 = Image.open(img1_path)
+    img2 = Image.open(img2_path)
+    
+    if img1.size != img2.size or img1.mode != img2.mode:
+        return False
+    arr1 = np.array(img1)
+    arr2 = np.array(img2)
+    
+    return np.array_equal(arr1, arr2)
+
 
 def test_rmsf():
     pm.reinitialize()
@@ -24,10 +39,7 @@ def test_rmsf():
     rmsf("*.K15_D_00", '*.protein', axis=img_gen)
     rmsf("*.K15_D_00", '*.protein', axis=img_ref)
 
-    ref = PIL.Image.open(img_ref)
-    gen = PIL.Image.open(img_gen)
-    diff = PIL.ImageChops.difference(ref, gen)
-    assert not diff.getbbox()
+    assert images_identical(img_ref, img_gen)
 
 
 def test_mapping():
@@ -95,7 +107,7 @@ def test_selector():
 def test_multiple_selector():
     pm.reinitialize()
     load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
-    expr = '*K15_D_* S0<22 ; S==20' 
+    expr = '*K15_D_* S0<22 : S==20' 
     result = multiple_expression_selector(expr)
     assert len(result) == 2
     assert result[0] == {'group.K15_D_00', 'group.K15_D_01', 'group.K15_D_02', 'group.K15_D_03'}
@@ -109,17 +121,11 @@ def test_dendrograma():
     expr = "*.CS_* S>=13"
     img_ref = f'{pkg_data}/test_dendrograma_ref.png'
     img_gen = f'{pkg_data}/test_dendrograma_gen.png'
-    try:
-        os.unlink(img_gen)
-    except:
-        pass
 
-    dendnro = plot_dendrogram(expr, residue_align=False, ax=img_gen)
-    
-    ref = PIL.Image.open(img_ref)
-    gen = PIL.Image.open(img_gen)
-    diff = PIL.ImageChops.difference(ref, gen)
-    assert not diff.getbbox()
+    plot_dendrogram(expr, residue_align=False, axis=img_gen)
+
+    assert images_identical(img_ref, img_gen)
+
 
 def test_heatmap():
     pm.reinitialize()
@@ -128,14 +134,21 @@ def test_heatmap():
 
     img_ref = f'{pkg_data}/test_heatmap_ref.png'
     img_gen = f'{pkg_data}/test_heatmap_gen.png'
-    try:
-        os.unlink(img_gen)
-    except:
-        pass
     
-    plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, ax=img_gen)
+    plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, axis=img_gen)
+    assert images_identical(img_ref, img_gen)
 
-    ref = PIL.Image.open(img_ref)
-    gen = PIL.Image.open(img_gen)
-    diff = PIL.ImageChops.difference(ref, gen)
-    assert not diff.getbbox()
+
+def test_fpt():
+    pm.reinitialize()
+    load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
+    load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
+    load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
+
+    img_ref = f'{pkg_data}/test_fpt_ref.png'
+    img_gen = f'{pkg_data}/test_fpt_gen.png'
+
+    fp_sim("*_D_00", site="* within 5 of *K15_D*", nbins=30, axis_fingeprint=img_gen)
+    
+
+    assert images_identical(img_ref, img_gen)
