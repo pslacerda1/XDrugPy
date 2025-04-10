@@ -2,6 +2,7 @@ import os.path
 import shutil
 import subprocess
 import re
+import tempfile
 from glob import glob
 from fnmatch import fnmatch
 from itertools import combinations
@@ -21,7 +22,8 @@ from matplotlib import pyplot as plt
 import seaborn as sb
 from strenum import StrEnum
 
-from .utils import ONE_LETTER, dendrogram, declare_command, Selection
+from .utils import ONE_LETTER, dendrogram, declare_command, Selection, multiple_expression_selector, mpl_axis, expression_selector, Residue
+from .mapping import get_mapping
 
 
 matplotlib.use("Qt5Agg")
@@ -71,80 +73,6 @@ def set_properties(obj, obj_name, properties):
         pm.set_property(prop, value, obj_name)
         pm.set_atom_property(prop, value, obj_name)
         setattr(obj, prop, value)
-
-
-def expression_selector(expr, type=None):
-    objects = set()
-    objects1 = set()
-    objects2 = set()
-    eq_true = set()
-    eq_false = set()
-    for part in expr.split():
-        for obj in pm.get_names("objects"):
-            if fnmatch(obj, part):
-                objects1.add(obj)
-            else:
-                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|=|>|<)(.*)', part)
-                if match:
-                    atom_data = {}
-                    pm.iterate(
-                        obj,
-                        dedent("""
-                            atom_data[model] = {
-                                'Type': p.Type, 'Class':p.Class, 'S':p.S, 'S0':p.S0, 'S1':p.S1, 'CD':p.CD, 'MD':p.MD
-                            }
-                        """),
-                        space={"atom_data": atom_data}
-                    )
-                    no_data = not atom_data or obj not in atom_data or atom_data[obj]['Type'] is None
-                    if no_data:
-                        continue
-                    if type is not None and type != atom_data[obj]['Type']:
-                        continue
-                    def convert_type(value):
-                        try:
-                            return int(value)
-                        except:
-                            try:
-                                return float(value)
-                            except:
-                                return f"'{value}'"
-                    op = match.groups()[1]
-                    if op == '=':
-                        op = '=='
-                    prop = match.groups()[0]
-                    value = match.groups()[2]
-                    prop = convert_type(atom_data[obj][prop])
-                    value = convert_type(value)
-                    try:
-                        if eval(f"{prop}{op}{value}"):
-                            eq_true.add(obj)
-                        else:
-                            eq_false.add(obj)
-                    except:
-                        eq_false.add(obj)
-    objects2 = eq_true.difference(eq_false)
-    if not objects1 and not objects2:
-        return set()
-    if not objects1:
-        if type is not None:
-            for obj in pm.get_names("objects"):
-                if pm.get_property('Type', obj) == type:
-                    objects1.add(obj)
-    if not objects2:
-        objects2 = objects1
-    if objects2 and not objects1:
-        return objects2
-    else:
-        objects = (objects1.intersection(objects2))
-    return objects
-
-
-def multiple_expression_selector(exprs, type=None):
-    object_list = []
-    for expr in exprs.split(';'):
-        object_list.append(expression_selector(expr, type=type))
-    return object_list
 
 
 def get_kozakov2015(group, clusters, max_length):
@@ -217,9 +145,7 @@ def get_kozakov2015(group, clusters, max_length):
 def get_fpocket(group, protein):
     pockets = []
     # FIXME TODO
-    # with tempfile.TemporaryDirectory() as tempdir:
-    tempdir = "/tmp"
-    if True:
+    with tempfile.TemporaryDirectory() as tempdir:
         protein_pdb = f"{tempdir}/{group}.pdb"
         pm.save(protein_pdb, selection=protein)
         subprocess.check_call(
@@ -600,6 +526,7 @@ class LinkageMethod(StrEnum):
     SINGLE = "single"
     COMPLETE = "complete"
     AVERAGE = "average"
+    WARD = "ward"
 
 
 @declare_command
@@ -607,12 +534,13 @@ def fp_sim(
     exprs: Selection,
     site: str = "*",
     radius: int = 4,
-    plot_fingerprints: bool = True,
+
     nbins: int = 5,
-    plot_dendrogram: bool = False,
-    linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    align: bool = True,
-    verbose: bool = True,
+    axis_fingeprint: str = '',
+    # axis_dendrogram: str = '',
+    # linkage_method: LinkageMethod = LinkageMethod.WARD,
+    # align: bool = True,
+    # verbose: bool = True,
 ):
     """
     Compute the similarity between the residue contact fingerprint of two
@@ -633,164 +561,102 @@ def fp_sim(
         fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
     """
 
-    object_exprs = exprs.split(";")
+    # Identify objects/hotspots to probe count    
     hotspots = []
-    groups = []
-    for expr in object_exprs:
-        object_set = expression_selector(expr)
+    groups = set()
+    for object_set in multiple_expression_selector(exprs):
         for object in object_set:
-            if pm.get_property('Selection', object):
-                group = object.split(".", maxsplit=1)[0]
-            else:
-                group = None
-            hotspots.append(object)
-            groups.append(group)
+            if group := pm.get_property('Group', object):
+                hotspots.append(object)
+                groups.add(group)
 
     proteins = [f"{g}.protein" if g else None for g in groups]
-    
-    p0 = proteins[0]
-    site_index = set()
-    pm.iterate(
-        f"({p0}) and name CA and ({site})",
-        "site_index.add(index)",
-        space={"site_index": site_index},
+    mapping = get_mapping(
+        proteins[0],
+        '*.protein',
+        transform=False,
+        site=site,
+        radius=radius
     )
+    fpts = []
+    for hs in hotspots:
+        fpt = {}
+        @mapping.groupby(['chain', 'resi'], as_index=False).apply
+        def apply(group):
+            for idx, row in group.iterrows():
+                resn = ONE_LETTER.get(row.resn, "X")
+                lbl = (resn, row.resi, row.chain)
+                cnt = pm.count_atoms(
+                    f"(%{hs}) within {radius} from (byres %{row.model} & index {row['index']})"
+                )
+                fpt[lbl] = fpt.get(lbl, 0) + cnt
+        fpts.append(fpt)
+    # with mpl_axis(axis_dendrogram) as ax:
+    #     pass
+    # with mpl_axis(axis)
+    # if plot_dendrogram or plot_fingerprints:
+    #     if plot_fingerprints and plot_dendrogram:
+    #         fig, axd = plt.subplot_mosaic(
+    #             list(zip(range(len(proteins)), ["DENDRO"] * len(proteins))),
+    #             constrained_layout=True
+    #         )
+    #     elif plot_fingerprints and not plot_dendrogram:
+    #         fig, axd = plt.subplot_mosaic(list(zip(range(len(proteins)))), constrained_layout=True)
+    #     elif not plot_fingerprints and plot_dendrogram:
+    #         fig, axd = plt.subplot_mosaic([["DENDRO"]], constrained_layout=True)
+        
+        with mpl_axis(axis_fingeprint, nrows=len(hotspots), sharey=True) as axs:
+            for ax, fpt in zip(axs, fpts):
+                labels = ['%s %s:%s' % k for k in fpt]
+                arange = np.arange(len(fpt))
+                ax.bar(arange, fpt.values())
+                ax.set_title(hs)
+                ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+                ax.set_xticks(arange, labels=labels, rotation=90)
+                ax.locator_params(axis="x", tight=True, nbins=nbins)
+                for label in ax.xaxis.get_majorticklabels():
+                    label.set_horizontalalignment("right")
 
-    plt.close()
-    if plot_dendrogram or plot_fingerprints:
-        if plot_fingerprints and plot_dendrogram:
-            fig, axd = plt.subplot_mosaic(
-                list(zip(range(len(proteins)), ["DENDRO"] * len(proteins))),
-                constrained_layout=True
-            )
-        elif plot_fingerprints and not plot_dendrogram:
-            fig, axd = plt.subplot_mosaic(list(zip(range(len(proteins)))), constrained_layout=True)
-        elif not plot_fingerprints and plot_dendrogram:
-            fig, axd = plt.subplot_mosaic([["DENDRO"]], constrained_layout=True)
+    # fp0 = fp_list[0]
+    # if not all([len(fp0) == len(fp) for fp in fp_list]):
+    #     raise ValueError(
+    #         "All fingerprints must have the same length. "
+    #         "Do you have incomplete structures?"
+    #     )
 
-    # First protein never needs alignment
-    resis = {}
-    pm.iterate(
-        p0,
-        "resis[index] = (model, index, resn, resi, chain)",
-        space={"resis": resis},
-    )
-    resi_map = {i: resis[i] for i in resis if i in site_index}
-    resi_map_list = [resi_map]
+    # if verbose or plot_dendrogram:
+    #     labels = []
+    #     cor_list = []
+    #     for idx1, (fp1, hs1) in enumerate(zip(fp_list, hotspots)):
+    #         if hs1 is None:
+    #             continue
+    #         labels = hs1
+    #         for idx2, (fp2, hs2) in enumerate(zip(fp_list, hotspots)):
+    #             if hs2 is None:
+    #                 continue
+    #             if idx1 >= idx2:
+    #                 continue
+    #             cor = pearsonr(fp1, fp2).statistic
+    #             if np.isnan(cor):
+    #                 cor = 0
+    #             cor_list.append(cor)
+    #             if verbose:
+    #                 print(f"Pearson correlation: {hs1} / {hs2}: {cor:.2f}")
 
-    # Find the equivalent residues
-    if not align or all(p0 == p for p in proteins):
-        # Don't align, use the residues of the first protein
-        resis = {}
-        pm.iterate(
-            p0,
-            "resis[index] = (model, index, resn, resi, chain)",
-            space={"resis": resis},
-        )
-        resi_map = {i: resis[i] for i in resis if i in site_index}
-        resi_map_list.extend([resi_map] * (len(proteins)-1))
-    else:
-        # Align protein structures, very tricky
-        for p in proteins[1:]:
-            try:
-                aln_obj = pm.get_unused_name()
-                pm.cealign(p0, p, transform=0, object=aln_obj)
-                raw = pm.get_raw_alignment(aln_obj)
-            finally:
-                pm.delete(aln_obj)
-            resis2 = {}
-            pm.iterate(
-                p,
-                "resis2[index] = (model, index, resn, resi, chain)",
-                space={"resis2": resis2},
-            )
-            resi_map = {}
-            for (model1, idx1), (model2, idx2) in raw:
-                if idx1 not in site_index:
-                    continue
-                resi_map[idx1] = resis2[idx2]
-            resi_map_list.append(resi_map)
-
-    resi_inter = site_index
-    for resi_map in resi_map_list[1:]:
-        resi_inter.intersection_update(resi_map)
-
-    # Compute the fingerprints
-    fp_list = []
-    for i, (p, hs, resi_map) in enumerate(zip(proteins, hotspots, resi_map_list)):
-        fp = {}
-        labels = {}
-        for index in resi_map:
-            if index not in resi_inter:
-                continue
-            model, mapped_index, resn, resi, chain = resi_map[index]
-            cnt = count_molecules(
-                f"({hs}) within {radius} from (byres %{model} & resn {resn} & resi {resi} & chain {chain})"
-            )
-            resn = ONE_LETTER.get(resn, "X")
-            lbl = f"{resn}{resi}{chain}"
-            fp[lbl] = fp.get(lbl, 0) + cnt
-            labels[lbl] = lbl
-
-        fp = [*fp.values()]
-        labels = [*labels.values()]
-        fp_list.append(fp)
-
-        if plot_fingerprints:
-            ax = axd[i]
-            ax.bar(np.arange(len(fp)), fp)
-            ax.set_title(hs)
-            ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-            ax.set_xticks(np.arange(len(fp)), labels=labels, rotation=90)
-            ax.locator_params(axis="x", tight=True, nbins=nbins)
-            for label in ax.xaxis.get_majorticklabels():
-                label.set_horizontalalignment("right")
-
-    if plot_fingerprints:
-        for i in range(len(proteins)):
-            ax = axd[i]
-            ax.set_ylim(top=np.max(fp_list))
-
-    fp0 = fp_list[0]
-    if not all([len(fp0) == len(fp) for fp in fp_list]):
-        raise ValueError(
-            "All fingerprints must have the same length. "
-            "Do you have incomplete structures?"
-        )
-
-    if verbose or plot_dendrogram:
-        labels = []
-        cor_list = []
-        for idx1, (fp1, hs1) in enumerate(zip(fp_list, hotspots)):
-            if hs1 is None:
-                continue
-            labels = hs1
-            for idx2, (fp2, hs2) in enumerate(zip(fp_list, hotspots)):
-                if hs2 is None:
-                    continue
-                if idx1 >= idx2:
-                    continue
-                cor = pearsonr(fp1, fp2).statistic
-                if np.isnan(cor):
-                    cor = 0
-                cor_list.append(cor)
-                if verbose:
-                    print(f"Pearson correlation: {hs1} / {hs2}: {cor:.2f}")
-
-        if plot_dendrogram:
-            ax = axd["DENDRO"]
-            dendro = dendrogram(
-                [1 - c for c in cor_list],
-                method=linkage_method,
-                labels=hotspots,
-                ax=ax,
-                leaf_rotation=90,
-                color_threshold=0,
-            )   
-            for label in ax.xaxis.get_majorticklabels():
-                label.set_horizontalalignment("right")
-    plt.show()
-    return dendro
+    #     if plot_dendrogram:
+    #         ax = axd["DENDRO"]
+    #         dendro = dendrogram(
+    #             [1 - c for c in cor_list],
+    #             method=linkage_method,
+    #             labels=hotspots,
+    #             ax=ax,
+    #             leaf_rotation=90,
+    #             color_threshold=0,
+    #         )   
+    #         for label in ax.xaxis.get_majorticklabels():
+    #             label.set_horizontalalignment("right")
+    # plt.show()
+    # return dendro
 
 
 
@@ -1092,7 +958,7 @@ def plot_dendrogram(
     residue_align: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: bool = -1,
-    ax: Any = None
+    axis: Any = None
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1198,40 +1064,15 @@ def plot_dendrogram(
                 j = 0
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
-    if ax is None:
-        fig, ax = plt.subplots()
-        ax_file = False
-    elif isinstance(ax, str):
-        ax_file = ax
-        fig, ax = plt.subplots()
-
-    dendro = dendrogram(
-        X,
-        labels=labels,
-        method=linkage_method,
-        leaf_rotation=90,
-        color_threshold=color_threshold,
-        ax=ax
-    )
-    if not ax_file:
-        plt.tight_layout()
-        plt.show()
-    if ax_file:
-        plt.tight_layout()
-        plt.savefig(ax_file)
-    return dendro
-
-@declare_command
-def align_groups(
-    mobile_groups: Selection,
-    target: Selection,
-):
-    for mobile in mobile_groups.split():
-        pm.cealign(f"{mobile}.protein", f"{target}.protein")
-        for inner in pm.get_object_list(f"{mobile}.*"):
-            if ".protein" in inner:
-                continue
-            pm.matrix_copy(f"{mobile}.protein", inner)
+    with mpl_axis(axis) as ax:
+        return dendrogram(
+            X,
+            labels=labels,
+            method=linkage_method,
+            leaf_rotation=90,
+            color_threshold=color_threshold,
+            ax=ax
+        )
 
     
 #

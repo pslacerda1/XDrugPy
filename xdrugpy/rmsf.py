@@ -105,7 +105,7 @@ def rmsf(
     with mpl_axis(axis) as ax:
         ax.bar(LABELS, RMSF)
         ax.set_xlabel("Residue")
-        ax.set_ylabel("RMSF (Å)")
+        ax.set_ylabel("RMSF")
         ax.tick_params(axis='x', rotation=90)
     
     return RMSF, LABELS

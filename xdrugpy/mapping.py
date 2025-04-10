@@ -5,10 +5,9 @@ from fnmatch import fnmatchcase
 from collections import namedtuple
 from functools import lru_cache
 
-from .utils import declare_command, Selection
+from .utils import declare_command, Selection, Residue
 
 
-Residue = namedtuple("Reisude", "model index resn resi chain x y z")
 
 lru_cache(999999999)
 def get_residue_from_object(obj, idx):
@@ -26,7 +25,7 @@ def get_residue_from_object(obj, idx):
 def get_mapping(
     ref_polymer: Selection,
     other_polymers: Selection,
-        transform: bool = True,
+    transform: bool = True,
     site: str = '*',
     radius: float = 2,
 ):    
@@ -44,7 +43,10 @@ def get_mapping(
         try:
             aln_obj = pm.get_unused_name()
             pm.cealign(
-                ref_polymer, polymer, transform=transform, object=aln_obj
+                f"{ref_polymer} within {radius} from {site}",
+                polymer,
+                transform=transform,
+                object=aln_obj
             )
             aln = pm.get_raw_alignment(aln_obj)
         finally:
