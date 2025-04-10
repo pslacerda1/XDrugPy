@@ -92,7 +92,7 @@ def rmsf(
         rmsf = np.sum((coords - mean_positions[resi]) ** 2) / coords.shape[0]
         rmsf = np.sqrt(rmsf)
         label = '%s %s:%s' % (ONE_LETTER[resi[0]], resi[1], resi[2])
-        pm.alter(f"{f0} & i. {resi[1]} & c. {resi[2]}", f"q={rmsf}")
+        pm.alter(f"{f0} & i. {resi[1]} & c. {resi[2]}", f"p.rmsf={rmsf}")
         LABELS.append(label)
         RMSF.append(rmsf)
     
@@ -100,7 +100,7 @@ def rmsf(
     if putty:
         pm.show_as("cartoon", f0)
         pm.cartoon("putty", f0)
-        pm.spectrum("q", "rainbow", f0)
+        pm.spectrum("p.rmsf", "rainbow", f0)
 
     with mpl_axis(axis) as ax:
         ax.bar(LABELS, RMSF)
