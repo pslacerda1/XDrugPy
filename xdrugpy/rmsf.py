@@ -15,6 +15,17 @@ def rmsf(
     putty: bool = True,
     axis: str = ''
 ):
+    """
+    DESCRIPTION
+        Calculate the RMSF of muliple related structures. First it realizes
+        multiple sequence/structure alignment with the cealign function in
+        order to get the equivalent atoms, so it can be realized between
+        relatively distant homologues.
+
+        A reference site must be supplied to focus, however full protein
+        analysis can be achieved with a star * wildcard. A expression
+        based on fnmatch select the structures to calculate the RMSF.
+    """
     frames = []
     for obj in pm.get_object_list():
         if fnmatch(obj, prot_expr):
