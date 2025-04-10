@@ -21,7 +21,7 @@ from matplotlib import pyplot as plt
 import seaborn as sb
 from strenum import StrEnum
 
-from .utils import ONE_LETTER, dendrogram, declare_command, Selection, mpl_axis
+from .utils import ONE_LETTER, dendrogram, declare_command, Selection
 
 
 matplotlib.use("Qt5Agg")
@@ -656,6 +656,7 @@ def fp_sim(
         space={"site_index": site_index},
     )
 
+    plt.close()
     if plot_dendrogram or plot_fingerprints:
         if plot_fingerprints and plot_dendrogram:
             fig, axd = plt.subplot_mosaic(
