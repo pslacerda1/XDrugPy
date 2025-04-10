@@ -1,12 +1,11 @@
 from pymol import cmd as pm
-from matplotlib import pyplot as plt
 from collections import defaultdict
 from functools import lru_cache
 import numpy as np
 from fnmatch import fnmatch
-from typing import Any, Tuple, List
 
 from .utils import ONE_LETTER, declare_command, mpl_axis
+
 
 @declare_command
 def rmsf(
