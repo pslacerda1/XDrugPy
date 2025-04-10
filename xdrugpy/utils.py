@@ -4,8 +4,12 @@ import atexit
 import numpy as np
 from shutil import rmtree
 from tempfile import mkdtemp
-from pymol import Qt
+from pymol import Qt, cmd as pm, parsing
 from os.path import exists
+from contextlib import contextmanager
+from pathlib import Path
+from matplotlib.axes import Axes
+from matplotlib import pyplot as plt
 
 
 QStandardPaths = Qt.QtCore.QStandardPaths
@@ -138,3 +142,90 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         plt.tight_layout()
         plt.savefig(ax_file)
     return dendro
+
+
+class Selection(str):
+    pass
+
+
+def _bool_func(value: str):
+    if isinstance(value, str):
+        if value.lower() in ["yes", "1", "true", "on"]:
+            return True
+        elif value.lower() in ["no", "0", "false", "off"]:
+            return False
+        else:
+            raise Exception("Invalid boolean value: %s" % value)
+    elif isinstance(value, bool):
+        return value
+    else:
+        raise Exception(f"Unsuported boolean flag {value}")
+
+
+def declare_command(name, function=None, _self=pm):
+    if function is None:
+        name, function = name.__name__, name
+
+    if function.__code__.co_argcount != len(function.__annotations__):
+        raise Exception("Messy annotations")
+    from functools import wraps
+    import inspect
+    from pathlib import Path
+    from enum import Enum
+    import traceback
+
+    spec = inspect.getfullargspec(function)
+
+    kwargs_ = {}
+    args_ = spec.args[:]
+
+    defaults = list(spec.defaults or [])
+
+    args2_ = args_[:]
+    while args_ and defaults:
+        kwargs_[args_.pop(-1)] = defaults.pop(-1)
+
+    funcs = {}
+    for idx, (var, func) in enumerate(spec.annotations.items()):
+        funcs[var] = func
+
+    @wraps(function)
+    def inner(*args, **kwargs):
+        frame = traceback.format_stack()[-2]
+        caller = frame.split('"', maxsplit=2)[1]
+        if caller.endswith("pymol/parser.py"):
+            kwargs = {**kwargs_, **kwargs, **dict(zip(args2_, args))}
+            kwargs.pop("_self", None)
+            for arg in kwargs.copy():
+                if funcs[arg] is _bool_func or issubclass(funcs[arg], bool):
+                    funcs[arg] = _bool_func
+                kwargs[arg] = funcs[arg](kwargs[arg])
+            return function(**kwargs)
+        else:
+            return function(*args, **kwargs)
+
+    name = function.__name__
+    _self.keyword[name] = [inner, 0, 0, ",", parsing.STRICT]
+    _self.kwhash.append(name)
+    _self.help_sc.append(name)
+    return inner
+
+
+
+@contextmanager
+def mpl_axis(ax):
+    if not ax:
+        _, new_ax = plt.subplots()
+    elif isinstance(ax, (str, Path)):
+        output_file = ax
+        _, new_ax = plt.subplots()
+    elif isinstance(ax, Axes):
+        new_ax = ax
+    yield new_ax
+    if not ax:
+        plt.tight_layout()
+        plt.show()
+    elif isinstance(ax, (str, Path)):
+        plt.tight_layout()
+        plt.savefig(output_file)
+    

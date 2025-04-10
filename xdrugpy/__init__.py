@@ -84,8 +84,10 @@ def __init_plugin__(app=None):
         os.environ['PATH'] = "%s:%s" % (RESOURCES_DIR, os.environ['PATH'])
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
+    from .rmsf import __init_plugin__ as __init_rmsf__
     __init_hotspots__()
     __init_docking__()
+    __init_rmsf__()
 
 if __name__ in ["pymol", "pmg_tk.startup.XDrugPy"]:
     __init_plugin__()

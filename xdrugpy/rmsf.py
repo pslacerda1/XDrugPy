@@ -1,13 +1,20 @@
 from pymol import cmd as pm
 from matplotlib import pyplot as plt
-from xdrugpy.utils import ONE_LETTER
 from collections import defaultdict
 from functools import lru_cache
 import numpy as np
 from fnmatch import fnmatch
+from typing import Any, Tuple, List
 
+from .utils import ONE_LETTER, declare_command, mpl_axis
 
-def rmsf(ref_site, prot_expr, site_margin=5, ax=None):
+@declare_command
+def rmsf(
+    ref_site: str,
+    prot_expr: str,
+    site_margin:float = 5.0,
+    axis: str = ''
+):
     frames = []
     for obj in pm.get_object_list():
         if fnmatch(obj, prot_expr):
@@ -77,20 +84,14 @@ def rmsf(ref_site, prot_expr, site_margin=5, ax=None):
         LABELS.append(label)
         RMSF.append(rmsf)
 
-    ax_file = False
-    if ax is None:
-        fig, ax = plt.subplots()
-    elif isinstance(ax, str):
-        ax_file = ax
-        fig, ax = plt.subplots()
-
-    ax.bar(LABELS, RMSF)
-    ax.set_xlabel("Residue")
-    ax.set_ylabel("RMSF (Å)")
-    ax.tick_params(axis='x', rotation=90)
-
-    if ax_file:
-        plt.tight_layout()
-        plt.savefig(ax_file)
+    with mpl_axis(axis) as ax:
+        ax.bar(LABELS, RMSF)
+        ax.set_xlabel("Residue")
+        ax.set_ylabel("RMSF (Å)")
+        ax.tick_params(axis='x', rotation=90)
     
     return RMSF, LABELS
+
+
+def __init_plugin__(app=None):
+    pass

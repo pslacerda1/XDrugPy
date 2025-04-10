@@ -21,82 +21,10 @@ from matplotlib import pyplot as plt
 import seaborn as sb
 from strenum import StrEnum
 
-from .utils import ONE_LETTER, dendrogram
+from .utils import ONE_LETTER, dendrogram, declare_command, Selection, mpl_axis
+
 
 matplotlib.use("Qt5Agg")
-
-
-class Selection(str):
-    pass
-
-
-def _bool_func(value: str):
-    if isinstance(value, str):
-        if value.lower() in ["yes", "1", "true", "on"]:
-            return True
-        elif value.lower() in ["no", "0", "false", "off"]:
-            return False
-        else:
-            raise Exception("Invalid boolean value: %s" % value)
-    elif isinstance(value, bool):
-        return value
-    else:
-        raise Exception(f"Unsuported boolean flag {value}")
-
-
-def declare_command(name, function=None, _self=pm):
-    if function is None:
-        name, function = name.__name__, name
-
-    if function.__code__.co_argcount != len(function.__annotations__):
-        raise Exception("Messy annotations")
-    from functools import wraps
-    import inspect
-    from pathlib import Path
-    from enum import Enum
-    import traceback
-
-    spec = inspect.getfullargspec(function)
-
-    kwargs_ = {}
-    args_ = spec.args[:]
-
-    defaults = list(spec.defaults or [])
-
-    args2_ = args_[:]
-    while args_ and defaults:
-        kwargs_[args_.pop(-1)] = defaults.pop(-1)
-
-    funcs = {}
-    for idx, (var, func) in enumerate(spec.annotations.items()):
-        funcs[var] = func
-
-    @wraps(function)
-    def inner(*args, **kwargs):
-        frame = traceback.format_stack()[-2]
-        caller = frame.split('"', maxsplit=2)[1]
-        if caller.endswith("pymol/parser.py"):
-            kwargs = {**kwargs_, **kwargs, **dict(zip(args2_, args))}
-            kwargs.pop("_self", None)
-            for arg in kwargs.copy():
-                if funcs[arg] is _bool_func or issubclass(funcs[arg], bool):
-                    funcs[arg] = _bool_func
-                kwargs[arg] = funcs[arg](kwargs[arg])
-            return function(**kwargs)
-        else:
-            return function(*args, **kwargs)
-
-    name = function.__name__
-    _self.keyword[name] = [inner, 0, 0, ",", parsing.STRICT]
-    _self.kwhash.append(name)
-    _self.help_sc.append(name)
-    return inner
-
-
-class FTMapSource(StrEnum):
-    ATLAS = "atlas"
-    FTMAP = "ftmap"
-    EFTMAP = "eftmap"
 
 
 def get_clusters():
@@ -728,7 +656,6 @@ def fp_sim(
         space={"site_index": site_index},
     )
 
-    plt.close()
     if plot_dendrogram or plot_fingerprints:
         if plot_fingerprints and plot_dendrogram:
             fig, axd = plt.subplot_mosaic(
@@ -1045,7 +972,7 @@ def plot_heatmap(
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
     align: bool = True,
-    ax: Any = None
+    axis: str = ''
 ):
     """
     Compute the similarity between matching objects using a similarity function.
@@ -1099,25 +1026,13 @@ def plot_heatmap(
                             verbose=False,
                         )
             mat[-1].append(round(ret, 2))
-    if ax is None:
-        ax_file = False
-        fig, ax = plt.subplots()
-    elif isinstance(ax, str):
-        ax_file = ax
-        fig, ax = plt.subplots()
-
-    mat_masked = np.ma.masked_invalid(mat)
-    ax.imshow(mat_masked, cmap='viridis')
-    plt.xticks(np.arange(len(mat)), objects, rotation=90)
-    plt.yticks(np.arange(len(mat)), objects)
-    # plt.colorbar()
-    if not ax_file:
-        plt.tight_layout()
-        plt.show()
-    else:
-        plt.tight_layout()
-        plt.savefig(ax_file)
     
+    
+    with mpl_axis(axis) as ax:
+        mat_masked = np.ma.masked_invalid(mat)
+        ax.imshow(mat_masked, cmap='viridis')
+        plt.xticks(np.arange(len(mat)), objects, rotation=90)
+        plt.yticks(np.arange(len(mat)), objects)    
     return mat, objects
 
 
