@@ -108,6 +108,7 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         Z,
         labels=labels,
         ax=ax,
+        count_sort=True,
         **kwargs
     )
     if kwargs.get('orientation') == 'right':
