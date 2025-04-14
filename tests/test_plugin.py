@@ -18,12 +18,10 @@ def images_identical(img1_path, img2_path):
     """DeepSeek"""
     img1 = Image.open(img1_path)
     img2 = Image.open(img2_path)
-    
     if img1.size != img2.size or img1.mode != img2.mode:
         return False
     arr1 = np.array(img1)
     arr2 = np.array(img2)
-    
     return np.array_equal(arr1, arr2)
 
 
@@ -135,20 +133,31 @@ def test_heatmap():
     img_ref = f'{pkg_data}/test_heatmap_ref.png'
     img_gen = f'{pkg_data}/test_heatmap_gen.png'
     
+    plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, axis=img_ref)
     plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
 
 def test_fpt():
     pm.reinitialize()
+
     load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
     load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
     load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
 
-    img_ref = f'{pkg_data}/test_fpt_ref.png'
-    img_gen = f'{pkg_data}/test_fpt_gen.png'
+    img_gen1 = f'{pkg_data}/test_fpt1_gen.png'
+    img_gen2 = f'{pkg_data}/test_fpt2_gen.png'
 
-    fp_sim("*_D_00", site="* within 5 of *K15_D*", nbins=30, axis_fingeprint=img_gen)
-    
+    img_ref1 = f'{pkg_data}/test_fpt1_ref.png'
+    img_ref2 = f'{pkg_data}/test_fpt2_ref.png'
 
-    assert images_identical(img_ref, img_gen)
+    fp_sim(
+        "1dq8.K15_D_00 : 1dq9.K15_D_00 : 1dqa.K15_B_00",
+        site="* within 4 of *_D_00",
+        nbins=31,
+        axis_fingerprint=img_gen1,
+        axis_dendrogram=img_gen2,
+    )
+
+    assert images_identical(img_ref1, img_gen1)
+    assert images_identical(img_ref2, img_gen2)

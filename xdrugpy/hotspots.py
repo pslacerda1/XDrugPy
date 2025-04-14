@@ -534,13 +534,11 @@ def fp_sim(
     exprs: Selection,
     site: str = "*",
     radius: int = 4,
-
     nbins: int = 5,
-    axis_fingeprint: str = '',
-    # axis_dendrogram: str = '',
-    # linkage_method: LinkageMethod = LinkageMethod.WARD,
-    # align: bool = True,
-    # verbose: bool = True,
+    axis_fingerprint: str = '',
+    axis_dendrogram: str = '',
+    linkage: LinkageMethod = LinkageMethod.WARD,
+    quiet: bool = True,
 ):
     """
     Compute the similarity between the residue contact fingerprint of two
@@ -570,7 +568,7 @@ def fp_sim(
                 hotspots.append(object)
                 groups.add(group)
 
-    proteins = [f"{g}.protein" if g else None for g in groups]
+    proteins = [f"{g}.protein" for g in groups]
     mapping = get_mapping(
         proteins[0],
         '*.protein',
@@ -591,22 +589,16 @@ def fp_sim(
                 )
                 fpt[lbl] = fpt.get(lbl, 0) + cnt
         fpts.append(fpt)
-    # with mpl_axis(axis_dendrogram) as ax:
-    #     pass
-    # with mpl_axis(axis)
-    # if plot_dendrogram or plot_fingerprints:
-    #     if plot_fingerprints and plot_dendrogram:
-    #         fig, axd = plt.subplot_mosaic(
-    #             list(zip(range(len(proteins)), ["DENDRO"] * len(proteins))),
-    #             constrained_layout=True
-    #         )
-    #     elif plot_fingerprints and not plot_dendrogram:
-    #         fig, axd = plt.subplot_mosaic(list(zip(range(len(proteins)))), constrained_layout=True)
-    #     elif not plot_fingerprints and plot_dendrogram:
-    #         fig, axd = plt.subplot_mosaic([["DENDRO"]], constrained_layout=True)
         
-        with mpl_axis(axis_fingeprint, nrows=len(hotspots), sharey=True) as axs:
-            for ax, fpt in zip(axs, fpts):
+        fpt0 = fpts[0]
+        if not all([len(fpt0) == len(fpt) for fpt in fpts]):
+            raise ValueError(
+                "All fingerprints must have the same length. "
+                "Do you have incomplete structures?"
+            )
+        
+        with mpl_axis(axis_fingerprint, nrows=len(hotspots), sharey=True) as axs:
+            for ax, fpt, hs in zip(axs, fpts, hotspots):
                 labels = ['%s %s:%s' % k for k in fpt]
                 arange = np.arange(len(fpt))
                 ax.bar(arange, fpt.values())
@@ -617,46 +609,32 @@ def fp_sim(
                 for label in ax.xaxis.get_majorticklabels():
                     label.set_horizontalalignment("right")
 
-    # fp0 = fp_list[0]
-    # if not all([len(fp0) == len(fp) for fp in fp_list]):
-    #     raise ValueError(
-    #         "All fingerprints must have the same length. "
-    #         "Do you have incomplete structures?"
-    #     )
+    with mpl_axis(axis_dendrogram) as ax:  
+        corrs = []
+        labels = []
+        for i1, (fp1, hs1) in enumerate(zip(fpts, hotspots)):
+            labels.append(hs1)
+            for i2, (fp2, hs2) in enumerate(zip(fpts, hotspots)):
+                if i1 >= i2:
+                    continue
+                corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
+                if np.isnan(corr):
+                    corr = 0
+                corrs.append(corr)
+                if not quiet:
+                    print(f"Pearson correlation: {hs1} / {hs2}: {corr:.2f}")
 
-    # if verbose or plot_dendrogram:
-    #     labels = []
-    #     cor_list = []
-    #     for idx1, (fp1, hs1) in enumerate(zip(fp_list, hotspots)):
-    #         if hs1 is None:
-    #             continue
-    #         labels = hs1
-    #         for idx2, (fp2, hs2) in enumerate(zip(fp_list, hotspots)):
-    #             if hs2 is None:
-    #                 continue
-    #             if idx1 >= idx2:
-    #                 continue
-    #             cor = pearsonr(fp1, fp2).statistic
-    #             if np.isnan(cor):
-    #                 cor = 0
-    #             cor_list.append(cor)
-    #             if verbose:
-    #                 print(f"Pearson correlation: {hs1} / {hs2}: {cor:.2f}")
-
-    #     if plot_dendrogram:
-    #         ax = axd["DENDRO"]
-    #         dendro = dendrogram(
-    #             [1 - c for c in cor_list],
-    #             method=linkage_method,
-    #             labels=hotspots,
-    #             ax=ax,
-    #             leaf_rotation=90,
-    #             color_threshold=0,
-    #         )   
-    #         for label in ax.xaxis.get_majorticklabels():
-    #             label.set_horizontalalignment("right")
-    # plt.show()
-    # return dendro
+        dendrogram(
+            [1 - c for c in corrs],
+            method=linkage,
+            labels=labels,
+            ax=ax,
+            leaf_rotation=90,
+            color_threshold=0,
+        )   
+        for label in ax.xaxis.get_majorticklabels():
+            label.set_horizontalalignment("right")
+    return fpts, corrs, labels
 
 
 
@@ -701,7 +679,7 @@ def res_sim(
     radius: float = 2,
     align: bool = True,
     method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
-    verbose: bool = True,
+    quiet: bool = True,
 ):
     """
     Compute hotspots similarity by the Jaccard or overlap coefficient of nearby
@@ -767,7 +745,7 @@ def res_sim(
         print("Your selection yields zero atoms.")
         return 0.0
 
-    if verbose:
+    if not quiet:
         print(f"{method} similarity: {ret:.2}")
     return ret
 
@@ -881,7 +859,6 @@ def plot_heatmap(
                             radius=radius,
                             method="jaccard",
                             align=align,
-                            verbose=False,
                         )
                     case HeatmapFunction.RESIDUE_OVERLAP:
                         ret = res_sim(
@@ -890,7 +867,6 @@ def plot_heatmap(
                             radius=radius,
                             method="overlap",
                             align=align,
-                            verbose=False,
                         )
             mat[-1].append(round(ret, 2))
     
@@ -1058,7 +1034,6 @@ def plot_dendrogram(
                     obj2,
                     radius=residue_radius,
                     align=residue_align,
-                    verbose=False,
                 )
             else:
                 j = 0
@@ -1521,10 +1496,6 @@ class CountWidget(QWidget):
         self.dendrogramCheck.setChecked(False)
         boxLayout.addRow("Dendrogram:", self.dendrogramCheck)
 
-        self.alignCheck = QCheckBox()
-        self.alignCheck.setChecked(True)
-        boxLayout.addRow("Align:", self.alignCheck)
-
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_fingerprint)
         boxLayout.addWidget(plotButton)
@@ -1545,7 +1516,6 @@ class CountWidget(QWidget):
         fingerprints = self.fingerprintsCheck.isChecked()
         dendrogram = self.dendrogramCheck.isChecked()
         nbins = self.nBinsSpin.value()
-        align = self.alignCheck.isChecked()
 
         fp_sim(
             hotspots,
@@ -1555,7 +1525,6 @@ class CountWidget(QWidget):
             plot_fingerprints=fingerprints,
             plot_dendrogram=dendrogram,
             nbins=nbins,
-            align=align,
         )
 
 
