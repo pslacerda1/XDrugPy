@@ -677,7 +677,7 @@ def res_sim(
     hs1: Selection,
     hs2: Selection,
     radius: float = 2,
-    align: bool = True,
+    align: bool = False,
     method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
     quiet: bool = True,
 ):
@@ -816,7 +816,7 @@ def plot_heatmap(
     exprs: Selection,
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
-    align: bool = True,
+    align: bool = False,
     axis: str = ''
 ):
     """
@@ -931,7 +931,7 @@ def hs_proj(
 def plot_dendrogram(
     exprs: Selection,
     residue_radius: int = 4,
-    residue_align: bool = True,
+    residue_align: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: bool = -1,
     axis: Any = None
@@ -1369,7 +1369,7 @@ class SimilarityWidget(QWidget):
         boxLayout.addRow("Radius:", self.radiusSpin)
 
         self.heatmapAlignCheck = QCheckBox()
-        self.heatmapAlignCheck.setChecked(True)
+        self.heatmapAlignCheck.setChecked(False)
         boxLayout.addRow("Align:", self.heatmapAlignCheck)
 
         plotButton = QPushButton("Plot")
@@ -1388,7 +1388,7 @@ class SimilarityWidget(QWidget):
         boxLayout.addRow("Residue radius:", self.residueRadiusSpin)
 
         self.resiudeAlignCheck = QCheckBox()
-        self.resiudeAlignCheck.setChecked(True)
+        self.resiudeAlignCheck.setChecked(False)
         boxLayout.addRow("Residue Align:", self.resiudeAlignCheck)
 
         self.linkageMethodCombo = QComboBox()

@@ -120,7 +120,7 @@ def test_dendrograma():
     img_ref = f'{pkg_data}/test_dendrograma_ref.png'
     img_gen = f'{pkg_data}/test_dendrograma_gen.png'
 
-    plot_dendrogram(expr, residue_align=False, axis=img_gen)
+    plot_dendrogram(expr, axis=img_gen)
 
     assert images_identical(img_ref, img_gen)
 

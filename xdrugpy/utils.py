@@ -107,8 +107,8 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
     dendro = sch.dendrogram(
         Z,
         labels=labels,
-        ax=ax,
         count_sort=True,
+        ax=ax,
         **kwargs
     )
     if kwargs.get('orientation') == 'right':
@@ -117,7 +117,8 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
     else:
         axline = ax.axhline
         ticklabels = ax.get_xticklabels()
-        axline(kwargs["color_threshold"], color="gray", ls='--')
+    
+    axline(kwargs["color_threshold"], color="gray", ls='--')
     groups = {}
     for color, leaf in zip(dendro['leaves_color_list'], dendro['ivl']):
         if color not in groups:
