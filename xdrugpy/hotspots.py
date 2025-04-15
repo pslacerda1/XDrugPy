@@ -17,12 +17,13 @@ import pandas as pd
 import matplotlib
 from scipy.spatial import distance_matrix, distance
 from scipy.stats import pearsonr
+from scipy.cluster.hierarchy import linkage
 from pymol import cmd as pm, parsing
 from matplotlib import pyplot as plt
 import seaborn as sb
 from strenum import StrEnum
 
-from .utils import ONE_LETTER, dendrogram, declare_command, Selection, multiple_expression_selector, mpl_axis, expression_selector, Residue
+from .utils import ONE_LETTER, dendrogram, declare_command, Selection, multiple_expression_selector, mpl_axis, expression_selector, Residue, dendrogram_linked
 from .mapping import get_mapping
 
 
@@ -537,7 +538,7 @@ def fp_sim(
     nbins: int = 5,
     axis_fingerprint: str = '',
     axis_dendrogram: str = '',
-    linkage: LinkageMethod = LinkageMethod.WARD,
+    linkage_method: LinkageMethod = LinkageMethod.WARD,
     quiet: bool = True,
 ):
     """
@@ -626,7 +627,7 @@ def fp_sim(
 
         dendrogram(
             [1 - c for c in corrs],
-            method=linkage,
+            method=linkage_method,
             labels=labels,
             ax=ax,
             leaf_rotation=90,
@@ -928,7 +929,7 @@ def hs_proj(
 
 
 @declare_command
-def plot_dendrogram(
+def plot_hca(
     exprs: Selection,
     residue_radius: int = 4,
     residue_align: bool = False,
@@ -1025,7 +1026,6 @@ def plot_dendrogram(
         for idx2, obj2 in enumerate(object_list):
             if idx1 >= idx2:
                 continue
-            
             p1 = p[idx1, :]
             p2 = p[idx2, :]
             if residue_align:
@@ -1039,15 +1039,34 @@ def plot_dendrogram(
                 j = 0
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
-    with mpl_axis(axis) as ax:
-        return dendrogram(
-            X,
-            labels=labels,
-            method=linkage_method,
-            leaf_rotation=90,
-            color_threshold=color_threshold,
-            ax=ax
-        )
+
+    fig = plt.figure(constrained_layout=True)
+    gs = fig.add_gridspec(2, 1, height_ratios=[0.2, 1], hspace=0.05)
+    ax_dend = fig.add_subplot(gs[0])
+    ax_heat = fig.add_subplot(gs[1])
+
+    Z = linkage(X, method=linkage_method)
+    dendro = dendrogram_linked(
+        Z,
+        labels=labels,
+        leaf_rotation=90,
+        color_threshold=color_threshold,
+        ax=ax_dend
+    )
+    X = distance.squareform(X)
+    X = X[dendro['leaves'], :]
+    X = X[:, dendro['leaves']]
+
+    ax_dend.axis('off')
+
+    ax_heat.imshow(X, aspect='auto')
+
+    ax_heat.set_xticks(range(len(dendro['ivl'])), dendro['ivl'])
+    ax_heat.set_yticks(range(len(dendro['ivl'])), dendro['ivl'])
+
+    if isinstance(axis, (str, Path)):
+        plt.savefig(axis)
+    return dendro
 
     
 #
@@ -1376,7 +1395,7 @@ class SimilarityWidget(QWidget):
         plotButton.clicked.connect(self.plot_heatmap)
         boxLayout.addWidget(plotButton)
 
-        groupBox = QGroupBox("Dendrogram")
+        groupBox = QGroupBox("HCA")
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
@@ -1420,7 +1439,7 @@ class SimilarityWidget(QWidget):
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
 
-        return plot_dendrogram(
+        return plot_hca(
             expression,
             residue_radius,
             residue_align,

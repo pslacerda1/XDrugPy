@@ -2,7 +2,7 @@ import os.path
 from glob import glob
 from pymol import cmd as pm
 from xdrugpy.hotspots import (
-    load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_dendrogram,
+    load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_hca,
     plot_heatmap, HeatmapFunction, fp_sim)
 from xdrugpy.rmsf import rmsf
 from xdrugpy.mapping import get_mapping
@@ -11,7 +11,6 @@ from matplotlib import pyplot as plt
 from PIL import Image
 import numpy as np
 pkg_data = os.path.dirname(__file__) + '/data'
-
 
 
 def images_identical(img1_path, img2_path):
@@ -112,16 +111,15 @@ def test_multiple_selector():
     assert result[1] == {'group.CS_00'}
 
 
-def test_dendrograma():
+def test_hca():
     pm.reinitialize()
     load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
 
     expr = "*.CS_* S>=13"
-    img_ref = f'{pkg_data}/test_dendrograma_ref.png'
-    img_gen = f'{pkg_data}/test_dendrograma_gen.png'
+    img_ref = f'{pkg_data}/test_hca_ref.png'
+    img_gen = f'{pkg_data}/test_hca_gen.png'
 
-    plot_dendrogram(expr, axis=img_gen)
-
+    plot_hca(expr, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
 

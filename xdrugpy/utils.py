@@ -3,6 +3,7 @@ import os
 import atexit
 import re
 import numpy as np
+import scipy.cluster.hierarchy as sch
 from collections import namedtuple
 from shutil import rmtree
 from tempfile import mkdtemp
@@ -84,18 +85,11 @@ def run_system(command):
     print('RUNNING SYSTEM PROCESS:', command)
     os.system(command)
 
-
-def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
+def dendrogram(X, method='ward', **kwargs):
     from scipy.spatial.distance import squareform
-    import scipy.cluster.hierarchy as sch
-    from matplotlib import pyplot as plt
-
     X = np.array(X)
-    if ax is None:
-        _, ax = plt.subplots()
-    Z = sch.linkage(X, method=method)
-    if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
-        kwargs['color_threshold'] = 0.7 * max(Z[:,2])
+    if X.ndim == 1:
+        X = squareform(X)
 
     ax_file = False
     if ax is None:
@@ -104,13 +98,8 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
         ax_file = ax
         fig, ax = plt.subplots()
     
-    dendro = sch.dendrogram(
-        Z,
-        labels=labels,
-        count_sort=True,
-        ax=ax,
-        **kwargs
-    )
+    Z = sch.linkage(X, method=method)
+    dendro = dendrogram_linked(Z, **kwargs)
     if kwargs.get('orientation') == 'right':
         axline = ax.axvline
         ticklabels = ax.get_yticklabels()
@@ -125,8 +114,6 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
             groups[color] = []
         groups[color].append(leaf)
     dists_sum = {}
-    if X.ndim == 1:
-        X = squareform(X)
     for color, leaves in groups.items():
         for i1, leaf1 in enumerate(leaves):
             sum_dists = 0
@@ -150,6 +137,22 @@ def dendrogram(X, labels=None, method='ward', ax=None, **kwargs):
     if ax_file:
         plt.tight_layout()
         plt.savefig(ax_file)
+    return dendro
+
+def dendrogram_linked(Z, labels=None, ax=None, **kwargs):
+    from matplotlib import pyplot as plt
+    if ax is None:
+        _, ax = plt.subplots()
+    if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
+        kwargs['color_threshold'] = 0.7 * max(Z[:,2])
+
+    dendro = sch.dendrogram(
+        Z,
+        labels=labels,
+        count_sort=True,
+        ax=ax,
+        **kwargs
+    )
     return dendro
 
 
