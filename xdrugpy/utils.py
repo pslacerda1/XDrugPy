@@ -103,7 +103,7 @@ def dendrogram(X, method='ward', **kwargs):
     if kwargs.get('orientation') == 'right':
         axline = ax.axvline
         ticklabels = ax.get_yticklabels()
-    else:
+    elif kwargs.get('orientation') == 'top':
         axline = ax.axhline
         ticklabels = ax.get_xticklabels()
     
@@ -149,7 +149,6 @@ def dendrogram_linked(Z, labels=None, ax=None, **kwargs):
     dendro = sch.dendrogram(
         Z,
         labels=labels,
-        count_sort=True,
         ax=ax,
         **kwargs
     )
@@ -221,7 +220,6 @@ def declare_command(name, function=None, _self=pm):
     _self.kwhash.append(name)
     _self.help_sc.append(name)
     return inner
-
 
 
 @contextmanager

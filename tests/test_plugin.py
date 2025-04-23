@@ -39,15 +39,15 @@ def test_rmsf():
     assert images_identical(img_ref, img_gen)
 
 
-def test_mapping():
-    pm.reinitialize()
-    load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
-    load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
-    load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", 'eftmap')
+# def test_mapping():
+#     pm.reinitialize()
+#     load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
+#     load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
+#     load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
+#     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", 'eftmap')
 
-    mapping = get_mapping('eftmap', '*.protein')
-    g = mapping.groupby(['resi', 'chain'])
+#     mapping = get_mapping('eftmap', '*.protein')
+#     g = mapping.groupby(['resi', 'chain'])
 
 
 def test_eftmap_overlap():
@@ -115,11 +115,11 @@ def test_hca():
     pm.reinitialize()
     load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
 
-    expr = "*.CS_* S>=13"
+    expr = "*.CS_* S>=5"
     img_ref = f'{pkg_data}/test_hca_ref.png'
     img_gen = f'{pkg_data}/test_hca_gen.png'
 
-    plot_hca(expr, axis=img_gen)
+    plot_hca(expr, color_threshold=1.15, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
 

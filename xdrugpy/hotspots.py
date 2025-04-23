@@ -11,10 +11,12 @@ from types import SimpleNamespace
 from pathlib import Path
 from textwrap import dedent
 from typing import Any
+from collections import defaultdict, namedtuple
 
 import numpy as np
 import pandas as pd
 import matplotlib
+import matplotlib.colors
 from scipy.spatial import distance_matrix, distance
 from scipy.stats import pearsonr
 from scipy.cluster.hierarchy import linkage
@@ -931,11 +933,11 @@ def hs_proj(
 @declare_command
 def plot_hca(
     exprs: Selection,
-    residue_radius: int = 4,
+    residue_radius: float = 4.0,
     residue_align: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: bool = -1,
-    axis: Any = None
+    axis: str = None
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -999,7 +1001,7 @@ def plot_hca(
             )
 
     object_list = list(expression_selector(exprs))
-    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1
+    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, object_list
     
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "K15":
@@ -1041,34 +1043,91 @@ def plot_hca(
             X.append(d)
 
     fig = plt.figure(constrained_layout=True)
-    gs = fig.add_gridspec(2, 1, height_ratios=[0.2, 1], hspace=0.05)
-    ax_dend = fig.add_subplot(gs[0])
-    ax_heat = fig.add_subplot(gs[1])
+    gs = fig.add_gridspec(2, 2, height_ratios=[0.5, 1], width_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
+    ax_dend_top = fig.add_subplot(gs[0, 1])
+    ax_dend_left = fig.add_subplot(gs[1, 0])
+    ax_heat = fig.add_subplot(gs[1, 1])
 
     Z = linkage(X, method=linkage_method)
-    dendro = dendrogram_linked(
+    dendro1 = dendrogram_linked(
         Z,
         labels=labels,
-        leaf_rotation=90,
+        orientation='top',
+        count_sort=True,
         color_threshold=color_threshold,
-        ax=ax_dend
+        leaf_rotation=90,
+        ax=ax_dend_top,
+        no_labels=True,
     )
+    dendro2 = dendrogram_linked(
+        Z,
+        labels=labels,
+        orientation='left',
+        count_sort=True,
+        color_threshold=color_threshold,
+        ax=ax_dend_left,
+        no_labels=True,
+    )
+    
+    ax_dend_top.axhline(color_threshold, color="gray", ls='--')
+    ax_dend_left.axvline(color_threshold, color="gray", ls='--')
+
     X = distance.squareform(X)
-    X = X[dendro['leaves'], :]
-    X = X[:, dendro['leaves']]
-
-    ax_dend.axis('off')
-
+    X = X[list(dendro1['leaves']), :]
+    X = X[:, list(dendro1['leaves'])]
+    print(X)
+    print(dendro1['ivl'])
+    ax_heat.set_xticks(range(len(dendro1['ivl'])), dendro1['ivl'])
+    ax_heat.set_yticks(range(len(dendro2['ivl'])), list(reversed(dendro1['ivl'])))
+    ax_heat.tick_params(axis='x', rotation=90)
+    ax_heat.yaxis.tick_right()
     ax_heat.imshow(X, aspect='auto')
 
-    ax_heat.set_xticks(range(len(dendro['ivl'])), dendro['ivl'])
-    ax_heat.set_yticks(range(len(dendro['ivl'])), dendro['ivl'])
-
-    if isinstance(axis, (str, Path)):
-        plt.savefig(axis)
-    return dendro
-
+    medoids = {}
+    groups = {}
+    for (color, labels, leaves) in zip(
+        dendro1['leaves_color_list'],
+        dendro1['ivl'],
+        dendro1['leaves']
+    ):
+        if color not in groups:
+            groups[color] = []
+        groups[color].append((labels, leaves))
+        dists_sum = {}
+        for leaf1, leaf1_idx in groups[color]:
+            sum_dists = 0
+            for _, leaf2_idx in groups[color]:
+                d = X[leaf1_idx, leaf2_idx]
+                sum_dists += d
+            dists_sum[leaf1] = sum_dists
+            items = list(sorted(dists_sum.items(), key=lambda k: (k[1], k[0])))
+            new_items = []
+            first_max = items[0][1]
+            for item in items:
+                if item[1] == first_max:
+                    new_items.append(item[0])
+            medoids[color] = new_items
     
+    ticklabels = [
+        *ax_heat.get_xticklabels(),
+        *ax_heat.get_yticklabels()
+    ]
+    for color in medoids:
+        for label in ticklabels:
+            for leaf in medoids[color]:
+                if label.get_text() == leaf:
+                    label.set_color(color)
+                    label.set_fontstyle("italic")
+    
+    if isinstance(axis, (str, Path)):
+        # TODO why this fail?
+        # plt.tight_layout()
+        plt.savefig(axis)
+    else:
+        plt.show()
+    return dendro1, medoids
+
+
 #
 # GRAPHICAL USER INTERFACE
 #
@@ -1400,10 +1459,10 @@ class SimilarityWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.residueRadiusSpin = QSpinBox()
-        self.residueRadiusSpin.setValue(4)
-        self.residueRadiusSpin.setMinimum(3)
-        self.residueRadiusSpin.setMaximum(5)
+        self.residueRadiusSpin = QDoubleSpinBox()
+        self.residueRadiusSpin.setValue(4.0)
+        self.residueRadiusSpin.setMinimum(0)
+        self.residueRadiusSpin.setMaximum(10)
         boxLayout.addRow("Residue radius:", self.residueRadiusSpin)
 
         self.resiudeAlignCheck = QCheckBox()
@@ -1418,7 +1477,7 @@ class SimilarityWidget(QWidget):
         self.colorThresholdSpin.setMinimum(-0.001)
         self.colorThresholdSpin.setValue(-0.001)
         self.colorThresholdSpin.setSingleStep(0.001)
-        self.colorThresholdSpin.setDecimals(1)
+        self.colorThresholdSpin.setDecimals(2)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
         plotButton = QPushButton("Plot")
