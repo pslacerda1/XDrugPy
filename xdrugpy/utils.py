@@ -85,7 +85,7 @@ def run_system(command):
     print('RUNNING SYSTEM PROCESS:', command)
     os.system(command)
 
-def dendrogram(X, method='ward', **kwargs):
+def dendrogram(X, method='ward', ax=None, **kwargs):
     from scipy.spatial.distance import squareform
     X = np.array(X)
     if X.ndim == 1:
@@ -135,7 +135,7 @@ def dendrogram(X, method='ward', **kwargs):
             if label.get_text() == leaf:
                 label.set_color(color)
     if ax_file:
-        plt.tight_layout()
+        # plt.tight_layout()
         plt.savefig(ax_file)
     return dendro
 

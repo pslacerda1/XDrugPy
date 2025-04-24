@@ -315,7 +315,7 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
         #             del count[res]
         ax.bar(count.keys(), count.values())
         ax.set_title(interaction_type)
-    plt.xticks(rotation=45)
+    plt.xticks(rotation=90)
     plt.show()
 
     fig, ax = plt.subplots(layout="constrained")
@@ -350,21 +350,22 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
                     ])
             labels.append(cur_name)
     
-    D = []
+    X = []
     for idx1, mol1 in enumerate(mols):
         for idx2, mol2 in enumerate(mols):
             if idx1 >= idx2:
                 continue
             d = euclidean(mol1, mol2)
-            D.append(d)
+            X.append(d)
     dendrogram(
-        D,
+        X,
         labels=labels,
         orientation='right',
         color_threshold=-1,
         ax=ax
     )
     ax.set_xlim(0)
+    plt.tight_layout()
     plt.show()
 
 
