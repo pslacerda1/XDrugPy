@@ -15,7 +15,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from matplotlib.axes import Axes
 from matplotlib import pyplot as plt
-
+from scipy.spatial import distance
+from scipy.cluster.hierarchy import linkage
 
 QStandardPaths = Qt.QtCore.QStandardPaths
 
@@ -325,3 +326,100 @@ def multiple_expression_selector(exprs, type=None):
     for expr in exprs.split(':'):
         object_list.append(expression_selector(expr, type=type))
     return object_list
+
+
+
+def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
+    fig = plt.figure(constrained_layout=True)
+    gs = fig.add_gridspec(2, 2, height_ratios=[0.5, 1], width_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
+    ax_dend_top = fig.add_subplot(gs[0, 1])
+    ax_dend_left = fig.add_subplot(gs[1, 0])
+    ax_heat = fig.add_subplot(gs[1, 1])
+
+    Z = linkage(X, method=linkage_method)
+    dendro1 = dendrogram_linked(
+        Z,
+        labels=labels,
+        orientation='top',
+        color_threshold=color_threshold,
+        leaf_rotation=90,
+        ax=ax_dend_top,
+        no_labels=True,
+    )
+    dendro2 = dendrogram_linked(
+        Z,
+        labels=labels,
+        orientation='left',
+        color_threshold=color_threshold,
+        ax=ax_dend_left,
+        no_labels=True,
+    )
+    
+    ax_dend_top.axhline(color_threshold, color="gray", ls='--')
+    ax_dend_left.axvline(color_threshold, color="gray", ls='--')
+
+    X = np.array(X)
+    if X.ndim == 1:
+        X = distance.squareform(X)
+    
+    lower_ix = np.tril_indices(X.shape[0], X.shape[1])
+    reversed_vals = np.flipud(X[lower_ix])
+    result = X.copy()
+    result[lower_ix] = reversed_vals
+
+    X = X[dendro1['leaves'], :]
+    X = X[:, list(reversed(dendro1['leaves']))]
+    ax_heat.set_xticks(range(len(dendro1['ivl'])), dendro1['ivl'])
+    ax_heat.set_yticks(range(len(dendro2['ivl'])), dendro1['ivl'])
+    ax_heat.tick_params(axis='x', rotation=90)
+    ax_heat.yaxis.tick_right()
+    ax_heat.imshow(X, aspect='auto')
+
+    medoids = {}
+    groups = {}
+    for (color, labels, leaves) in zip(
+        dendro1['leaves_color_list'],
+        dendro1['ivl'],
+        dendro1['leaves']
+    ):
+        # assert (
+        #     dendro1['leaves_color_list'] == dendro2['leaves_color_list'] and
+        #     dendro1['ivl'] == dendro2['ivl'] and
+        #     dendro1['leaves'] == dendro2['leaves']
+        # )
+        if color not in groups:
+            groups[color] = []
+        groups[color].append((labels, leaves))
+        dists_sum = {}
+        for leaf1, leaf1_idx in groups[color]:
+            sum_dists = 0
+            for _, leaf2_idx in groups[color]:
+                d = X[leaf1_idx, leaf2_idx]
+                sum_dists += d
+            dists_sum[leaf1] = sum_dists
+        items = list(sorted(dists_sum.items()))
+        new_items = []
+        first_max = items[0]
+        for item in items:
+            if item[1] == first_max[1]:
+                new_items.append(item[0])
+        medoids[color] = new_items
+    
+    ticklabels = [
+        *ax_heat.get_xticklabels(),
+        *ax_heat.get_yticklabels()
+    ]
+    for color in medoids:
+        for label in ticklabels:
+            for leaf in medoids[color]:
+                if label.get_text() == leaf:
+                    label.set_color(color)
+                    label.set_fontstyle("italic")
+    
+    if isinstance(axis, (str, Path)):
+        # TODO why this fail?
+        # plt.tight_layout()
+        plt.savefig(axis)
+    else:
+        plt.show()
+    return dendro1, medoids

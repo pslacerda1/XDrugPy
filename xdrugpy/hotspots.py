@@ -4,30 +4,26 @@ import subprocess
 import re
 import tempfile
 from glob import glob
-from fnmatch import fnmatch
 from itertools import combinations
 from pathlib import Path
 from types import SimpleNamespace
 from pathlib import Path
-from textwrap import dedent
-from typing import Any
-from collections import defaultdict, namedtuple
 
 import numpy as np
 import pandas as pd
 import matplotlib
-import matplotlib.colors
 from scipy.spatial import distance_matrix, distance
 from scipy.stats import pearsonr
-from scipy.cluster.hierarchy import linkage
-from pymol import cmd as pm, parsing
 from matplotlib import pyplot as plt
-import seaborn as sb
 from strenum import StrEnum
 
-from .utils import ONE_LETTER, dendrogram, declare_command, Selection, multiple_expression_selector, mpl_axis, expression_selector, Residue, dendrogram_linked
+from .utils import (
+    ONE_LETTER, dendrogram, declare_command, Selection, multiple_expression_selector,
+    mpl_axis, expression_selector, plot_hca_base
+)
 from .mapping import get_mapping
 
+from pymol import cmd as pm
 
 matplotlib.use("Qt5Agg")
 
@@ -1041,91 +1037,8 @@ def plot_hca(
                 j = 0
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
+    return plot_hca_base(X, labels, linkage_method, color_threshold, axis)
 
-    fig = plt.figure(constrained_layout=True)
-    gs = fig.add_gridspec(2, 2, height_ratios=[0.5, 1], width_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
-    ax_dend_top = fig.add_subplot(gs[0, 1])
-    ax_dend_left = fig.add_subplot(gs[1, 0])
-    ax_heat = fig.add_subplot(gs[1, 1])
-
-    Z = linkage(X, method=linkage_method)
-    dendro1 = dendrogram_linked(
-        Z,
-        labels=labels,
-        orientation='top',
-        count_sort=True,
-        color_threshold=color_threshold,
-        leaf_rotation=90,
-        ax=ax_dend_top,
-        no_labels=True,
-    )
-    dendro2 = dendrogram_linked(
-        Z,
-        labels=labels,
-        orientation='left',
-        count_sort=True,
-        color_threshold=color_threshold,
-        ax=ax_dend_left,
-        no_labels=True,
-    )
-    
-    ax_dend_top.axhline(color_threshold, color="gray", ls='--')
-    ax_dend_left.axvline(color_threshold, color="gray", ls='--')
-
-    X = distance.squareform(X)
-    X = X[list(dendro1['leaves']), :]
-    X = X[:, list(dendro1['leaves'])]
-    print(X)
-    print(dendro1['ivl'])
-    ax_heat.set_xticks(range(len(dendro1['ivl'])), dendro1['ivl'])
-    ax_heat.set_yticks(range(len(dendro2['ivl'])), list(reversed(dendro1['ivl'])))
-    ax_heat.tick_params(axis='x', rotation=90)
-    ax_heat.yaxis.tick_right()
-    ax_heat.imshow(X, aspect='auto')
-
-    medoids = {}
-    groups = {}
-    for (color, labels, leaves) in zip(
-        dendro1['leaves_color_list'],
-        dendro1['ivl'],
-        dendro1['leaves']
-    ):
-        if color not in groups:
-            groups[color] = []
-        groups[color].append((labels, leaves))
-        dists_sum = {}
-        for leaf1, leaf1_idx in groups[color]:
-            sum_dists = 0
-            for _, leaf2_idx in groups[color]:
-                d = X[leaf1_idx, leaf2_idx]
-                sum_dists += d
-            dists_sum[leaf1] = sum_dists
-            items = list(sorted(dists_sum.items(), key=lambda k: (k[1], k[0])))
-            new_items = []
-            first_max = items[0][1]
-            for item in items:
-                if item[1] == first_max:
-                    new_items.append(item[0])
-            medoids[color] = new_items
-    
-    ticklabels = [
-        *ax_heat.get_xticklabels(),
-        *ax_heat.get_yticklabels()
-    ]
-    for color in medoids:
-        for label in ticklabels:
-            for leaf in medoids[color]:
-                if label.get_text() == leaf:
-                    label.set_color(color)
-                    label.set_fontstyle("italic")
-    
-    if isinstance(axis, (str, Path)):
-        # TODO why this fail?
-        # plt.tight_layout()
-        plt.savefig(axis)
-    else:
-        plt.show()
-    return dendro1, medoids
 
 
 #

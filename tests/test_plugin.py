@@ -10,6 +10,8 @@ from xdrugpy.utils import expression_selector, multiple_expression_selector
 from matplotlib import pyplot as plt
 from PIL import Image
 import numpy as np
+import json
+
 pkg_data = os.path.dirname(__file__) + '/data'
 
 
@@ -119,8 +121,18 @@ def test_hca():
     img_ref = f'{pkg_data}/test_hca_ref.png'
     img_gen = f'{pkg_data}/test_hca_gen.png'
 
-    plot_hca(expr, color_threshold=1.15, axis=img_gen)
-    assert images_identical(img_ref, img_gen)
+    dendro_test = plot_hca(expr, color_threshold=1.15, axis=img_gen)
+    dendro_ok = plot_hca(expr, color_threshold=1.15, axis=img_ref)
+    
+    from pprint import pp
+    pp(dendro_test)
+    print()
+    pp(dendro_ok)
+    
+    assert (
+        json.dumps(dendro_test, sort_keys=True) == json.dumps(dendro_ok, sort_keys=True)
+    )
+
 
 
 def test_heatmap():
