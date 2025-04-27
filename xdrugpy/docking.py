@@ -27,7 +27,7 @@ from lxml import etree
 from matplotlib import pyplot as plt
 from scipy.spatial.distance import euclidean
 
-from .utils import LIGAND_LIBRARIES_DIR, TEMPDIR, run, dendrogram, RECEPTOR_LIBRARIES_DIR
+from .utils import LIGAND_LIBRARIES_DIR, TEMPDIR, run, plot_hca_base, RECEPTOR_LIBRARIES_DIR
 
 
 QWidget = Qt.QtWidgets.QWidget
@@ -318,7 +318,6 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
     plt.xticks(rotation=90)
     plt.show()
 
-    fig, ax = plt.subplots(layout="constrained")
     df = pd.DataFrame({
         'name': names_l,
         'residue': residues_l
@@ -357,16 +356,14 @@ def load_plip_full(project_dir, max_load, max_mode, tree_model):
                 continue
             d = euclidean(mol1, mol2)
             X.append(d)
-    dendrogram(
-        X,
-        labels=labels,
-        orientation='right',
-        color_threshold=-1,
-        ax=ax
-    )
     ax.set_xlim(0)
-    plt.tight_layout()
-    plt.show()
+    plot_hca_base(
+        X,
+        labels,
+        linkage_method='ward',
+        color_threshold=-1,
+        axis=None
+    )
 
 
 class OrderedCounter(Counter, OrderedDict):
