@@ -119,17 +119,12 @@ def test_hca():
 
     expr = "*.CS_* S>=5"
     img_ref = f'{pkg_data}/test_hca_ref.png'
-    img1_gen = f'{pkg_data}/test_hca1_gen.png'
-    img2_gen = f'{pkg_data}/test_hca2_gen.png'
+    img_gen = f'{pkg_data}/test_hca_gen.png'
 
-    dendro_test = plot_hca(expr, color_threshold=1.15, axis=img1_gen)
-    dendro_ok = plot_hca(expr, color_threshold=1.15, axis=img2_gen)
-
-    assert (
-        json.dumps(dendro_test, sort_keys=True) == json.dumps(dendro_ok, sort_keys=True)
-    )
-
-    assert images_identical(img_ref, img1_gen)
+    dendro, medoids = plot_hca(expr, color_threshold=0.7, axis=img_gen)
+    assert medoids['C1'].pop() == 'group.CS_02'
+    assert medoids['C1'] == []
+    assert images_identical(img_ref, img_gen)
 
 
 

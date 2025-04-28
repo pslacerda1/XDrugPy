@@ -1034,7 +1034,7 @@ def plot_hca(
                     align=residue_align,
                 )
             else:
-                j = 0
+                j = 1
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
     return plot_hca_base(X, labels, linkage_method, color_threshold, axis)

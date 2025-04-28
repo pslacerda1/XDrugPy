@@ -335,24 +335,24 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
     ax_dend_top = fig.add_subplot(gs[0])
     ax_heat = fig.add_subplot(gs[1])
 
-    Z = linkage(X, method=linkage_method)
+    Z = linkage(X, method=linkage_method, metric='precomputed', optimal_ordering=True)
     dendro1 = dendrogram_linked(
         Z,
         labels=labels,
         orientation='top',
         color_threshold=color_threshold,
+        distance_sort=True,
         leaf_rotation=90,
         ax=ax_dend_top,
-        count_sort='ascending',
         no_labels=True,
     )
-    
     ax_dend_top.axhline(color_threshold, color="gray", ls='--')
 
     X = np.array(X)
     if X.ndim == 1:
         X = distance.squareform(X)
 
+    Y = X  #XXX Why?
     X = X[dendro1['leaves'], :]
     X = X[:, dendro1['leaves']]
 
@@ -362,57 +362,49 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
     ax_heat.yaxis.tick_right()
     ax_heat.imshow(X, aspect='auto')
 
-    visited = set()
     min_dists = defaultdict(list)
-    colors = set(dendro1["leaves_color_list"])
+    colors = set(dendro1["leaves_color_list"]) - {'C0'}
+    if not colors:
+        colors = {'C0'}
     for color in colors:
-        for leaf1_idx, leaf_label, color1 in zip(dendro1['leaves'], dendro1['ivl'], dendro1['leaves_color_list']):
+        for leaf1_idx, leaf_label1, color1 in zip(dendro1['leaves'], dendro1['ivl'], dendro1['leaves_color_list']):
             if color != color1:
                 continue
-            key = (leaf1_idx, leaf_label, color)
-            # if key in visited:
-            #     continue
-            # visited.add(key)
-            items = []
-            for leaf2_idx, _ in zip(dendro1['leaves'], dendro1['ivl']):
-                d = X[leaf1_idx, leaf2_idx]
-                items.append((color, leaf_label, d))
-                
-            dists = {}
-            d = 0 
-            for color, _, d in items:
-                d += d
-            dists[(color, leaf_label)] = d
-            dists = {c:d for c, d in sorted(dists.items(), key=lambda k: k[1])}
-            new_items = []
-            items = sorted(items, key=lambda k: k[2])
-            value = items[-1][2]
+            d = 0
+            for leaf2_idx, _, color2 in zip(dendro1['leaves'], dendro1['ivl'], dendro1["leaves_color_list"]):
+                if color != color2:
+                    continue
+                new_d_X = X[leaf1_idx, leaf2_idx]
+                new_d_Y = Y[leaf1_idx, leaf2_idx] #XXX Why?
+                d += new_d_Y
+            min_dists[(color, leaf_label1)] = d
 
-            for color, leaf_label, dist in items:
-                if dist == value:
-                    new_items.append(key)
-            min_dists[color] = [*min_dists[color], *new_items]
-    
     medoids = {}
     for color in colors:
         min_d = float('inf')
-        min_leaf = None
-        for i1, leaf1, _ in min_dists[color]:
-            d = 0
-            for i2, _, _ in min_dists[color]:
-                d += X[i1, i2]
-            if d < min_d:
-                min_d = d
-                min_leaf = leaf1
-        medoids[color] = min_d, min_leaf
+        min_leaves = []
+        started = False
+        for (color1, leaf_label1), d_sum in min_dists.items():
+            if color1 != color:
+                continue
+            if not started:
+                started = True
+                for (color2, leaf_label2), d_sum1 in min_dists.items():
+                    if color2 == color1:
+                        if d_sum1 - min_d < 1e-10:
+                            min_d = d_sum1
+            if d_sum - min_d  <= 1e-10:
+                min_d = d_sum
+                min_leaves.append(leaf_label1)
+        medoids[color] = min_leaves
+
     ticklabels = [
         *ax_heat.get_xticklabels(),
         *ax_heat.get_yticklabels()
     ]
     for color in colors:
         for label in ticklabels:
-            d, leaf = medoids[color]
-            if label.get_text() == leaf:
+            if label.get_text() in medoids[color]:
                 label.set_color(color)
                 label.set_fontstyle("italic")
     
