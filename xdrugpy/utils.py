@@ -104,7 +104,7 @@ def dendrogram(X, method='ward', ax=None, **kwargs):
     if kwargs.get('orientation') == 'right':
         axline = ax.axvline
         ticklabels = ax.get_yticklabels()
-    elif kwargs.get('orientation') == 'top':
+    elif kwargs.get('orientation', 'top') == 'top':
         axline = ax.axhline
         ticklabels = ax.get_xticklabels()
     
