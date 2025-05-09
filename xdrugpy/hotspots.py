@@ -164,8 +164,8 @@ def get_fpocket(group, protein):
             pm.delete(pocket.selection)
             pm.load(pocket_pdb, pocket.selection)
             pm.set_property("Type", "Fpocket", pocket.selection)
-            pm.set_property("Group", group. pocket.selection)
-            pm.set_property("Selection", pocket.select)
+            pm.set_property("Group", group)
+            pm.set_property("Selection", pocket.selection)
             for line in pm.get_property('pdb_header', pocket.selection).split('\n'):
                 if match := header_re.match(line):
                     prop = match.group(1).strip()
@@ -295,7 +295,7 @@ def get_kozakov2015_large(group, fpo_list, clusters):
             "Length": len(pocket_clusters),
             "Fpocket": pocket.selection
         })
-
+        hs.selection = hs.Selection
         if hs.kozakov_class:
             k15l.append(hs)
         
@@ -306,7 +306,7 @@ def get_kozakov2015_large(group, fpo_list, clusters):
 def load_ftmap(
     filename: Path,
     group: str = "",
-    k15_max_length: int = 5,
+    k15_max_length: int = 3,
     run_fpocket: bool = False
 ):
     """
@@ -416,7 +416,7 @@ def fo(
     state1: int = 1,
     state2: int = 1,
     radius: float = 2,
-    verbose: bool = True,
+    quiet: bool = True,
 ):
     """
     Compute the fractional overlap of sel1 respective to sel2.
@@ -444,7 +444,7 @@ def fo(
         num_contacts = np.sum(np.any(dist, axis=1))
         total_atoms = len(atoms1)
         fo_ = num_contacts / total_atoms
-    if verbose:
+    if not quiet:
         print(f"FO: {fo_:.2f}")
     return fo_
 
@@ -494,7 +494,7 @@ def dce(
     state1: int = 1,
     state2: int = 1,
     radius: float = 1.25,
-    verbose: bool = True,
+    quiet: bool = True,
 ):
     """
     Compute the Density Correlation Efficiency according to:
@@ -516,7 +516,7 @@ def dce(
     """
     dc_ = dc(sel1, sel2, radius=radius, state1=state1, state2=state2, verbose=False)
     dce_ = dc_ / pm.count_atoms(f"({sel1}) and not elem H")
-    if verbose:
+    if not quiet:
         print(f"DCE: {dce_:.2f}")
     return dce_
 
@@ -1107,7 +1107,7 @@ class LoadWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.maxLengthSpin = QSpinBox()
-        self.maxLengthSpin.setValue(5)
+        self.maxLengthSpin.setValue(3)
         self.maxLengthSpin.setMinimum(3)
         self.maxLengthSpin.setMaximum(8)
         boxLayout.addRow("Max length:", self.maxLengthSpin)
