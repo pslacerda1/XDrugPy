@@ -737,8 +737,9 @@ class VinaThread(BaseThread):
                 receptor_sel,
                 box_sel,
                 box_margin,
-                allow_errors,
                 ph,
+                skip_acidbase,
+                skip_tautomers,
                 exhaustiveness,
                 num_modes,
                 min_rmsd,
@@ -756,7 +757,18 @@ class VinaThread(BaseThread):
         receptor_pdbqt = f"{project_dir}/receptor.pdbqt"
         queue_dir = f"{project_dir}/queue"
         output_dir = f"{project_dir}/output"
-        
+
+        #
+        # Check previous output
+        #
+        if os.listdir(project_dir):
+            self.logEvent.emit(f"""
+                <br/>
+                <font color="red">
+                    <b>The docking folder is not empty: '{project_dir}'</b>
+                </font>
+            """)
+            
         try:
             os.mkdir(output_dir)
         except FileExistsError:
@@ -776,17 +788,6 @@ class VinaThread(BaseThread):
             """)
         else:
             #
-            # Check previous output
-            #
-            if os.listdir(project_dir):
-                self.logEvent.emit(f"""
-                    <br/>
-                    <font color="red">
-                        <b>The docking folder is not empty: '{project_dir}'</b>
-                    </font>
-                """)
-
-            #
             # Prepare receptor
             #
             receptor_lib = RECEPTOR_LIBRARIES_DIR + saved_receptor + '.pdbqt'
@@ -804,8 +805,6 @@ class VinaThread(BaseThread):
                 command = (
                     f'python -m meeko.cli.mk_prepare_receptor --read_pdb "{receptor_pdb}" -p "{receptor_pdbqt}"'
                 )
-                if allow_errors:
-                    command = f"{command} -a"
                 self.logEvent.emit(f"""
                     <br/>
                     <br/><b>Preparing receptor.</b>
@@ -885,8 +884,18 @@ class VinaThread(BaseThread):
                 # Scrubbe isomers
                 #
                 ligands_sdf = project_dir + "/ligands.sdf"
+                if skip_acidbase:
+                    skip_acidbase = "--skip_acidbase"
+                else:
+                    skip_acidbase = ""
+                if skip_tautomers:
+                    skip_tautomers = "--skip_tautomers"
+                else:
+                    skip_tautomers = ""
+                
                 command = (
-                    f'python -m scrubber.main -o "{ligands_sdf}" --ph {ph} --cpu {cpu} "{ligands_file}"'
+                    f'python -m scrubber.main -o "{ligands_sdf}" --ph {ph}  --cpu {cpu}'
+                    f' {skip_acidbase} {skip_tautomers} "{ligands_file}"'
                 )
                 self.logEvent.emit(
                     f"""
@@ -980,12 +989,11 @@ class VinaThread(BaseThread):
             f" --batch '{queue_dir}/'*.pdbqt"
         ).format(**project_data)
         
-        self.logEvent.emit(f"""    
+        self.logEvent.emit(f"""
             <br/>
             <br/><b>Docking ligands.</b>
             <br/><b>Command:</b> {vina_command}
         """)
-
         total_ligands = len(os.listdir(queue_dir) + os.listdir(output_dir))
         self.numSteps.emit(total_ligands)
         self.incrementStep.emit(len(os.listdir(output_dir)))
@@ -1123,11 +1131,6 @@ def new_run_docking_widget():
         pm.delete("box")
         display_box_sel("box", box_sel.currentText(), margin)
 
-
-    allow_errors_check = QCheckBox(widget)
-    allow_errors_check.setChecked(False)
-    tab1_layout.addRow("Allow Meeko errors:", allow_errors_check)
-
     saved_receptor_line = QLineEdit()
     saved_receptor_line.setPlaceholderText("set a title to save")
     tab1_layout.addRow("Store receptor:", saved_receptor_line)
@@ -1173,7 +1176,7 @@ def new_run_docking_widget():
 
     ligands_file = None
     ligands_button = QPushButton("Choose file...", widget)
-    tab1_layout.addRow("Ligand file:", ligands_button)
+    tab1_layout.addRow("Ligands file:", ligands_button)
 
     ph_spin = QDoubleSpinBox(widget)
     ph_spin.setRange(0.0, 14.0)
@@ -1181,6 +1184,14 @@ def new_run_docking_widget():
     ph_spin.setSingleStep(0.1)
     ph_spin.setDecimals(1)
     tab1_layout.addRow("Ligands pH:", ph_spin)
+
+    enumerate_acidbase = QCheckBox()
+    enumerate_acidbase.setChecked(False)
+    tab1_layout.addRow("Enumerate acid-base:", enumerate_acidbase)
+
+    enumerate_tautomers = QCheckBox()
+    enumerate_tautomers.setChecked(False)
+    tab1_layout.addRow("Enumerate tautomers:", enumerate_tautomers)
 
     @ligands_button.clicked.connect
     def choose_ligands():
@@ -1332,8 +1343,9 @@ def new_run_docking_widget():
                 receptor_sel.currentText(),
                 box_sel.currentText(),
                 box_margin_spin.value(),
-                allow_errors_check.isChecked(),
                 ph_spin.value(),
+                not enumerate_acidbase.isChecked(),
+                not enumerate_tautomers.isChecked(),
                 exhaustiveness_spin.value(),
                 num_modes_spin.value(),
                 min_rmsd_spin.value(),
