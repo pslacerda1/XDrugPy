@@ -1239,6 +1239,12 @@ class TableWidget(QWidget):
             ("Egbert2019", "E19"): ["Fpocket", "S","S0", "S1", "Length"],
             ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
+        
+        self.tables = {}
+        for (title, key), props in self.hotspotsMap.items():
+            table = self.TableWidgetImpl(props)
+            self.tables[title] = table
+            tab.addTab(table, title)
 
         @tab.currentChanged.connect
         def currentChanged(tab_index):
@@ -1246,12 +1252,6 @@ class TableWidget(QWidget):
             expr = filter_line.text()
             self.selected_objs = expression_selector(expr, self.current_tab)
             self.refresh()
-            
-        self.tables = {}
-        for (title, key), props in self.hotspotsMap.items():
-            table = self.TableWidgetImpl(props)
-            self.tables[title] = table
-            tab.addTab(table, title)
 
         exportButton = QPushButton(QIcon("save"), "Export Tables")
         exportButton.clicked.connect(self.export)

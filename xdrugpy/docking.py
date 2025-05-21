@@ -1004,7 +1004,7 @@ class VinaThread(BaseThread):
                 <br/>
                 <br/>
                 <font color="red">
-                    <b>Failure on docking. Outputing on the last chunks.</b>
+                    <b>Failure on docking. Outputing the last chunks.</b>
                 </font> 
                 </br>
             """)
