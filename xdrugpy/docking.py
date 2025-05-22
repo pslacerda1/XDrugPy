@@ -738,6 +738,7 @@ class VinaThread(BaseThread):
                 box_sel,
                 box_margin,
                 ph,
+                allow_bad_res,
                 skip_acidbase,
                 skip_tautomers,
                 exhaustiveness,
@@ -801,9 +802,15 @@ class VinaThread(BaseThread):
                 """)
                 
             else:
+                
+                if allow_bad_res:
+                    allow_bad_res = "--allow_bad_res"
+                else:
+                    allow_bad_res = ""
+
                 pm.save(receptor_pdb, receptor_sel)
                 command = (
-                    f'python -m meeko.cli.mk_prepare_receptor --read_pdb "{receptor_pdb}" -p "{receptor_pdbqt}"'
+                    f'python -m meeko.cli.mk_prepare_receptor {allow_bad_res} --read_pdb "{receptor_pdb}" -p "{receptor_pdbqt}"'
                 )
                 self.logEvent.emit(f"""
                     <br/>
@@ -1185,6 +1192,10 @@ def new_run_docking_widget():
     ph_spin.setDecimals(1)
     tab1_layout.addRow("Ligands pH:", ph_spin)
 
+    allow_bad_res_check = QCheckBox()
+    allow_bad_res_check.setChecked(False)
+    tab1_layout.addRow("Allow bad residues:", allow_bad_res_check)
+
     enumerate_acidbase = QCheckBox()
     enumerate_acidbase.setChecked(False)
     tab1_layout.addRow("Enumerate acid-base:", enumerate_acidbase)
@@ -1344,6 +1355,7 @@ def new_run_docking_widget():
                 box_sel.currentText(),
                 box_margin_spin.value(),
                 ph_spin.value(),
+                allow_bad_res_check.isChecked(),
                 not enumerate_acidbase.isChecked(),
                 not enumerate_tautomers.isChecked(),
                 exhaustiveness_spin.value(),
