@@ -1220,13 +1220,11 @@ class TableWidget(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
         
-        filter_line = QLineEdit()
-        layout.addWidget(filter_line)
+        self.filter_line = QLineEdit("*")
+        layout.addWidget(self.filter_line)
 
-        @filter_line.textEdited.connect
+        @self.filter_line.textEdited.connect
         def textEdited(expr):
-            if not expr.strip():
-                return
             self.selected_objs = expression_selector(expr, self.current_tab)
             self.refresh()
         tab = QTabWidget()
@@ -1249,7 +1247,7 @@ class TableWidget(QWidget):
         @tab.currentChanged.connect
         def currentChanged(tab_index):
             self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
-            expr = filter_line.text()
+            expr = self.filter_line.text()
             self.selected_objs = expression_selector(expr, self.current_tab)
             self.refresh()
 
@@ -1257,7 +1255,9 @@ class TableWidget(QWidget):
         exportButton.clicked.connect(self.export)
         layout.addWidget(exportButton)
 
+
     def showEvent(self, event):
+        self.filter_line.textEdited.emit(self.filter_line.text())
         self.refresh()
         super().showEvent(event)
 
@@ -1275,9 +1275,9 @@ class TableWidget(QWidget):
                     continue
                 obj_type = pm.get_property('Type', obj)
                 if obj_type == key:
-                    if len(self.selected_objs) == 0:
-                        self.appendRow(title, key, obj)
-                    elif obj in self.selected_objs:
+                    # if len(self.selected_objs) == 0:
+                    #     self.appendRow(title, key, obj)
+                    if obj in self.selected_objs:
                         self.appendRow(title, key, obj)
 
             self.tables[title].setSortingEnabled(True)
