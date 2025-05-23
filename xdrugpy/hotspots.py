@@ -19,9 +19,8 @@ from strenum import StrEnum
 
 from .utils import (
     ONE_LETTER, dendrogram, declare_command, Selection, multiple_expression_selector,
-    mpl_axis, expression_selector, plot_hca_base
+    mpl_axis, expression_selector, plot_hca_base, get_mapping
 )
-from .mapping import get_mapping
 
 from pymol import cmd as pm
 
@@ -569,15 +568,13 @@ def fp_sim(
 
     proteins = [f"{g}.protein" for g in groups]
     mapping = get_mapping(
-        proteins[0],
-        '*.protein',
-        transform=False,
+        proteins,
         site=site,
         radius=radius
     )
+    fpts = []
     if axis_fingerprint is not False:
         with mpl_axis(axis_fingerprint, nrows=len(hotspots), sharey=True) as axs:
-            fpts = []
             for hs in hotspots:
                 fpt = {}
                 @mapping.groupby(['chain', 'resi'], as_index=False).apply
@@ -591,27 +588,29 @@ def fp_sim(
                         fpt[lbl] = fpt.get(lbl, 0) + cnt
                 fpts.append(fpt)
                 
-                fpt0 = fpts[0]
-                if not all([len(fpt0) == len(fpt) for fpt in fpts]):
-                    raise ValueError(
-                        "All fingerprints must have the same length. "
-                        "Do you have incomplete structures?"
-                    )
-                for ax, fpt, hs in zip(axs, fpts, hotspots):
-                    labels = ['%s %s:%s' % k for k in fpt]
-                    arange = np.arange(len(fpt))
-                    ax.bar(arange, fpt.values(), color='C0')
-                    ax.set_title(hs)
-                    ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-                    ax.set_xticks(arange, labels=labels, rotation=90)
-                    ax.locator_params(axis="x", tight=True, nbins=nbins)
-                    for label in ax.xaxis.get_majorticklabels():
-                        label.set_horizontalalignment("right")
+            fpt0 = fpts[0]
+            if not all([len(fpt0) == len(fpt) for fpt in fpts]):
+                raise ValueError(
+                    "All fingerprints must have the same length. "
+                    "Do you have incomplete structures?"
+                )
+            if not isinstance(axs, (np.ndarray, list)):
+                axs = [axs]
+            for ax, fpt, hs in zip(axs, fpts, hotspots):
+                labels = ['%s %s:%s' % k for k in fpt]  
+                arange = np.arange(len(fpt))
+                ax.bar(arange, fpt.values(), color='C0')
+                ax.set_title(hs)
+                ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+                ax.set_xticks(arange, labels=labels, rotation=90)
+                ax.locator_params(axis="x", tight=True, nbins=nbins)
+                for label in ax.xaxis.get_majorticklabels():
+                    label.set_verticalalignment("top")
 
+    corrs = []
+    labels = []
     if axis_dendrogram is not False:
-        with mpl_axis(axis_dendrogram) as ax:  
-            corrs = []
-            labels = []
+        with mpl_axis(axis_dendrogram) as ax:
             for i1, (fp1, hs1) in enumerate(zip(fpts, hotspots)):
                 labels.append(hs1)
                 for i2, (fp2, hs2) in enumerate(zip(fpts, hotspots)):

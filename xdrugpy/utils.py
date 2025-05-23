@@ -3,6 +3,7 @@ import os
 import atexit
 import re
 import numpy as np
+import pandas as pd
 import scipy.cluster.hierarchy as sch
 from collections import namedtuple, defaultdict
 from shutil import rmtree
@@ -17,6 +18,8 @@ from matplotlib.axes import Axes
 from matplotlib import pyplot as plt
 from scipy.spatial import distance
 from scipy.cluster.hierarchy import linkage
+from collections import namedtuple
+from functools import lru_cache
 
 QStandardPaths = Qt.QtCore.QStandardPaths
 
@@ -417,3 +420,46 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
         # plt.tight_layout()
         plt.show()
     return dendro1, medoids
+
+
+lru_cache(999999999)
+def get_residue_from_object(obj, idx):
+    res = []
+    pm.iterate_state(
+        -1,
+        f"%{obj} & index {idx}",
+        'res.append(Residue(model, int(index), resn, int(resi), chain, float(x), float(y), float(z)))',
+        space={'res': res, 'Residue': Residue}
+    )
+    return res[0]
+
+
+@declare_command
+def get_mapping(
+    polymers: Selection,
+    site: str = '*',
+    radius: float = 2,
+):    
+    # Get polymers to be mapped to reference site
+    ref_polymer = polymers[0]
+    polymers = set(polymers)
+
+    # Do the alignmnet
+    mappings = np.empty((0, 8))
+    for polymer in polymers:
+        try:
+            aln_obj = pm.get_unused_name()
+            pm.cealign(
+                f"{ref_polymer} within {radius} from {site}",
+                polymer,
+                transform=False,
+                object=aln_obj
+            )
+            aln = pm.get_raw_alignment(aln_obj)
+        finally:
+            pm.delete(aln_obj)
+        for (obj1, idx1), (obj2, idx2) in aln:
+            res1 = get_residue_from_object(obj1, idx1)
+            res2 = get_residue_from_object(obj2, idx2)
+            mappings = np.vstack([mappings, res1, res2])
+    return pd.DataFrame(mappings, columns=Residue._fields)

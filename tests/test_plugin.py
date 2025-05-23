@@ -5,7 +5,6 @@ from xdrugpy.hotspots import (
     load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_hca,
     plot_heatmap, HeatmapFunction, fp_sim)
 from xdrugpy.rmsf import rmsf
-from xdrugpy.mapping import get_mapping
 from xdrugpy.utils import expression_selector, multiple_expression_selector
 from matplotlib import pyplot as plt
 from PIL import Image
