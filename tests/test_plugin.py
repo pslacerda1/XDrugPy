@@ -136,7 +136,6 @@ def test_heatmap():
     img_ref = f'{pkg_data}/test_heatmap_ref.png'
     img_gen = f'{pkg_data}/test_heatmap_gen.png'
     
-    plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, axis=img_ref)
     plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 

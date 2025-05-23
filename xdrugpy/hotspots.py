@@ -643,7 +643,7 @@ def ho(
     hs1: Selection,
     hs2: Selection,
     radius: float = 2.5,
-    quiet: bool = False,
+    quiet: bool = True,
 ):
     """
     Compute the Hotspot Overlap (HO) metric. HO is defined as the number of
@@ -870,12 +870,12 @@ def plot_heatmap(
                         )
             mat[-1].append(round(ret, 2))
     
-    
     with mpl_axis(axis) as ax:
         mat_masked = np.ma.masked_invalid(mat)
-        ax.imshow(mat_masked, cmap='viridis')
-        plt.xticks(np.arange(len(mat)), objects, rotation=90)
-        plt.yticks(np.arange(len(mat)), objects)    
+        img = ax.imshow(mat_masked, cmap='viridis', vmin=0, vmax=1)
+        ax.set_xticks(np.arange(len(mat)), objects, rotation=90)
+        ax.set_yticks(np.arange(len(mat)), objects)    
+        plt.colorbar(img, ax=ax)
     return mat, objects
 
 
