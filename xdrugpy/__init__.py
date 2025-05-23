@@ -76,8 +76,6 @@ except ImportError:
 
 def __init_plugin__(app=None):
     print("This version of XDrugPy is intended for non-comercial and academic purposes only.")
-    from pymol import cmd
-    cmd.undo_disable()
     if system == "windows":
         os.environ['PATH'] = "%s;%s" % (RESOURCES_DIR, os.environ['PATH'])
     else:
@@ -88,6 +86,9 @@ def __init_plugin__(app=None):
     __init_hotspots__()
     __init_docking__()
     __init_rmsf__()
+    from pymol import cmd
+    cmd.undo_disable()
+
 
 if __name__ in ["pymol", "pmg_tk.startup.XDrugPy"]:
     __init_plugin__()
