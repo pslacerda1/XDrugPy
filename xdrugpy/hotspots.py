@@ -600,7 +600,7 @@ def fp_sim(
                 for ax, fpt, hs in zip(axs, fpts, hotspots):
                     labels = ['%s %s:%s' % k for k in fpt]
                     arange = np.arange(len(fpt))
-                    ax.bar(arange, fpt.values())
+                    ax.bar(arange, fpt.values(), color='C0')
                     ax.set_title(hs)
                     ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
                     ax.set_xticks(arange, labels=labels, rotation=90)
