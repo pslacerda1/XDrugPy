@@ -747,8 +747,7 @@ class VinaThread(BaseThread):
                 energy_range,
                 cpu,
                 seed,
-                save_library_check,
-                library,
+                saved_compound_library,
                 function,
             ) = self.args
         except:
@@ -868,8 +867,8 @@ class VinaThread(BaseThread):
             #
             queue_dir = project_dir + "/queue"
 
-            if library:
-                library_dir = LIGAND_LIBRARIES_DIR + '/' + library
+            if saved_compound_library and not ligands_file:
+                library_dir = LIGAND_LIBRARIES_DIR + '/' + saved_compound_library
                 try:
                     if exists(queue_dir):
                         shutil.rmtree(queue_dir)
@@ -878,7 +877,7 @@ class VinaThread(BaseThread):
                 shutil.copytree(library_dir, queue_dir)
                 self.logEvent.emit(f"""
                     <br/>
-                    <br/><b>Recovered stored library:</b> {library_dir}
+                    <br/><b>Recovered compound library:</b> {library_dir}
                 """)
             elif ligands_file:
                 if exists(queue_dir):
@@ -937,8 +936,8 @@ class VinaThread(BaseThread):
                 output, success = run(command)
                 self.logCodeEvent.emit(output)
 
-                if save_library_check:
-                    library_dir = splitext(basename(ligands_file))[0]
+                if saved_compound_library:
+                    library_dir = saved_compound_library
                     library_dir = LIGAND_LIBRARIES_DIR + '/' + library_dir
                     self.logEvent.emit(f"""
                         <br/>
@@ -1219,9 +1218,9 @@ def new_run_docking_widget():
     #
     # Molecular library
     #
-    save_library_check = QCheckBox()
-    save_library_check.setChecked(False)
-    tab1_layout.addRow("Store library:", save_library_check)
+    compound_library_line = QLineEdit()
+    compound_library_line.setPlaceholderText("set a title to save")
+    tab1_layout.addRow("Store library:", compound_library_line)
 
     #
     # TAB 2
@@ -1332,17 +1331,16 @@ def new_run_docking_widget():
                 if not (validate_receptor_sel() & validate_box_sel()):
                     return
                 receptor_lib = saved_receptor_line.text().strip()
-                    
             elif tab_rec_idx == 1:
                 receptor_lib = rec_library_combo.currentText()
             
-            library = library_combo.currentText().strip()
+            compound_library = library_combo.currentText().strip()
             if tab_lig_idx == 0:
                 if not ligands_file:
                     return
-                library = None
+                compound_library = None
             elif tab_lig_idx == 1:
-                if not library:
+                if not compound_library:
                     return
                 ligands_file = None
 
@@ -1364,8 +1362,7 @@ def new_run_docking_widget():
                 energy_range_spin.value(),
                 cpu_spin.value(),
                 seed_spin.value(),
-                save_library_check.isChecked(),
-                library,
+                compound_library_line.text().strip() or compound_library,
                 function.currentText(),
             )
         else:
