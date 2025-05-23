@@ -456,7 +456,7 @@ def dc(
     state1: int = 1,
     state2: int = 1,
     radius: float = 1.25,
-    verbose: bool = True,
+    quiet: bool = True,
 ):
     """
     Compute the Density Correlation according to:
@@ -471,7 +471,7 @@ def dc(
         state1  ligand state
         state2  hotspot state
         radius  the radius so two atoms are in contact (default: 1.25)
-        verbose define verbosity
+        quiet   define verbosity
 
     EXAMPLES
         dc REF_LIG, ftmap1234.D_003_*_*
@@ -482,7 +482,7 @@ def dc(
     xyz2 = pm.get_coords(f"({sel2}) and not elem H", state=state2)
 
     dc_ = (distance_matrix(xyz1, xyz2) < radius).sum()
-    if verbose:
+    if not quiet:
         print(f"DC: {dc_:.2f}")
     return dc_
 
@@ -509,12 +509,12 @@ def dce(
         state1  ligand state
         state2  hotspot state
         radius  the radius so two atoms are in contact (default: 1.25)
-        verbose define verbosity (default: true)
+        quiet   define verbosity
 
     EXAMPLE
         dce REF_LIG, ftmap1234.D_003_*_*
     """
-    dc_ = dc(sel1, sel2, radius=radius, state1=state1, state2=state2, verbose=False)
+    dc_ = dc(sel1, sel2, radius=radius, state1=state1, state2=state2)
     dce_ = dc_ / pm.count_atoms(f"({sel1}) and not elem H")
     if not quiet:
         print(f"DCE: {dce_:.2f}")
@@ -551,7 +551,7 @@ def fp_sim(
         nbins             number of residue labels (default: 5)
         plot_dendrogram   plot the dendrogram (default: False)
         linkage_method    linkage method (default: single)
-        verbose           define verbosity
+        quiet             define verbosity
 
     EXAMPLES
         fs_sim 8DSU.K15_D_01* 6XHM.K15_D_01*
@@ -575,64 +575,65 @@ def fp_sim(
         site=site,
         radius=radius
     )
-    fpts = []
-    for hs in hotspots:
-        fpt = {}
-        @mapping.groupby(['chain', 'resi'], as_index=False).apply
-        def apply(group):
-            for idx, row in group.iterrows():
-                resn = ONE_LETTER.get(row.resn, "X")
-                lbl = (resn, row.resi, row.chain)
-                cnt = pm.count_atoms(
-                    f"(%{hs}) within {radius} from (byres %{row.model} & index {row['index']})"
-                )
-                fpt[lbl] = fpt.get(lbl, 0) + cnt
-        fpts.append(fpt)
-        
-        fpt0 = fpts[0]
-        if not all([len(fpt0) == len(fpt) for fpt in fpts]):
-            raise ValueError(
-                "All fingerprints must have the same length. "
-                "Do you have incomplete structures?"
-            )
-        
+    if axis_fingerprint is not False:
         with mpl_axis(axis_fingerprint, nrows=len(hotspots), sharey=True) as axs:
-            for ax, fpt, hs in zip(axs, fpts, hotspots):
-                labels = ['%s %s:%s' % k for k in fpt]
-                arange = np.arange(len(fpt))
-                ax.bar(arange, fpt.values())
-                ax.set_title(hs)
-                ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-                ax.set_xticks(arange, labels=labels, rotation=90)
-                ax.locator_params(axis="x", tight=True, nbins=nbins)
-                for label in ax.xaxis.get_majorticklabels():
-                    label.set_horizontalalignment("right")
+            fpts = []
+            for hs in hotspots:
+                fpt = {}
+                @mapping.groupby(['chain', 'resi'], as_index=False).apply
+                def apply(group):
+                    for idx, row in group.iterrows():
+                        resn = ONE_LETTER.get(row.resn, "X")
+                        lbl = (resn, row.resi, row.chain)
+                        cnt = pm.count_atoms(
+                            f"(%{hs}) within {radius} from (byres %{row.model} & index {row['index']})"
+                        )
+                        fpt[lbl] = fpt.get(lbl, 0) + cnt
+                fpts.append(fpt)
+                
+                fpt0 = fpts[0]
+                if not all([len(fpt0) == len(fpt) for fpt in fpts]):
+                    raise ValueError(
+                        "All fingerprints must have the same length. "
+                        "Do you have incomplete structures?"
+                    )
+                for ax, fpt, hs in zip(axs, fpts, hotspots):
+                    labels = ['%s %s:%s' % k for k in fpt]
+                    arange = np.arange(len(fpt))
+                    ax.bar(arange, fpt.values())
+                    ax.set_title(hs)
+                    ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+                    ax.set_xticks(arange, labels=labels, rotation=90)
+                    ax.locator_params(axis="x", tight=True, nbins=nbins)
+                    for label in ax.xaxis.get_majorticklabels():
+                        label.set_horizontalalignment("right")
 
-    with mpl_axis(axis_dendrogram) as ax:  
-        corrs = []
-        labels = []
-        for i1, (fp1, hs1) in enumerate(zip(fpts, hotspots)):
-            labels.append(hs1)
-            for i2, (fp2, hs2) in enumerate(zip(fpts, hotspots)):
-                if i1 >= i2:
-                    continue
-                corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
-                if np.isnan(corr):
-                    corr = 0
-                corrs.append(corr)
-                if not quiet:
-                    print(f"Pearson correlation: {hs1} / {hs2}: {corr:.2f}")
+    if axis_dendrogram is not False:
+        with mpl_axis(axis_dendrogram) as ax:  
+            corrs = []
+            labels = []
+            for i1, (fp1, hs1) in enumerate(zip(fpts, hotspots)):
+                labels.append(hs1)
+                for i2, (fp2, hs2) in enumerate(zip(fpts, hotspots)):
+                    if i1 >= i2:
+                        continue
+                    corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
+                    if np.isnan(corr):
+                        corr = 0
+                    corrs.append(corr)
+                    if not quiet:
+                        print(f"Pearson correlation: {hs1} / {hs2}: {corr:.2f}")
 
-        dendrogram(
-            [1 - c for c in corrs],
-            method=linkage_method,
-            labels=labels,
-            ax=ax,
-            leaf_rotation=90,
-            color_threshold=0,
-        )   
-        for label in ax.xaxis.get_majorticklabels():
-            label.set_horizontalalignment("right")
+            dendrogram(
+                [1 - c for c in corrs],
+                method=linkage_method,
+                labels=labels,
+                ax=ax,
+                leaf_rotation=90,
+                color_threshold=0,
+            )   
+            for label in ax.xaxis.get_majorticklabels():
+                label.set_horizontalalignment("right")
     return fpts, corrs, labels
 
 
@@ -642,7 +643,7 @@ def ho(
     hs1: Selection,
     hs2: Selection,
     radius: float = 2.5,
-    verbose: bool = True,
+    quiet: bool = False,
 ):
     """
     Compute the Hotspot Overlap (HO) metric. HO is defined as the number of
@@ -653,7 +654,7 @@ def ho(
         hs1     an hotspot object
         hs2     another hotspot object
         radius  the distance to consider two atoms in contact (default: 2.5)
-        verbose define verbosity
+        quiet   define verbosity
     """
     atoms1 = pm.get_coords(f"({hs1}) and not elem H")
     atoms2 = pm.get_coords(f"({hs2}) and not elem H")
@@ -661,7 +662,7 @@ def ho(
     num_contacts1 = np.sum(np.any(dist, axis=1))
     num_contacts2 = np.sum(np.any(dist, axis=0))
     ho = (num_contacts1 + num_contacts2) / (len(atoms1) + len(atoms2))
-    if verbose:
+    if not quiet:
         print(f"HO: {ho:.2f}")
     return ho
 
@@ -689,7 +690,7 @@ def res_sim(
         hs2     hotspot 2
         radius  distance to consider residues near hotspots (default: 2)
         method  jaccard or overlap (default: jaccard)
-        verbose define verbosity
+        quiet   define verbosity
 
     EXAMPLES
         res_sim 8DSU.D_001*, 6XHM.D_001*
@@ -850,7 +851,7 @@ def plot_heatmap(
             else:
                 match method:
                     case HeatmapFunction.HO:
-                        ret = ho(obj1, obj2, radius=radius, verbose=False)
+                        ret = ho(obj1, obj2, radius=radius)
                     case HeatmapFunction.RESIDUE_JACCARD:
                         ret = res_sim(
                             obj1,
@@ -1508,13 +1509,21 @@ class CountWidget(QWidget):
         dendrogram = self.dendrogramCheck.isChecked()
         nbins = self.nBinsSpin.value()
 
+        if fingerprints:
+            axis_fingerprints = ''
+        else:
+            axis_fingerprints = False
+        if dendrogram:
+            axis_dendrogram = ''
+        else:
+            axis_dendrogram = False
+
         fp_sim(
             hotspots,
             site,
             radius,
-            verbose=True,
-            plot_fingerprints=fingerprints,
-            plot_dendrogram=dendrogram,
+            axis_fingerprint=axis_fingerprints,
+            axis_dendrogram=axis_dendrogram,
             nbins=nbins,
         )
 

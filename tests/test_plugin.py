@@ -157,7 +157,7 @@ def test_fpt():
     fp_sim(
         "1dq8.K15_D_00 : 1dq9.K15_D_00 : 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
-        nbins=31,
+        nbins=50,
         axis_fingerprint=img_gen1,
         axis_dendrogram=img_gen2,
     )
