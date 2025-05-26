@@ -73,13 +73,13 @@ except ImportError:
 #
 # INITIALIZE THE PLUGIN
 #
-
+if system == "windows":
+    os.environ['PATH'] = "%s;%s" % (RESOURCES_DIR, os.environ['PATH'])
+else:
+    os.environ['PATH'] = "%s:%s" % (RESOURCES_DIR, os.environ['PATH'])
+    
 def __init_plugin__(app=None):
     print("This version of XDrugPy is intended for non-comercial and academic purposes only.")
-    if system == "windows":
-        os.environ['PATH'] = "%s;%s" % (RESOURCES_DIR, os.environ['PATH'])
-    else:
-        os.environ['PATH'] = "%s:%s" % (RESOURCES_DIR, os.environ['PATH'])
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
     from .rmsf import __init_plugin__ as __init_rmsf__
