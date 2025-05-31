@@ -415,7 +415,7 @@ def fo(
     state1: int = 1,
     state2: int = 1,
     radius: float = 2,
-    quiet: bool = True,
+    quiet: int = True,
 ):
     """
     Compute the fractional overlap of sel1 respective to sel2.
@@ -455,7 +455,7 @@ def dc(
     state1: int = 1,
     state2: int = 1,
     radius: float = 1.25,
-    quiet: bool = True,
+    quiet: int = True,
 ):
     """
     Compute the Density Correlation according to:
@@ -493,7 +493,7 @@ def dce(
     state1: int = 1,
     state2: int = 1,
     radius: float = 1.25,
-    quiet: bool = True,
+    quiet: int = True,
 ):
     """
     Compute the Density Correlation Efficiency according to:
@@ -536,7 +536,7 @@ def fp_sim(
     axis_fingerprint: str = '',
     axis_dendrogram: str = '',
     linkage_method: LinkageMethod = LinkageMethod.WARD,
-    quiet: bool = True,
+    quiet: int = True,
 ):
     """
     Compute the similarity between the residue contact fingerprint of two
@@ -642,7 +642,7 @@ def ho(
     hs1: Selection,
     hs2: Selection,
     radius: float = 2.5,
-    quiet: bool = True,
+    quiet: int = True,
 ):
     """
     Compute the Hotspot Overlap (HO) metric. HO is defined as the number of
@@ -678,7 +678,7 @@ def res_sim(
     radius: float = 2,
     align: bool = False,
     method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
-    quiet: bool = True,
+    quiet: int = True,
 ):
     """
     Compute hotspots similarity by the Jaccard or overlap coefficient of nearby
