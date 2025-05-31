@@ -89,7 +89,7 @@ def run_system(command):
     print('RUNNING SYSTEM PROCESS:', command)
     os.system(command)
 
-def dendrogram(X, method='ward', ax=None, **kwargs):
+def dendrogram(X, labels, method='ward', ax=None, **kwargs):
     from scipy.spatial.distance import squareform
     X = np.array(X)
     if X.ndim == 1:
@@ -103,7 +103,7 @@ def dendrogram(X, method='ward', ax=None, **kwargs):
         fig, ax = plt.subplots()
     
     Z = sch.linkage(X, method=method)
-    dendro = dendrogram_linked(Z, **kwargs)
+    dendro = dendrogram_linked(Z, labels, ax=ax, **kwargs)
     if kwargs.get('orientation') == 'right':
         axline = ax.axvline
         ticklabels = ax.get_yticklabels()
