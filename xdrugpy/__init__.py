@@ -44,7 +44,7 @@ if not exists(fpocket_exe):
     from urllib.request import urlretrieve
 
     print(f'Installing Fpocket on', fpocket_exe)
-    fpocket_url = f"https://raw.githubusercontent.com/pslacerda/XDrugPy/fpocket/bin/fpocket.{system}"
+    fpocket_url = f"https://github.com/pslacerda/XDrugPy/raw/refs/heads/master/bin/fpocket.{system}"
     urlretrieve(fpocket_url, fpocket_exe)
     os.chmod(fpocket_exe, stat.S_IEXEC)
 
