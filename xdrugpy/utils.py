@@ -434,7 +434,6 @@ def get_residue_from_object(obj, idx):
     return res[0]
 
 
-@declare_command
 def get_mapping(
     polymers: Selection,
     site: str = '*',
@@ -442,7 +441,7 @@ def get_mapping(
 ):    
     # Get polymers to be mapped to reference site
     ref_polymer = polymers[0]
-    polymers = set(polymers)
+    polymers = {p: True for p in polymers} # ordered set
 
     # Do the alignmnet
     mappings = np.empty((0, 8))
@@ -459,7 +458,6 @@ def get_mapping(
         finally:
             pm.delete(aln_obj)
         for (obj1, idx1), (obj2, idx2) in aln:
-            res1 = get_residue_from_object(obj1, idx1)
-            res2 = get_residue_from_object(obj2, idx2)
-            mappings = np.vstack([mappings, res1, res2])
+            res = get_residue_from_object(obj2, idx2)
+            mappings = np.vstack([mappings, res])
     return pd.DataFrame(mappings, columns=Residue._fields)
