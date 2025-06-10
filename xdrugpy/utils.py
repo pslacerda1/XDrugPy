@@ -411,14 +411,14 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
                 label.set_color(color)
                 label.set_fontstyle("italic")
     
-    if isinstance(axis, (str, Path)):
-        # TODO why this fail?
-        # plt.tight_layout()
-        plt.savefig(axis)
-    elif axis is None:
+    if not axis:
         # TODO why this fail?
         # plt.tight_layout()
         plt.show()
+    elif isinstance(axis, (str, Path)):
+        # TODO why this fail?
+        # plt.tight_layout()
+        plt.savefig(axis)
     return dendro1, medoids
 
 

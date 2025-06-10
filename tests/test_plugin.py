@@ -4,7 +4,7 @@ from pymol import cmd as pm
 from xdrugpy.hotspots import (
     load_ftmap, ho, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_hca,
     plot_heatmap, HeatmapFunction, fp_sim)
-from xdrugpy.rms import rmsf
+from xdrugpy.rms import rmsf, rmsd_hca
 from xdrugpy.utils import expression_selector, multiple_expression_selector
 from matplotlib import pyplot as plt
 from PIL import Image
@@ -34,7 +34,19 @@ def test_rmsf():
     img_ref = f'{pkg_data}/test_rmsf_ref.png'
     img_gen = f'{pkg_data}/test_rmsf_gen.png'
     
-    rmsf("*.K15_D_00", '*.protein', axis=img_gen)
+    rmsf("*.K15_D_00", '*.protein', site_margin=5, axis=img_gen)
+    assert images_identical(img_ref, img_gen)
+
+def test_rmsd_hca():
+    pm.reinitialize()
+    load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
+    load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
+    load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
+
+    img_ref = f'{pkg_data}/test_rmsd_hca_ref.png'
+    img_gen = f'{pkg_data}/test_rmsd_hca_gen.png'
+    
+    rmsd_hca("*", '*.protein', site_margin=5, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
 
