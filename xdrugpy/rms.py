@@ -12,6 +12,7 @@ def rmsf(
     ref_site: str,
     prot_expr: str,
     site_margin:float = 3.0,
+    qualifier: str = 'name CA',
     pretty: bool = True,
     axis: str = ''
 ):
@@ -41,7 +42,7 @@ def rmsf(
         residues = []
         coords = np.empty((0, 3))
         chains = pm.get_chains(f"{frame} & polymer")
-        sele = f"{frame} & name CA & ("
+        sele = f"{frame} & {qualifier} & ("
 
         for i, chain in enumerate(chains):
             if i == 0:
@@ -108,6 +109,7 @@ def rmsf(
 def rmsd_hca(
     ref_site: str,
     prot_expr: str,
+    qualifier: str = 'name CA',
     site_margin: float = 5.0,
     linkage_method: str = 'ward',
     color_threshold: float = 0.0,
@@ -144,8 +146,8 @@ def rmsd_hca(
             if i1 >= i2:
                 continue
             rmsd = pm.rms(
-                f"(%{f1} & polymer) within {site_margin} of ({ref_site})",
-                f"(%{f2} & polymer) within {site_margin} of ({ref_site})",
+                f"(%{f1} & polymer & {qualifier}) within {site_margin} of ({ref_site})",
+                f"(%{f2} & polymer & {qualifier}) within {site_margin} of ({ref_site})",
             )
             X.append(rmsd)
     return plot_hca_base(X, frames, linkage_method, color_threshold, axis)

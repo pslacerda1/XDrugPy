@@ -46,7 +46,7 @@ def test_rmsd_hca():
     img_ref = f'{pkg_data}/test_rmsd_hca_ref.png'
     img_gen = f'{pkg_data}/test_rmsd_hca_gen.png'
     
-    rmsd_hca("*", '*.protein', site_margin=5, axis=img_gen)
+    rmsd_hca("*", '*.protein', qualifier='*', site_margin=5, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
 
