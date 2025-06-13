@@ -4,7 +4,7 @@ from functools import lru_cache
 import numpy as np
 from fnmatch import fnmatch
 
-from .utils import ONE_LETTER, declare_command, mpl_axis, plot_hca_base
+from .utils import ONE_LETTER, declare_command, mpl_axis, plot_hca_base, multiple_expression_selector
 
 
 @declare_command
@@ -128,8 +128,9 @@ def rmsd_hca(
     """
     frames = []
     for obj in pm.get_object_list():
-        if fnmatch(obj, prot_expr):
-            frames.append(obj)
+        for expr in prot_expr.split():
+            if fnmatch(obj, expr):
+                frames.append(obj)
     f0 = frames[0]
 
     site = set()
