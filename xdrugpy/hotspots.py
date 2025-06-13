@@ -18,7 +18,7 @@ from matplotlib import pyplot as plt
 from strenum import StrEnum
 
 from .utils import (
-    ONE_LETTER, dendrogram, declare_command, Selection, multiple_expression_selector,
+    ONE_LETTER, declare_command, Selection, multiple_expression_selector,
     mpl_axis, expression_selector, plot_hca_base, get_mapping
 )
 
@@ -533,9 +533,9 @@ def fp_sim(
     site: str = "*",
     radius: int = 4,
     nbins: int = 5,
+    linkage_method: LinkageMethod = LinkageMethod.WARD,
     axis_fingerprint: str = '',
     axis_dendrogram: str = '',
-    linkage_method: LinkageMethod = LinkageMethod.WARD,
     quiet: int = True,
 ):
     """
@@ -574,7 +574,7 @@ def fp_sim(
     )
     fpts = []
     if axis_fingerprint is not False:
-        with mpl_axis(axis_fingerprint, nrows=len(hotspots), sharey=True) as axs:
+        with mpl_axis(axis_fingerprint, nrows=len(hotspots), sharex=True, constrained_layout=True) as axs:
             for hs in hotspots:
                 fpt = {}
                 @mapping.groupby(['chain', 'resi'], as_index=False).apply
@@ -583,7 +583,7 @@ def fp_sim(
                         resn = ONE_LETTER.get(row.resn, "X")
                         lbl = (resn, row.resi, row.chain)
                         cnt = pm.count_atoms(
-                            f"(%{hs}) within {radius} from (byres %{row.model} & index {row['index']})"
+                            f"({hs}) within {radius} of (byres %{row.model} & index {row['index']})"
                         )
                         fpt[lbl] = fpt.get(lbl, 0) + cnt
                 fpts.append(fpt)
@@ -610,7 +610,7 @@ def fp_sim(
     corrs = []
     labels = []
     if axis_dendrogram is not False:
-        with mpl_axis(axis_dendrogram) as ax:
+        with mpl_axis(axis_dendrogram, sharex=True, constrained_layout=True) as ax:
             for i1, (fp1, hs1) in enumerate(zip(fpts, hotspots)):
                 labels.append(hs1)
                 for i2, (fp2, hs2) in enumerate(zip(fpts, hotspots)):
@@ -622,15 +622,13 @@ def fp_sim(
                     corrs.append(corr)
                     if not quiet:
                         print(f"Pearson correlation: {hs1} / {hs2}: {corr:.2f}")
-
-            dendrogram(
+            plot_hca_base(
                 [1 - c for c in corrs],
-                method=linkage_method,
-                labels=labels,
-                ax=ax,
-                leaf_rotation=90,
+                labels,
+                linkage_method=linkage_method,
                 color_threshold=0,
-            )   
+                axis=ax
+            )
             for label in ax.xaxis.get_majorticklabels():
                 label.set_horizontalalignment("right")
     return fpts, corrs, labels

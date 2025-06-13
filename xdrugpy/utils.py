@@ -89,75 +89,6 @@ def run_system(command):
     print('RUNNING SYSTEM PROCESS:', command)
     os.system(command)
 
-def dendrogram(X, labels, method='ward', ax=None, **kwargs):
-    from scipy.spatial.distance import squareform
-    X = np.array(X)
-    if X.ndim == 1:
-        X = squareform(X)
-
-    ax_file = False
-    if ax is None:
-        fig, ax = plt.subplots()
-    elif isinstance(ax, str):
-        ax_file = ax
-        fig, ax = plt.subplots()
-    
-    Z = sch.linkage(X, method=method)
-    dendro = dendrogram_linked(Z, labels, ax=ax, **kwargs)
-    if kwargs.get('orientation') == 'right':
-        axline = ax.axvline
-        ticklabels = ax.get_yticklabels()
-    elif kwargs.get('orientation', 'top') == 'top':
-        axline = ax.axhline
-        ticklabels = ax.get_xticklabels()
-    
-    axline(kwargs["color_threshold"], color="gray", ls='--')
-    groups = {}
-    for color, leaf in zip(dendro['leaves_color_list'], dendro['ivl']):
-        if color not in groups:
-            groups[color] = []
-        groups[color].append(leaf)
-    dists_sum = {}
-    for color, leaves in groups.items():
-        for i1, leaf1 in enumerate(leaves):
-            sum_dists = 0
-            for i2 in range(len(leaves)):
-                d = X[i1, i2]
-                sum_dists += d
-            dists_sum[(color, leaf1)] = sum_dists
-    medoids = {}
-    min_color = None
-    for (color, leaf), rms in dists_sum.items():
-        if color != min_color:
-            min_rms = float('inf')
-            min_color = color
-        if rms < min_rms:
-            min_rms = rms
-            medoids[min_color] = leaf
-    for label in ticklabels:
-        for color, leaf in medoids.items():
-            if label.get_text() == leaf:
-                label.set_color(color)
-    if ax_file:
-        # plt.tight_layout()
-        plt.savefig(ax_file)
-    return dendro
-
-def dendrogram_linked(Z, labels=None, ax=None, **kwargs):
-    from matplotlib import pyplot as plt
-    if ax is None:
-        _, ax = plt.subplots()
-    if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
-        kwargs['color_threshold'] = 0.7 * max(Z[:,2])
-
-    dendro = sch.dendrogram(
-        Z,
-        labels=labels,
-        ax=ax,
-        **kwargs
-    )
-    return dendro
-
 
 class Selection(str):
     pass
@@ -237,10 +168,10 @@ def mpl_axis(ax, **kwargs):
         new_ax = ax
     yield new_ax
     if not ax:
-        plt.tight_layout()
+        # plt.tight_layout()
         plt.show()
     elif isinstance(ax, (str, Path)):
-        plt.tight_layout()
+        # plt.tight_layout()
         plt.savefig(output_file)
 
 
@@ -330,6 +261,21 @@ def multiple_expression_selector(exprs, type=None):
         object_list.append(expression_selector(expr, type=type))
     return object_list
 
+
+def dendrogram_linked(Z, labels=None, ax=None, **kwargs):
+    from matplotlib import pyplot as plt
+    if ax is None:
+        _, ax = plt.subplots()
+    if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
+        kwargs['color_threshold'] = 0.7 * max(Z[:,2])
+
+    dendro = sch.dendrogram(
+        Z,
+        labels=labels,
+        ax=ax,
+        **kwargs
+    )
+    return dendro
 
 
 def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
