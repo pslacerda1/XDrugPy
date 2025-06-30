@@ -42,31 +42,7 @@ def clear_temp():
 atexit.register(clear_temp)
 
 
-Residue = namedtuple("Reisude", "model index resn resi chain x y z")
-
-
-ONE_LETTER = {
-    "VAL": "V",
-    "ILE": "I",
-    "LEU": "L",
-    "GLU": "E",
-    "GLN": "Q",
-    "ASP": "D",
-    "ASN": "N",
-    "HIS": "H",
-    "TRP": "W",
-    "PHE": "F",
-    "TYR": "Y",
-    "ARG": "R",
-    "LYS": "K",
-    "SER": "S",
-    "THR": "T",
-    "MET": "M",
-    "ALA": "A",
-    "GLY": "G",
-    "PRO": "P",
-    "CYS": "C",
-}
+Residue = namedtuple("Reisude", "model index resn resi chain x y z oneletter")
 
 
 def run(command, log=True, cwd=None, env=os.environ):
@@ -374,7 +350,7 @@ def get_residue_from_object(obj, idx):
     pm.iterate_state(
         -1,
         f"%{obj} & index {idx}",
-        'res.append(Residue(model, int(index), resn, int(resi), chain, float(x), float(y), float(z)))',
+        'res.append(Residue(model, int(index), resn, int(resi), chain, float(x), float(y), float(z), oneletter))',
         space={'res': res, 'Residue': Residue}
     )
     return res[0]
@@ -390,7 +366,7 @@ def get_mapping(
     polymers = {p: True for p in polymers} # ordered set
 
     # Do the alignmnet
-    mappings = np.empty((0, 8))
+    mappings = np.empty((0, 9))
     for polymer in polymers:
         try:
             aln_obj = pm.get_unused_name()

@@ -4,7 +4,7 @@ from functools import lru_cache
 import numpy as np
 from fnmatch import fnmatch
 
-from .utils import ONE_LETTER, declare_command, mpl_axis, plot_hca_base, multiple_expression_selector
+from .utils import declare_command, mpl_axis, plot_hca_base, multiple_expression_selector
 
 
 @declare_command
@@ -17,12 +17,39 @@ def rmsf(
     axis: str = ''
 ):
     """
-    DESCRIPTION
-        Calculate the RMSF of muliple related structures.
+DESCRIPTION
+    Calculate the RMSF of multiple related structures.
 
-        A reference site must be supplied to focus, however full protein
-        analysis can be achieved with a star * wildcard. A expression
-        based on fnmatch select the structures to calculate the RMSF.
+    A reference site must be supplied to focus, however full protein
+    analysis can be achieved with a star * wildcard. A protein
+    expression based on fnmatch to select the structures to calculate
+    the RMSF must also be supplied.
+
+OPTIONS
+    ref_site: str
+        A site expression to focus the RMSF calculation.
+    prot_expr: str
+        An expression to select the structures to calculate the RMSF.
+    site_margin: float = 3.0
+        The margin to consider the site around the ref_site.
+    qualifier: str = 'name CA'
+        A qualifier to select the atoms to calculate the RMSF.
+    pretty: bool = True
+        If True, it will show the RMSF in a pretty way. 
+
+
+EXAMPLES
+    # Calculate RMSF of site residues 10-150 for all proteins in the
+    # session.
+    rmsf site 10-150, *.protein, pretty=False
+
+
+    # Calculate RMSF of the full protein considering 1ABC and 2XYZ.
+    rmsf *, 1ABC.protein 2XYZ.protein
+    
+    # Use all atoms instead of only alpha carbons.
+    rmsf *, *.protein, qualifier=*
+
     """
     frames = []
     for obj in pm.get_object_list():
@@ -85,7 +112,7 @@ def rmsf(
     for resi, coords in X.items():
         rmsf = np.sum((coords - means[resi]) ** 2) / coords.shape[0]
         rmsf = np.sqrt(rmsf)
-        label = '%s %s:%s' % (ONE_LETTER[resi[0]], resi[1], resi[2])
+        label = '%s %s:%s' % resi
         pm.alter(f"{f0} & i. {resi[1]} & c. {resi[2]}", f"p.rmsf={rmsf}")
         LABELS.append(label)
         RMSF.append(rmsf)

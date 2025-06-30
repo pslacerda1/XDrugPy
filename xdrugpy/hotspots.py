@@ -18,7 +18,7 @@ from matplotlib import pyplot as plt
 from strenum import StrEnum
 
 from .utils import (
-    ONE_LETTER, declare_command, Selection, multiple_expression_selector,
+    declare_command, Selection, multiple_expression_selector,
     mpl_axis, expression_selector, plot_hca_base, get_mapping
 )
 
@@ -301,8 +301,22 @@ def get_kozakov2015_large(group, fpo_list, clusters):
     return k15l
 
 
+
+
 @declare_command
 def load_ftmap(
+    filename: Path,
+    group: str = "",
+    k15_max_length: int = 3,
+    run_fpocket: bool = False
+):
+    try:
+        return _load_ftmap(filename, group, k15_max_length, run_fpocket)
+    except:
+        return _load_ftmap(filename, group, k15_max_length, run_fpocket)
+
+
+def _load_ftmap(
     filename: Path,
     group: str = "",
     k15_max_length: int = 3,
@@ -557,7 +571,7 @@ def fp_sim(
         fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
     """
 
-    # Identify objects/hotspots to probe count    
+    # Identify objects/hotspots to probe count
     hotspots = []
     groups = set()
     for object_set in multiple_expression_selector(exprs):
@@ -580,12 +594,13 @@ def fp_sim(
                 @mapping.groupby(['chain', 'resi'], as_index=False).apply
                 def apply(group):
                     for idx, row in group.iterrows():
-                        resn = ONE_LETTER.get(row.resn, "X")
+                        resn = row.oneletter
                         lbl = (resn, row.resi, row.chain)
                         cnt = pm.count_atoms(
                             f"({hs}) within {radius} of (byres %{row.model} & index {row['index']})"
                         )
                         fpt[lbl] = fpt.get(lbl, 0) + cnt
+                        break
                 fpts.append(fpt)
                 
             fpt0 = fpts[0]
@@ -1149,27 +1164,12 @@ class LoadWidget(QWidget):
                 group = self.table.item(row, 0).text()
                 filename = self.table.item(row, 1).text()
                 run_fpocket = self.runFpocketCheck.isChecked()
-                try:
-                    load_ftmap(
-                        filename,
-                        group=group,
-                        k15_max_length=max_length,
-                        run_fpocket=run_fpocket,
-                    )
-                except Exception:
-                    try:
-                        load_ftmap(
-                            filename,
-                            group=group,
-                            k15_max_length=max_length,
-                            run_fpocket=run_fpocket,
-
-                        )
-                    except Exception:
-                        if not os.path.exists(filename):
-                            raise ValueError(f"File does not exist: '{filename}'")
-                        else:
-                            raise Exception(f"Failed to load file: '{filename}'")
+                load_ftmap(
+                    filename,
+                    group=group,
+                    k15_max_length=max_length,
+                    run_fpocket=run_fpocket,
+                )
         finally:
             self.clearRows()
 
