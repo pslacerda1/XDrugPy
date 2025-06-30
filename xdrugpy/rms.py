@@ -41,7 +41,7 @@ OPTIONS
 EXAMPLES
     # Calculate RMSF of site residues 10-150 for all proteins in the
     # session.
-    rmsf site 10-150, *.protein, pretty=False
+    rmsf resi 10-150, *.protein, pretty=False
 
 
     # Calculate RMSF of the full protein considering 1ABC and 2XYZ.
