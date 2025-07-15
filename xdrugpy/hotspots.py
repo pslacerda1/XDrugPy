@@ -829,6 +829,7 @@ def plot_heatmap(
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
     align: bool = False,
+    annotate: bool = False,
     axis: str = ''
 ):
     """
@@ -880,14 +881,30 @@ def plot_heatmap(
                             method="overlap",
                             align=align,
                         )
-            mat[-1].append(round(ret, 2))
+            mat[-1].append(ret)
     
     with mpl_axis(axis) as ax:
         mat_masked = np.ma.masked_invalid(mat)
         img = ax.imshow(mat_masked, cmap='viridis', vmin=0, vmax=1)
         ax.set_xticks(np.arange(len(mat)), objects, rotation=90)
         ax.set_yticks(np.arange(len(mat)), objects)    
+        ax.get_figure().tight_layout()
         plt.colorbar(img, ax=ax)
+        if annotate:
+            for i in range(len(mat)):
+                for j in range(len(mat)):
+                    if i < j:
+                        continue
+                    if i == j:
+                        x = 1.0
+                    
+                    x = mat[i][j]
+                    if x >= 0.5:
+                        color = "k"
+                    else:
+                        color = "w"
+                    x = f"{x:.2f}"
+                    text = ax.text(j, i, x, ha="center", va="center", color=color)
     return mat, objects
 
 
@@ -1363,6 +1380,10 @@ class SimilarityWidget(QWidget):
         self.heatmapAlignCheck.setChecked(False)
         boxLayout.addRow("Align:", self.heatmapAlignCheck)
 
+        self.heatmapAnnotateCheck = QCheckBox()
+        self.heatmapAnnotateCheck.setChecked(True)
+        boxLayout.addRow("Annotate:", self.heatmapAnnotateCheck)
+
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_heatmap)
         boxLayout.addWidget(plotButton)
@@ -1403,7 +1424,8 @@ class SimilarityWidget(QWidget):
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
         align = self.heatmapAlignCheck.isChecked()
-        plot_heatmap(expression, function, radius, align)
+        annotate = self.heatmapAnnotateCheck.isChecked()
+        plot_heatmap(expression, function, radius, align, annotate)
 
     def plot_dendrogram(self):
         expression = self.hotspotExpressionLine.text()
@@ -1471,8 +1493,9 @@ class CountWidget(QWidget):
         boxLayout.addRow("Site:", self.siteExpressionLine)
 
         self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(4)
+        self.radiusSpin.setValue(3)
         self.radiusSpin.setDecimals(1)
+        self.radiusSpin.setSingleStep(0.5)
         self.radiusSpin.setMinimum(2)
         self.radiusSpin.setMaximum(10)
         boxLayout.addRow("Radius:", self.radiusSpin)
