@@ -145,7 +145,7 @@ def test_heatmap():
     img_ref = f'{pkg_data}/test_heatmap_ref.png'
     img_gen = f'{pkg_data}/test_heatmap_gen.png'
     
-    plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, axis=img_gen)
+    plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, annotate=True, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
 
@@ -166,6 +166,7 @@ def test_fpt():
         "1dq8.K15_D_00 : 1dq9.K15_D_00 : 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
         nbins=50,
+        radius=4,
         axis_fingerprint=img_gen1,
         axis_dendrogram=img_gen2,
     )
