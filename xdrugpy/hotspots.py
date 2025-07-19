@@ -545,7 +545,7 @@ class LinkageMethod(StrEnum):
 def fp_sim(
     exprs: Selection,
     site: str = "*",
-    radius: int = 4,
+    radius: float = 4.0,
     nbins: int = 5,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     axis_fingerprint: str = '',
@@ -917,7 +917,7 @@ class PrioritizationType(StrEnum):
 def hs_proj(
     sel: Selection,
     protein: Selection = "",
-    radius: int = 4,
+    radius: float = 4,
     type: PrioritizationType = PrioritizationType.RESIDUE,
     palette: str = "rainbow",
 ):
