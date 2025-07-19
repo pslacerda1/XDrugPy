@@ -24,19 +24,16 @@ from functools import lru_cache
 QStandardPaths = Qt.QtCore.QStandardPaths
 
 
-RESOURCES_DIR = QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
-if not exists(RESOURCES_DIR):
-    os.makedirs(RESOURCES_DIR)
+RESOURCES_DIR = Path(QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation))
+RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
 
-LIGAND_LIBRARIES_DIR = RESOURCES_DIR + '/libs/ligands/'
-if not exists(LIGAND_LIBRARIES_DIR):
-    os.makedirs(LIGAND_LIBRARIES_DIR)
+LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / 'libs/ligands/')
+LIGAND_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 
-RECEPTOR_LIBRARIES_DIR = RESOURCES_DIR + '/libs/receptors/'
-if not exists(RECEPTOR_LIBRARIES_DIR):
-    os.makedirs(RECEPTOR_LIBRARIES_DIR)
+RECEPTOR_LIBRARIES_DIR = Path(RESOURCES_DIR / 'libs/receptors/')
+RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 
-TEMPDIR = mkdtemp(prefix='XDrugPy-')
+TEMPDIR = Path(mkdtemp(prefix='XDrugPy-'))
 def clear_temp():
     rmtree(TEMPDIR)
 atexit.register(clear_temp)

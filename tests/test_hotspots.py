@@ -50,17 +50,6 @@ def test_rmsd_hca():
     assert images_identical(img_ref, img_gen)
 
 
-# def test_mapping():
-#     pm.reinitialize()
-#     load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
-#     load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
-#     load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
-#     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", 'eftmap')
-
-#     mapping = get_mapping('eftmap', '*.protein')
-#     g = mapping.groupby(['resi', 'chain'])
-
-
 def test_eftmap_overlap():
     pm.reinitialize()
     load_ftmap(f'{pkg_data}/p38_1R39.pdb')
@@ -166,7 +155,7 @@ def test_fpt():
         "1dq8.K15_D_00 : 1dq9.K15_D_00 : 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
         nbins=50,
-        radius=4,
+        radius=4.0,
         axis_fingerprint=img_gen1,
         axis_dendrogram=img_gen2,
     )
