@@ -1,10 +1,8 @@
 import os
 from os.path import (
     expanduser,
-    dirname,
     splitext,
     basename,
-    exists
 )
 from time import sleep
 from glob import glob
@@ -12,7 +10,6 @@ import itertools
 from operator import itemgetter
 import shutil
 import textwrap
-import subprocess
 import json
 from collections import Counter, OrderedDict
 
@@ -23,12 +20,8 @@ from pymol.cgo import CYLINDER, SPHERE, COLOR
 from pymol import Qt
 import numpy as np
 import pandas as pd
-from lxml import etree
-from matplotlib import pyplot as plt
-from scipy.spatial.distance import euclidean
 
-from .utils import LIGAND_LIBRARIES_DIR, TEMPDIR, run, plot_hca_base, RECEPTOR_LIBRARIES_DIR, LIGAND_LIBRARIES_DIR
-
+from .utils import LIGAND_LIBRARIES_DIR, run, RECEPTOR_LIBRARIES_DIR, LIGAND_LIBRARIES_DIR
 
 QObject = Qt.QtCore.QObject
 QWidget = Qt.QtWidgets.QWidget
@@ -41,14 +34,12 @@ QDockWidget = Qt.QtWidgets.QDockWidget
 QLineEdit = Qt.QtWidgets.QLineEdit
 QCheckBox = Qt.QtWidgets.QCheckBox
 QApplication = Qt.QtWidgets.QApplication
-QMessageBox = Qt.QtWidgets.QMessageBox
 QVBoxLayout = Qt.QtWidgets.QVBoxLayout
 QTextEdit = Qt.QtWidgets.QTextEdit
 QDialog = Qt.QtWidgets.QDialog
 QDialogButtonBox = Qt.QtWidgets.QDialogButtonBox
 QDesktopWidget = Qt.QtWidgets.QDesktopWidget
 QProgressBar = Qt.QtWidgets.QProgressBar
-QAction = Qt.QtWidgets.QAction
 QComboBox = Qt.QtWidgets.QComboBox
 QTabWidget = Qt.QtWidgets.QTabWidget
 QTableWidget = Qt.QtWidgets.QTableWidget
@@ -56,23 +47,15 @@ QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
 QHeaderView = Qt.QtWidgets.QHeaderView
 QFrame = Qt.QtWidgets.QFrame
 QDialogButtonBox = Qt.QtWidgets.QDialogButtonBox
-QTreeView = Qt.QtWidgets.QTreeView
 
 LeftDockWidgetArea = Qt.QtCore.Qt.LeftDockWidgetArea
-QRegExp = Qt.QtCore.QRegExp
 QtCore = Qt.QtCore
 QThread = Qt.QtCore.QThread
 pyqtSignal = Qt.QtCore.Signal
-QStandardPaths = Qt.QtCore.QStandardPaths
 
-QRegExpValidator = Qt.QtGui.QRegExpValidator
 QPalette = Qt.QtGui.QPalette
-QTextDocument = Qt.QtGui.QTextDocument
-QIntValidator = Qt.QtGui.QIntValidator
 QTextCursor = Qt.QtGui.QTextCursor
 QIcon = Qt.QtGui.QIcon
-QStandardItem = Qt.QtGui.QStandardItem
-QStandardItemModel = Qt.QtGui.QStandardItemModel
 
 
 #
@@ -167,18 +150,12 @@ class OrderedCounter(Counter, OrderedDict):
 #          Load Result Pannel                 #
 ###############################################
 
-class TreeItem(QStandardItem):
-    def __init__(self, obj):
-        super().__init__(str(obj))
-        self.setFlags(self.flags() & ~QtCore.Qt.ItemIsEditable)
-
 #
 # Utilities for the analyze step
 #
 
 def parse_out_pdbqt(ligand_pdbqt):
-    name = basename(ligand_pdbqt)
-    name = name.rsplit('.', maxsplit=2)[0]    
+    name = basename(ligand_pdbqt)[:-10] # remove _out.pdbqt
     poses = []
     with open(ligand_pdbqt) as file:
         for line in file:
@@ -197,211 +174,65 @@ def parse_out_pdbqt(ligand_pdbqt):
     return poses
 
 
-def load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode):
-    plip_pdb = '%s/plip.pdb' % TEMPDIR
-    plip_pse = '%s/PLIP_PROTEIN_LIG_Z_1.pse' % TEMPDIR
-
-    pm.delete("*")
-    pm.load(ligand_pdbqt, 'lig', multiplex=1, zoom=0)
-    if pm.get_object_list("%lig") and  pm.count_states('%lig') == 1:
-        pass
-    else:
-        pm.set_name(f'lig_{str(mode).zfill(4)}', 'lig')
-    pm.delete('lig_*')
-    pm.alter('lig', 'chain="Z"; resn="LIG"; resi=1')
-
-    pm.load(receptor_pdbqt, 'prot')
-    pm.save(plip_pdb, selection="*")
-    
-    command = f'python -m plip.plipcmd -qs -f "{plip_pdb}" -y -o "{TEMPDIR}"'
-    output, success = run(command, cwd=TEMPDIR)
-    pm.load(plip_pse)
-    pm.valence('guess', 'all')
-
-
-def load_plip_full(project_dir, max_load, max_mode, tree_model):
-    poses = glob(f"{project_dir}/output/*.pdbqt")
-    poses = itertools.chain.from_iterable(
-        map(parse_out_pdbqt, poses)
-    )
-    poses = list(sorted(poses, key=lambda p: p['affinity']))
-    pm.set('pdb_conect_all', 'off')
-    pm.delete('prot')
-    fname = f"{project_dir}/receptor.pdbqt"
-    pm.load(fname, 'prot')
-    pm.alter('prot', "type='ATOM'")
-    interactions = []
-    interactions_type = [
-        "hydrophobic_interaction",
-        "hydrogen_bond",
-        "water_bridge",
-        "salt_bridge",
-        "pi_stack",
-        "pi_cation_interaction",
-        "halogen_bond",
-        "metal_complex"
-    ]
-    count = 0
-    for pose in poses:
-        if pose['mode'] > max_mode:
-            continue
-        count += 1
-        if count > max_load:
-            break
-
-        pm.delete('%lig')
-        name = pose["name"]
-        mode = pose["mode"]
-        in_fname = project_dir + f'/output/{name}.pdbqt'
-        out_fname = TEMPDIR + f'/plip.{name}-{mode}.pdb'
-        pm.load(in_fname, 'lig', multiplex=1, zoom=0)
-        if pm.get_object_list("%lig") and  pm.count_states('%lig') == 1:
-            pass
-        else:
-            pm.set_name(f'lig_{str(mode).zfill(4)}', 'lig')
-        pm.delete('lig_*')
-        pm.alter('lig', 'chain="Z"')
-        pm.alter('lig', 'resn="LIG"')
-        pm.alter('lig', 'resi=1')
-        pm.alter('lig', 'type="HETATM"')
-        pm.save(out_fname, selection='*')
-        
-        command = f'python -m plip.plipcmd -qs -f "{out_fname}" -x -o "{TEMPDIR}/"'
-        print(f"RUNNING COMMAND: {command}")
-        subprocess.run(command, cwd=TEMPDIR, shell=True)
-
-        with open(TEMPDIR + '/report.xml') as fp:
-            plip = etree.parse(fp)
-        for inter_type in interactions_type:
-            restype = plip.xpath(f"//{inter_type}/restype/text()")
-            resnr = map(int, plip.xpath(f"//{inter_type}/resnr/text()"))
-            reschain = plip.xpath(f"//{inter_type}/reschain/text()")
-            for inter in zip(restype, resnr, reschain):
-                interactions.append([f'{name}_m{mode}', inter_type, *inter])
-    interactions = sorted(interactions, key=lambda i: (i[4], i[3], i[1]))
-    residues_l = ['%s%s%s' % (i[2], i[3], i[4]) for i in interactions]
-    interactions_l = [i[1] for i in interactions]
-    names_l = [i[0] for i in interactions]
-
-    for inter_type in interactions_type.copy():
-        if len([i for i in interactions if i[1] == inter_type]) == 0:
-            interactions_type.remove(inter_type)
-
-    fig, axs = plt.subplots(len(interactions_type), layout="constrained", sharex=True)
-    for ax, interaction_type in zip(axs, interactions_type):
-        count = {}
-        for res in residues_l:
-            count[res] = 0
-        for res, inter_type in zip(residues_l, interactions_l):
-            if inter_type == interaction_type:
-                count[res] += 1
-        # for res, inter_type in zip(residues_l.copy(), interactions_l.copy()):
-        #     if inter_type == interaction_type:
-        #         if count[res] == 0:
-        #             del count[res]
-        ax.bar(count.keys(), count.values())
-        ax.set_title(interaction_type)
-    plt.xticks(rotation=90)
-    plt.show()
-
-    df = pd.DataFrame({
-        'name': names_l,
-        'residue': residues_l
-    })
-    labels = []
-    mols = []
-    prev_name = None
-    for cur_name, cur_residues in df.groupby('name'):
-        if cur_name != prev_name:
-            prev_name = cur_name
-            counter = OrderedCounter(residues_l)
-            for res in counter:
-                counter[res] = 0
-            for res in cur_residues['residue']:
-                counter[res] += 1
-            mols.append([counter[r] for r in residues_l])
-            mol_item = TreeItem(cur_name)
-            tree_model.appendRow(mol_item)
-            for res, count in counter.items():
-                if count > 0:
-                    resn = res[:3]
-                    chain = res[-1:]
-                    resi = res[3:-1]
-                    mol_item.appendRow([
-                        TreeItem(chain),
-                        TreeItem(resi),
-                        TreeItem(resn),
-                        TreeItem(str(count))
-                    ])
-            labels.append(cur_name)
-    
-    X = []
-    for idx1, mol1 in enumerate(mols):
-        for idx2, mol2 in enumerate(mols):
-            if idx1 >= idx2:
-                continue
-            d = euclidean(mol1, mol2)
-            X.append(d)
-    ax.set_xlim(0)
-    plot_hca_base(
-        X,
-        labels,
-        linkage_method='ward',
-        color_threshold=-1,
-        axis=None
-    )
-
-
 ###############################################
 #          Load Result Pannel                 #
 ###############################################
 
-class TreeItem(QStandardItem):
+
+class ResultsTableWidget(QTableWidget):
+    
+    def __init__(self, project_dir):
+        super().__init__()
+        self.project_dir = project_dir
+        self.props = ["Name", "Mode", "Affinity"]
+
+        self.setSelectionMode(QTableWidget.MultiSelection)
+        self.setSelectionBehavior(QTableWidget.SelectRows)
+        self.setColumnCount(3)
+        self.setHorizontalHeaderLabels(self.props)
+        header = self.horizontalHeader()
+        for idx in range(len(self.props)):
+            header.setSectionResizeMode(
+                idx, QHeaderView.ResizeMode.ResizeToContents
+            )
+        self.itemSelectionChanged.connect(self.itemsChanged)
+            
+    def itemsChanged(self):
+        pm.delete('LIG_*')
+        if 'receptor' not in pm.get_object_list():
+            receptor_pdbqt = '%s/receptor.pdbqt' % self.project_dir
+            pm.load(receptor_pdbqt, "receptor")
+        for item in self.selectedItems():
+            name = self.item(item.row(), 0).text()
+            mode = self.item(item.row(), 1).text()
+            pdbqt = f'{self.project_dir}/results/{name}_out.pdbqt'
+            obj = f'{name}-{mode}'
+            pm.load(pdbqt, obj, multiplex=1, zoom=0)            
+            if pm.get_object_list(f'%{obj}') and pm.count_states(f'%{obj}') == 1:
+                pass
+            else:
+                pm.set_name(f'{obj}_{str(mode).zfill(4)}', obj)
+            pm.delete(f'{obj}_*')
+            pm.alter(obj, f'chain="Z"; resn="{obj}"; resi=1')
+            pm.set_name(obj, f'LIG_{obj}')
+
+
+class SortableItem(QTableWidgetItem):
     def __init__(self, obj):
         super().__init__(str(obj))
         self.setFlags(self.flags() & ~QtCore.Qt.ItemIsEditable)
 
+    def __lt__(self, other):
+        try:
+            return float(self.text()) < float(other.text())
+        except ValueError:
+            return self.text() < other.text()
+
 
 class ResultsWidget(QWidget):
 
-    class ResultsTableWidget(QTableWidget):
-        def __init__(self, project_dir):
-            super().__init__()
-            self.project_dir = project_dir
-            self.props = ["Name", "Mode", "Affinity"]
-
-            self.setSelectionBehavior(QTableWidget.SelectRows)
-            self.setSelectionMode(QTableWidget.SingleSelection)
-            self.setColumnCount(3)
-            self.setHorizontalHeaderLabels(self.props)
-            header = self.horizontalHeader()
-            for idx in range(len(self.props)):
-                header.setSectionResizeMode(
-                    idx, QHeaderView.ResizeMode.ResizeToContents
-                )
-
-            @self.itemClicked.connect
-            def itemClicked(item):
-                name = self.item(item.row(), 0).text()
-                mode = self.item(item.row(), 1).text()
-                receptor_pdbqt = '%s/receptor.pdbqt' % self.project_dir
-                ligand_pdbqt = f'{self.project_dir}/output/{name}.pdbqt'
-                load_plip_pose(receptor_pdbqt, ligand_pdbqt, mode)
-        
-    class SortableItem(QTableWidgetItem):
-        def __init__(self, obj):
-            super().__init__(str(obj))
-            self.setFlags(self.flags() & ~QtCore.Qt.ItemIsEditable)
-
-        def __lt__(self, other):
-            try:
-                return float(self.text()) < float(other.text())
-            except ValueError:
-                return self.text() < other.text()
-
-    def __init__(self, is_intensive, project_dir, max_load, max_mode):
+    def __init__(self, project_dir, max_load, max_mode):
         super().__init__()
-        self.is_intensive = is_intensive
         self.project_dir = project_dir
         self.max_load = max_load
         self.max_mode = max_mode
@@ -409,32 +240,13 @@ class ResultsWidget(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
 
-        tab = QTabWidget()
-        layout.addWidget(tab)
-
-        tab1_widget = QWidget()
-        tab1_layout = QVBoxLayout(tab1_widget)
-        tab1_widget.setLayout(tab1_layout)
-        tab.addTab(tab1_widget, "Affinity list")
-
-        self.table_widget = self.ResultsTableWidget(project_dir)
-        tab1_layout.addWidget(self.table_widget)
+        self.table_widget = ResultsTableWidget(project_dir)
+        layout.addWidget(self.table_widget)
         
         export_btn = QPushButton(QIcon("save"), "Export Table")
         export_btn.clicked.connect(self.export)
-        tab1_layout.addWidget(export_btn)
+        layout.addWidget(export_btn)
 
-        tab2_widget = QWidget()
-        tab2_layout = QVBoxLayout(tab2_widget)
-        tab2_widget.setLayout(tab2_layout)
-        tab.addTab(tab2_widget, "Residue tree")
-        
-        self.tree_model = QStandardItemModel()
-        self.tree_model.setHorizontalHeaderLabels(["Molecule/Chain", "Resi", "Resn", "Count"])
-        self.tree_widget = QTreeView()
-        self.tree_widget.setModel(self.tree_model)
-        tab2_layout.addWidget(self.tree_widget) 
-        
     def showEvent(self, event):
         self.refresh()
         super().showEvent(event)
@@ -449,7 +261,7 @@ class ResultsWidget(QWidget):
         # append new rows
         project_dir = expanduser(self.project_dir)
         results = itertools.chain.from_iterable(
-            map(parse_out_pdbqt, glob(f"{project_dir}/output/*.pdbqt"))
+            map(parse_out_pdbqt, glob(f"{project_dir}/results/*.pdbqt"))
         )
         results = sorted(results, key=itemgetter("affinity"))
         count = 0 
@@ -461,16 +273,13 @@ class ResultsWidget(QWidget):
                 break
         self.table_widget.setSortingEnabled(True)
 
-        if self.is_intensive:
-            load_plip_full(project_dir, self.max_load, self.max_mode, self.tree_model)
-
     def appendRow(self, pose):
         self.table_widget.insertRow(self.table_widget.rowCount())
         line = self.table_widget.rowCount() - 1
 
-        self.table_widget.setItem(line, 0, self.SortableItem(pose['name']))
-        self.table_widget.setItem(line, 1, self.SortableItem(pose['mode']))
-        self.table_widget.setItem(line, 2, self.SortableItem(pose['affinity']))
+        self.table_widget.setItem(line, 0, SortableItem(pose['name']))
+        self.table_widget.setItem(line, 1, SortableItem(pose['mode']))
+        self.table_widget.setItem(line, 2, SortableItem(pose['affinity']))
         
     def export(self):
         fileDialog = QFileDialog()
@@ -513,6 +322,7 @@ def new_load_results_widget():
     max_load_spin.setRange(1, 99999999)
     max_load_spin.setValue(15)
     max_load_spin.setGroupSeparatorShown(True)
+    layout.addRow("Max load:", max_load_spin)
 
     #
     # Only the best poses of each ligand
@@ -521,12 +331,7 @@ def new_load_results_widget():
     max_mode_spin.setRange(1, 50)
     max_mode_spin.setValue(9)
     max_mode_spin.setGroupSeparatorShown(True)
-
-    #
-    # Plot interaction histogram
-    #
-    intensive_check = QCheckBox()
-    intensive_check.setChecked(False)
+    layout.addRow("Max mode:", max_mode_spin)
 
     #
     # Choose output folder
@@ -536,7 +341,7 @@ def new_load_results_widget():
     @show_table_button.clicked.connect
     def load_results():
         nonlocal results_widget
-        docking_file = str(
+        project_dir = (
             QFileDialog.getExistingDirectory(
                 show_table_button,
                 "Output folder",
@@ -544,16 +349,14 @@ def new_load_results_widget():
                 QFileDialog.ShowDirsOnly,
             )
         )
-        if not docking_file:
-            return
-        
-        project_dir = dirname(docking_file)
+        if not project_dir:
+            return        
+        project_dir = Path(str(project_dir))
 
         if results_widget is not None:
             results_widget.setParent(None)
-        del results_widget
+            del results_widget
         results_widget = ResultsWidget(
-            intensive_check.isChecked(),
             project_dir,
             max_load_spin.value(),
             max_mode_spin.value(),
@@ -564,13 +367,6 @@ def new_load_results_widget():
     # Results Table
     #
     results_widget = None
-    
-    #
-    # Setup form
-    #
-    layout.addRow("Max load:", max_load_spin)
-    layout.addRow("Max mode:", max_mode_spin)
-    layout.addRow("Intensive:", intensive_check)
     layout.setWidget(4, QFormLayout.SpanningRole, show_table_button)
     widget.setLayout(layout)
 
