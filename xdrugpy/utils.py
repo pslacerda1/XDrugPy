@@ -235,30 +235,15 @@ def multiple_expression_selector(exprs, type=None):
     return object_list
 
 
-def dendrogram_linked(Z, labels=None, ax=None, **kwargs):
-    from matplotlib import pyplot as plt
-    if ax is None:
-        _, ax = plt.subplots()
-    if 'color_threshold' not in kwargs or kwargs['color_threshold'] < 0:
-        kwargs['color_threshold'] = 0.7 * max(Z[:,2])
-
-    dendro = sch.dendrogram(
-        Z,
-        labels=labels,
-        ax=ax,
-        **kwargs
-    )
-    return dendro
-
-
-def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
+def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
     fig = plt.figure(constrained_layout=True)
     gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
     ax_dend_top = fig.add_subplot(gs[0])
     ax_heat = fig.add_subplot(gs[1])
 
-    Z = linkage(X, method=linkage_method, metric='precomputed', optimal_ordering=True)
-    dendro1 = dendrogram_linked(
+    X = np.array(X)
+    Z = linkage(X, method=linkage_method, optimal_ordering=True)
+    dendro = sch.dendrogram(
         Z,
         labels=labels,
         orientation='top',
@@ -270,30 +255,40 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
     )
     ax_dend_top.axhline(color_threshold, color="gray", ls='--')
 
-    X = np.array(X)
-    if X.ndim == 1:
-        X = distance.squareform(X)
+    X = 1 - distance.squareform(X)
+    np.fill_diagonal(X, 1)
 
     Y = X  #XXX Why?
-    X = X[dendro1['leaves'], :]
-    X = X[:, dendro1['leaves']]
+    X = X[dendro['leaves'], :]
+    X = X[:, dendro['leaves']]
 
-    ax_heat.set_xticks(range(len(dendro1['ivl'])), dendro1['ivl'])
-    ax_heat.set_yticks(range(len(dendro1['ivl'])), dendro1['ivl'])
+    ax_heat.set_xticks(range(len(dendro['ivl'])), dendro['ivl'])
+    ax_heat.set_yticks(range(len(dendro['ivl'])), dendro['ivl'])
     ax_heat.tick_params(axis='x', rotation=90)
     ax_heat.yaxis.tick_right()
-    ax_heat.imshow(X, aspect='auto')
+    ax_heat.imshow(X, aspect='auto', vmin=0, vmax=max(1, X.max()))
+
+    if annotate:
+        for i1, x1 in enumerate(X):
+            for i2, x2 in enumerate(X):
+                y = X[i1, i2]
+                if y >= 0.5:
+                    color = 'black'
+                else:
+                    color = 'white'
+                label = f'{y:.2f}'
+                ax_heat.text(i2, i1, label, color=color, ha='center', va='center')
 
     min_dists = defaultdict(list)
-    colors = set(dendro1["leaves_color_list"]) - {'C0'}
+    colors = set(dendro["leaves_color_list"]) - {'C0'}
     if not colors:
         colors = {'C0'}
     for color in colors:
-        for leaf1_idx, leaf_label1, color1 in zip(dendro1['leaves'], dendro1['ivl'], dendro1['leaves_color_list']):
+        for leaf1_idx, leaf_label1, color1 in zip(dendro['leaves'], dendro['ivl'], dendro['leaves_color_list']):
             if color != color1:
                 continue
             d = 0
-            for leaf2_idx, _, color2 in zip(dendro1['leaves'], dendro1['ivl'], dendro1["leaves_color_list"]):
+            for leaf2_idx, _, color2 in zip(dendro['leaves'], dendro['ivl'], dendro["leaves_color_list"]):
                 if color != color2:
                     continue
                 new_d_X = X[leaf1_idx, leaf2_idx]
@@ -338,7 +333,7 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, axis):
         # TODO why this fail?
         # plt.tight_layout()
         plt.savefig(axis)
-    return dendro1, medoids
+    return dendro, medoids
 
 
 lru_cache(999999999)

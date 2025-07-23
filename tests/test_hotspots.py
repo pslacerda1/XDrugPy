@@ -2,7 +2,7 @@ import os.path
 from pymol import cmd as pm
 from xdrugpy.hotspots import (
     load_ftmap, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_hca,
-    plot_heatmap, HeatmapFunction, fp_sim)
+    plot_cross_similarity, HeatmapFunction, fp_sim, res_sim)
 from xdrugpy.utils import expression_selector, multiple_expression_selector
 from PIL import Image
 import numpy as np
@@ -90,22 +90,30 @@ def test_hca():
     img_ref = f'{pkg_data}/test_hca_ref.png'
     img_gen = f'{pkg_data}/test_hca_gen.png'
 
-    dendro, medoids = plot_hca(expr, color_threshold=0.7, axis=img_gen)
-    assert medoids['C1'].pop() == 'group.CS_02'
+    dendro, medoids = plot_hca(expr, color_threshold=0.5, annotate=True, axis=img_gen)
+
+    assert medoids['C1'].pop() in ['group.CS_02', 'group.CS_04']
+    assert medoids['C1'].pop() in ['group.CS_02', 'group.CS_04']
     assert medoids['C1'] == []
     assert images_identical(img_ref, img_gen)
 
 
-
-def test_heatmap():
+def test_cross_similarity():
     pm.reinitialize()
-    load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
-    expr = "*.K15_* S0>=13"
 
-    img_ref = f'{pkg_data}/test_heatmap_ref.png'
-    img_gen = f'{pkg_data}/test_heatmap_gen.png'
+    load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'A7YT55_6css')
+    expr = "*.K15_*"
+
+    img_ref = f'{pkg_data}/test_cross_similarity_ref.png'
+    img_gen = f'{pkg_data}/test_cross_similarity_gen.png'
     
-    plot_heatmap(expr, method=HeatmapFunction.RESIDUE_JACCARD, annotate=True, axis=img_gen)
+    plot_cross_similarity(
+        expr,
+        method=HeatmapFunction.RESIDUE_JACCARD,
+        radius=4,
+        annotate=True,
+        axis=img_gen
+    )
     assert images_identical(img_ref, img_gen)
 
 
@@ -133,3 +141,10 @@ def test_fpt():
 
     assert images_identical(img_ref1, img_gen1)
     assert images_identical(img_ref2, img_gen2)
+
+
+def test_res_sim():
+    pm.reinitialize()
+    load_ftmap(pkg_data + '/3mer_c10.pdb')
+    load_ftmap(pkg_data + '/3mer_c16.pdb')
+    assert res_sim('3mer_c10.K15_B_00', '3mer_c16.K15_D_00', radius=4) == 11/18

@@ -132,53 +132,56 @@ EXAMPLES
     return RMSF, LABELS
 
 
-@declare_command
-def rmsd_hca(
-    ref_site: str,
-    prot_expr: str,
-    qualifier: str = 'name CA',
-    site_margin: float = 5.0,
-    linkage_method: str = 'ward',
-    color_threshold: float = 0.0,
-    axis: str = ''
-):
-    """
-    DESCRIPTION
-        Calculate the RMSD of multiple related structures. First it realizes
-        multiple sequence/structure alignment with the cealign function in
-        order to get the equivalent atoms, so it can be realized between
-        relatively distant homologues.
+# @declare_command
+# def rmsd_hca(
+#     ref_site: str,
+#     prot_expr: str,
+#     qualifier: str = 'name CA',
+#     site_margin: float = 5.0,
+#     linkage_method: str = 'ward',
+#     color_threshold: float = 0.0,
+#     annotate: bool = True,
+#     axis: str = ''
+# ):
+#     """
+#     DESCRIPTION
+#         Calculate the RMSD of multiple related structures. First it realizes
+#         multiple sequence/structure alignment with the cealign function in
+#         order to get the equivalent atoms, so it can be realized between
+#         relatively distant homologues.
 
-        A reference site must be supplied to focus, however full protein
-        analysis can be achieved with a star * wildcard. A expression
-        based on fnmatch select the structures to calculate the RMSD.
-    """
-    frames = []
-    for obj in pm.get_object_list():
-        for expr in prot_expr.split():
-            if fnmatch(obj, expr):
-                frames.append(obj)
-    f0 = frames[0]
+#         A reference site must be supplied to focus, however full protein
+#         analysis can be achieved with a star * wildcard. A expression
+#         based on fnmatch select the structures to calculate the RMSD.
+#     """
+#     frames = []
+#     for obj in pm.get_object_list():
+#         for expr in prot_expr.split():
+#             if fnmatch(obj, expr):
+#                 frames.append(obj)
+#     f0 = frames[0]
 
-    site = set()
-    pm.iterate(
-        f'(%{f0} & polymer) within {site_margin} of ({ref_site})',
-        'site.add((resn,resi,chain))',
-        space={'site': site}
-    )
+#     site = set()
+#     pm.iterate(
+#         f'(%{f0} & polymer) within {site_margin} of ({ref_site})',
+#         'site.add((resn,resi,chain))',
+#         space={'site': site}
+#     )
     
-    # Aggregate coords from all frames
-    X = []
-    for i1, f1 in enumerate(frames):
-        for i2, f2 in enumerate(frames):
-            if i1 >= i2:
-                continue
-            rmsd = pm.rms(
-                f"(%{f1} & polymer & {qualifier}) within {site_margin} of ({ref_site})",
-                f"(%{f2} & polymer & {qualifier}) within {site_margin} of ({ref_site})",
-            )
-            X.append(rmsd)
-    return plot_hca_base(X, frames, linkage_method, color_threshold, axis)
+#     # Aggregate coords from all frames
+#     X = []
+#     for i1, f1 in enumerate(frames):
+#         for i2, f2 in enumerate(frames):
+#             if i1 >= i2:
+#                 continue
+#             rmsd = pm.rms(
+#                 f"(%{f1} & polymer & {qualifier}) within {site_margin} of ({ref_site})",
+#                 f"(%{f2} & polymer & {qualifier}) within {site_margin} of ({ref_site})",
+#             )
+#             X.append(rmsd)
+#     X = np.array(X)
+#     return plot_hca_base(max(X)-X, frames, linkage_method, color_threshold, annotate, axis)
+
 
 def __init_plugin__(app=None):
     pass

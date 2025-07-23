@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from pathlib import Path
 from pymol import cmd as pm
 from xdrugpy.docking import VinaDockingEngine
-from xdrugpy.utils import RECEPTOR_LIBRARIES_DIR
+from xdrugpy.utils import RECEPTOR_LIBRARIES_DIR, LIGAND_LIBRARIES_DIR
 
 
 pkg_data = Path(__file__).parent / 'data'
@@ -40,7 +40,7 @@ def test_vina_engine():
         with open(tmpdir / 'queue' / 'Z1184909877.pdbqt') as f:
             assert len(f.readlines()) == 16
         assert "Converting ligands to PDBQT." in eng1.manager.logEvent.emit.call_args_list[6][0][0]
-        lib_dir = RECEPTOR_LIBRARIES_DIR / 'minifrags'
+        lib_dir = LIGAND_LIBRARIES_DIR / 'minifrags'
         assert len(list(lib_dir.iterdir())) in [4, 5] # depending on scrub BUG
     #
     # Restoring libraries

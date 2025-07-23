@@ -548,6 +548,8 @@ def fp_sim(
     radius: float = 4.0,
     nbins: int = 5,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
+    color_threshold: float = 0.0,
+    annotate: bool = True,
     axis_fingerprint: str = '',
     axis_dendrogram: str = '',
     quiet: int = True,
@@ -638,10 +640,11 @@ def fp_sim(
                     if not quiet:
                         print(f"Pearson correlation: {hs1} / {hs2}: {corr:.2f}")
             plot_hca_base(
-                [1 - c for c in corrs],
+                corrs,
                 labels,
                 linkage_method=linkage_method,
-                color_threshold=0,
+                color_threshold=color_threshold,
+                annotate=annotate,
                 axis=ax
             )
             for label in ax.xaxis.get_majorticklabels():
@@ -688,8 +691,8 @@ class ResidueSimilarityMethod(StrEnum):
 def res_sim(
     hs1: Selection,
     hs2: Selection,
-    radius: float = 2,
-    align: bool = False,
+    radius: float = 4.0,
+    seq_align: bool = False,
     method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
     quiet: int = True,
 ):
@@ -708,14 +711,8 @@ def res_sim(
         res_sim 8DSU.D_001*, 6XHM.D_001*
         res_sim 8DSU.CS_*, 6XHM.CS_*
     """
-    try:
-        group1 = pm.get_property('Group', hs1)
-    except:
-        group1 = hs1
-    try:
-        group2 = pm.get_property('Group', hs2)
-    except:
-        group2 = hs2
+    group1 = pm.get_property('Group', hs1)
+    group2 = pm.get_property('Group', hs2)
 
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
     sel2 = f"{group2}.protein within {radius} from ({hs2})"
@@ -723,7 +720,7 @@ def res_sim(
     resis1 = set()
     pm.iterate(sel1, "resis1.add((chain, resi))", space={"resis1": resis1})
 
-    if group1 == group2 or not align:
+    if group1 == group2 or not seq_align:
         resis2 = set()
         pm.iterate(sel2, "resis2.add((chain, resi))", space={"resis2": resis2})
     else:
@@ -754,7 +751,8 @@ def res_sim(
             case ResidueSimilarityMethod.OVERLAP:
                 ret = len(resis1.intersection(resis2)) / min(len(resis1), len(resis2))
     except ZeroDivisionError:
-        print("Your selection yields zero atoms.")
+        if not quiet:
+            print("Your selection yields zero atoms.")
         return 0.0
 
     if not quiet:
@@ -824,12 +822,14 @@ class HeatmapFunction(StrEnum):
 
 
 @declare_command
-def plot_heatmap(
+def plot_cross_similarity(
     exprs: Selection,
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
-    align: bool = False,
+    align: bool = True,
     annotate: bool = False,
+    linkage_method: LinkageMethod = LinkageMethod.SINGLE,
+    color_threshold: float = 0.0,
     axis: str = ''
 ):
     """
@@ -842,9 +842,9 @@ def plot_heatmap(
         annotate    fill the cells with values
 
     EXAMPLES
-        cross_measure *.D_000_*_*, function=residue_jaccard
-        cross_measure *.D_*. align=True
-        cross_measure *.D_000_*_* *.DS_*
+        plot_pairwise_similarity *.D_000_*_*, function=residue_jaccard
+        plot_pairwise_similarity *.D_*. align=True
+        plot_pairwise_similarity *.D_000_*_* *.DS_*
     """
     def sort(obj):
         klass = pm.get_property("Class", obj)
@@ -853,59 +853,34 @@ def plot_heatmap(
     objects = expression_selector(exprs)
     objects = list(sorted(objects, key=sort))
     
-    mat = []
+    X = []
     for idx1, obj1 in enumerate(objects):
-        mat.append([])
         for idx2, obj2 in enumerate(objects):
-            if idx1 == idx2:
-                ret = 1
-            elif idx1 < idx2:
-                ret = np.nan
-            else:
-                match method:
-                    case HeatmapFunction.HO:
-                        ret = ho(obj1, obj2, radius=radius)
-                    case HeatmapFunction.RESIDUE_JACCARD:
-                        ret = res_sim(
-                            obj1,
-                            obj2,
-                            radius=radius,
-                            method="jaccard",
-                            align=align,
-                        )
-                    case HeatmapFunction.RESIDUE_OVERLAP:
-                        ret = res_sim(
-                            obj1,
-                            obj2,
-                            radius=radius,
-                            method="overlap",
-                            align=align,
-                        )
-            mat[-1].append(ret)
+            if idx1 >= idx2:
+                continue
+            match method:
+                case HeatmapFunction.HO:
+                    ret = ho(obj1, obj2, radius=radius)
+                case HeatmapFunction.RESIDUE_JACCARD:
+                    ret = res_sim(
+                        obj1,
+                        obj2,
+                        radius=radius,
+                        method="jaccard",
+                        seq_align=align,
+                    )
+                case HeatmapFunction.RESIDUE_OVERLAP:
+                    ret = res_sim(
+                        obj1,
+                        obj2,
+                        radius=radius,
+                        method="overlap",
+                        seq_align=align,
+                    )
+            X.append(1-ret)
     
-    with mpl_axis(axis) as ax:
-        mat_masked = np.ma.masked_invalid(mat)
-        img = ax.imshow(mat_masked, cmap='viridis', vmin=0, vmax=1)
-        ax.set_xticks(np.arange(len(mat)), objects, rotation=90)
-        ax.set_yticks(np.arange(len(mat)), objects)    
-        ax.get_figure().tight_layout()
-        plt.colorbar(img, ax=ax)
-        if annotate:
-            for i in range(len(mat)):
-                for j in range(len(mat)):
-                    if i < j:
-                        continue
-                    if i == j:
-                        x = 1.0
-                    
-                    x = mat[i][j]
-                    if x >= 0.5:
-                        color = "k"
-                    else:
-                        color = "w"
-                    x = f"{x:.2f}"
-                    text = ax.text(j, i, x, ha="center", va="center", color=color)
-    return mat, objects
+    plot_hca_base(X, objects, linkage_method, color_threshold, annotate, axis)
+    return X, objects
 
 
 class PrioritizationType(StrEnum):
@@ -962,7 +937,8 @@ def plot_hca(
     residue_radius: float = 4.0,
     residue_align: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    color_threshold: bool = -1,
+    color_threshold: float = 0.0,
+    annotate: bool = False,
     axis: str = None
 ):
     """
@@ -1061,13 +1037,13 @@ def plot_hca(
                     obj1,
                     obj2,
                     radius=residue_radius,
-                    align=residue_align,
+                    seq_align=residue_align,
                 )
             else:
                 j = 1
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
-    return plot_hca_base(X, labels, linkage_method, color_threshold, axis)
+    return plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis)
 
 
 
@@ -1356,6 +1332,22 @@ class SimilarityWidget(QWidget):
         self.hotspotExpressionLine = QLineEdit()
         boxLayout.addRow("Hotspots:", self.hotspotExpressionLine)
 
+        self.annotateCheck = QCheckBox()
+        self.annotateCheck.setChecked(True)
+        boxLayout.addRow("Annotate:", self.annotateCheck)
+
+        self.linkageMethodCombo = QComboBox()
+        self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
+        boxLayout.addRow("Linkage:", self.linkageMethodCombo)
+
+        self.colorThresholdSpin = QDoubleSpinBox()
+        self.colorThresholdSpin.setMinimum(0)
+        self.colorThresholdSpin.setMaximum(10)
+        self.colorThresholdSpin.setValue(0)
+        self.colorThresholdSpin.setSingleStep(0.1)
+        self.colorThresholdSpin.setDecimals(1)
+        boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
+
         layout = QHBoxLayout()
         mainLayout.addLayout(layout)
 
@@ -1364,9 +1356,9 @@ class SimilarityWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.functionCombo = QComboBox()
-        self.functionCombo.addItems([e.value for e in HeatmapFunction])
-        boxLayout.addRow("Function:", self.functionCombo)
+        self.methodCombo = QComboBox()
+        self.methodCombo.addItems([e.value for e in HeatmapFunction])
+        boxLayout.addRow("Function:", self.methodCombo)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(4)
@@ -1379,10 +1371,6 @@ class SimilarityWidget(QWidget):
         self.heatmapAlignCheck = QCheckBox()
         self.heatmapAlignCheck.setChecked(False)
         boxLayout.addRow("Align:", self.heatmapAlignCheck)
-
-        self.heatmapAnnotateCheck = QCheckBox()
-        self.heatmapAnnotateCheck.setChecked(True)
-        boxLayout.addRow("Annotate:", self.heatmapAnnotateCheck)
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_heatmap)
@@ -1403,29 +1391,28 @@ class SimilarityWidget(QWidget):
         self.resiudeAlignCheck.setChecked(False)
         boxLayout.addRow("Residue Align:", self.resiudeAlignCheck)
 
-        self.linkageMethodCombo = QComboBox()
-        self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
-        boxLayout.addRow("Linkage:", self.linkageMethodCombo)
-
-        self.colorThresholdSpin = QDoubleSpinBox()
-        self.colorThresholdSpin.setMinimum(0)
-        self.colorThresholdSpin.setMaximum(10)
-        self.colorThresholdSpin.setValue(0)
-        self.colorThresholdSpin.setSingleStep(0.1)
-        self.colorThresholdSpin.setDecimals(1)
-        boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
-
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_dendrogram)
         boxLayout.addWidget(plotButton)
 
     def plot_heatmap(self):
         expression = self.hotspotExpressionLine.text()
-        function = self.functionCombo.currentText()
+        method = self.methodCombo.currentText()
         radius = self.radiusSpin.value()
         align = self.heatmapAlignCheck.isChecked()
-        annotate = self.heatmapAnnotateCheck.isChecked()
-        plot_heatmap(expression, function, radius, align, annotate)
+        linkage_method = self.linkageMethodCombo.currentText()
+        color_threshold = self.colorThresholdSpin.value()
+        annotate = self.annotateCheck.isChecked()
+
+        plot_cross_similarity(
+            expression,
+            method,
+            radius,
+            align,
+            annotate,
+            linkage_method,
+            color_threshold
+        )
 
     def plot_dendrogram(self):
         expression = self.hotspotExpressionLine.text()
@@ -1433,6 +1420,7 @@ class SimilarityWidget(QWidget):
         residue_align = self.resiudeAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
+        annotate = self.annotateCheck.isChecked()
 
         return plot_hca(
             expression,
@@ -1440,6 +1428,7 @@ class SimilarityWidget(QWidget):
             residue_align,
             linkage_method,
             color_threshold,
+            annotate
         )
 
 
@@ -1513,6 +1502,22 @@ class CountWidget(QWidget):
         self.dendrogramCheck = QCheckBox()
         self.dendrogramCheck.setChecked(False)
         boxLayout.addRow("Dendrogram:", self.dendrogramCheck)
+        
+        self.annotateCheck = QCheckBox()
+        self.annotateCheck.setChecked(True)
+        boxLayout.addRow("Annotate:", self.annotateCheck)
+
+        self.linkageMethodCombo = QComboBox()
+        self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
+        boxLayout.addRow("Linkage:", self.linkageMethodCombo)
+
+        self.colorThresholdSpin = QDoubleSpinBox()
+        self.colorThresholdSpin.setMinimum(0)
+        self.colorThresholdSpin.setMaximum(10)
+        self.colorThresholdSpin.setValue(0)
+        self.colorThresholdSpin.setSingleStep(0.1)
+        self.colorThresholdSpin.setDecimals(1)
+        boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_fingerprint)
@@ -1534,6 +1539,9 @@ class CountWidget(QWidget):
         fingerprints = self.fingerprintsCheck.isChecked()
         dendrogram = self.dendrogramCheck.isChecked()
         nbins = self.nBinsSpin.value()
+        linkage_method = self.linkageMethodCombo.currentText()
+        color_threshold = self.colorThresholdSpin.value()
+        annotate = self.annotateCheck.isChecked()
 
         if fingerprints:
             axis_fingerprints = ''
@@ -1551,6 +1559,9 @@ class CountWidget(QWidget):
             axis_fingerprint=axis_fingerprints,
             axis_dendrogram=axis_dendrogram,
             nbins=nbins,
+            annotate=annotate,
+            linkage_method=linkage_method,
+            color_threshold=color_threshold,
         )
 
 
