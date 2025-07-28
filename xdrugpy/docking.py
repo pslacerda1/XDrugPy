@@ -25,6 +25,7 @@ from .utils import LIGAND_LIBRARIES_DIR, run, RECEPTOR_LIBRARIES_DIR, LIGAND_LIB
 
 QObject = Qt.QtCore.QObject
 QWidget = Qt.QtWidgets.QWidget
+QScrollArea = Qt.QtWidgets.QScrollArea
 QFileDialog = Qt.QtWidgets.QFileDialog
 QFormLayout = Qt.QtWidgets.QFormLayout
 QPushButton = Qt.QtWidgets.QPushButton
@@ -833,14 +834,18 @@ class PyMOLComboObjectBox(QComboBox):
 
 
 def new_run_docking_widget():
-    dockWidget = QDockWidget()
-    dockWidget.setWindowTitle("Run Vina")
+    dock_widget = QDockWidget()
+    dock_widget.setWindowTitle("Run Vina")
 
-    widget = QWidget()
+    form_widget = QWidget()
+    form_layout = QFormLayout(form_widget)
 
-    layout = QFormLayout(widget)
-    widget.setLayout(layout)
-    dockWidget.setWidget(widget)
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setWidget(form_widget)
+
+    dock_widget.setWidget(scroll)
+
 
     ##########################################
     # RECEPTOR OPTIONS
@@ -904,7 +909,7 @@ def new_run_docking_widget():
         box_sel.setPalette(palette)
         return True
         
-    box_margin_spin = QDoubleSpinBox(widget)
+    box_margin_spin = QDoubleSpinBox(form_widget)
     box_margin_spin.setRange(0.0, 10.0)
     box_margin_spin.setValue(3.0)
     box_margin_spin.setSingleStep(0.1)
@@ -964,10 +969,10 @@ def new_run_docking_widget():
     tab_ligand.addTab(tab1_widget, "New library")
 
     ligands_file = None
-    ligands_button = QPushButton("Choose file...", widget)
+    ligands_button = QPushButton("Choose file...", form_widget)
     tab1_layout.addRow("Ligands file:", ligands_button)
 
-    ph_spin = QDoubleSpinBox(widget)
+    ph_spin = QDoubleSpinBox(form_widget)
     ph_spin.setRange(0.0, 14.0)
     ph_spin.setValue(7.0)
     ph_spin.setSingleStep(0.1)
@@ -1029,37 +1034,37 @@ def new_run_docking_widget():
     options_group_layout = QFormLayout(options_group)
     options_group.setLayout(options_group_layout)
 
-    function = QComboBox(widget)
+    function = QComboBox(form_widget)
     function.addItems(["vina", "vinardo", "ad4"])
     options_group_layout.addRow("Function:", function)
 
-    exhaustiveness_spin = QSpinBox(widget)
+    exhaustiveness_spin = QSpinBox(form_widget)
     exhaustiveness_spin.setRange(1, 50)
     exhaustiveness_spin.setValue(8)
     options_group_layout.addRow("Exhaustiveness:", exhaustiveness_spin)
 
-    num_modes_spin = QSpinBox(widget)
+    num_modes_spin = QSpinBox(form_widget)
     num_modes_spin.setRange(1, 100)
     num_modes_spin.setValue(3)
     options_group_layout.addRow("Number of modes", num_modes_spin)
 
-    min_rmsd_spin = QDoubleSpinBox(widget)
+    min_rmsd_spin = QDoubleSpinBox(form_widget)
     min_rmsd_spin.setRange(0.0, 3.0)
     min_rmsd_spin.setValue(1.0)
     options_group_layout.addRow("Minimum RMSD:", min_rmsd_spin)
 
-    energy_range_spin = QDoubleSpinBox(widget)
+    energy_range_spin = QDoubleSpinBox(form_widget)
     energy_range_spin.setRange(0, 10.0)
     energy_range_spin.setValue(3.0)
     options_group_layout.addRow("Energy range:", energy_range_spin)
 
     cpu_count = QThread.idealThreadCount()
-    cpu_spin = QSpinBox(widget)
+    cpu_spin = QSpinBox(form_widget)
     cpu_spin.setRange(1, cpu_count)
     cpu_spin.setValue(cpu_count)
     options_group_layout.addRow("Number of CPUs:", cpu_spin)
 
-    seed_spin = QSpinBox(widget)
+    seed_spin = QSpinBox(form_widget)
     seed_spin.setRange(1, 10000)
     seed_spin.setValue(1)
     options_group_layout.addRow("Seed number:", seed_spin)
@@ -1080,7 +1085,7 @@ def new_run_docking_widget():
             options_group.setEnabled(True)
 
     project_dir = None
-    results_button = QPushButton("Choose folder...", widget)
+    results_button = QPushButton("Choose folder...", form_widget)
 
     @results_button.clicked.connect
     def choose_project_dir():
@@ -1097,7 +1102,7 @@ def new_run_docking_widget():
             return
         results_button.setText(basename(project_dir))
     
-    button = QPushButton("Run", widget)
+    button = QPushButton("Run", form_widget)
     @button.clicked.connect
     def run():
         def run_implementation(manager):
@@ -1172,21 +1177,21 @@ def new_run_docking_widget():
     #
     # setup layout
     #
-    layout.setWidget(1, QFormLayout.SpanningRole, tab_receptor)
-    layout.setWidget(2, QFormLayout.SpanningRole, horizontal_line1)
+    form_layout.setWidget(1, QFormLayout.SpanningRole, tab_receptor)
+    form_layout.setWidget(2, QFormLayout.SpanningRole, horizontal_line1)
 
-    layout.setWidget(3, QFormLayout.SpanningRole, tab_ligand)
-    layout.setWidget(4, QFormLayout.SpanningRole, horizontal_line2)
+    form_layout.setWidget(3, QFormLayout.SpanningRole, tab_ligand)
+    form_layout.setWidget(4, QFormLayout.SpanningRole, horizontal_line2)
     
-    layout.setWidget(5, QFormLayout.SpanningRole, options_group)
-    layout.setWidget(6, QFormLayout.SpanningRole, horizontal_line3)
+    form_layout.setWidget(5, QFormLayout.SpanningRole, options_group)
+    form_layout.setWidget(6, QFormLayout.SpanningRole, horizontal_line3)
 
-    layout.addRow("Continuation:", continuation_check)
-    layout.addRow("Output folder:", results_button)
-    layout.addWidget(button)
-    widget.setLayout(layout)
+    form_layout.addRow("Continuation:", continuation_check)
+    form_layout.addRow("Output folder:", results_button)
+    form_layout.addWidget(button)
+    form_widget.setLayout(form_layout)
 
-    return dockWidget
+    return dock_widget
 
 
 def __init_plugin__(app=None):
