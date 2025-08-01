@@ -53,22 +53,22 @@ if not exists(fpocket_exe):
 # INSTALL MORE REQUIREMENTS
 #
 try:
-    import plip, rdkit, openbabel
-except ImportError:
-    run_system(
-        "conda install -y"
-        " plip openbabel 'rdkit<2024'"
-    )
-try:
-    import scrubber, meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum
+    import scrubber, meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel
 except ImportError:
     run_system(
         "pip install"
-        " lxml pandas openpyxl seaborn scipy matplotlib strenum"
+        " lxml pandas openpyxl seaborn scipy matplotlib strenum openbabel-wheel"
         " https://github.com/pslacerda/molscrub/archive/refs/heads/windows.exe.zip"
         " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
     )
 
+try:
+    import plip, rdkit, openbabel
+except ImportError:
+    run_system(
+        "conda install -y"
+        " plip 'rdkit<2024'"
+    )
 
 #
 # INITIALIZE THE PLUGIN
