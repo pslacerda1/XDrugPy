@@ -12,6 +12,7 @@ import shutil
 import textwrap
 import json
 from collections import Counter, OrderedDict
+from unittest.mock import MagicMock
 
 import pymol
 import pymol.gui
@@ -480,9 +481,11 @@ from typing import Dict, Tuple, Optional
 @dataclass
 class DockingEngine:
     project_dir: Path
-    manager: VinaThread
+    manager: Optional[VinaThread] = None
 
     def __post_init__(self):
+        if not self.manager:
+            self.manager = MagicMock()
         self.project_dir = Path(self.project_dir)
         if self.project_dir.is_dir():
             if len([*self.project_dir.iterdir()]) > 0:
@@ -599,6 +602,7 @@ class VinaDockingEngine(DockingEngine):
                 f' {allow_bad_res}'
                 f' --read_pdb "{receptor_pdb}"'
                 f' -p "{self.receptor_pdbqt}"'
+                f' --default_altloc A'
                 f' --box_center {center_x:.2f} {center_y:.2f} {center_z:.2f}'
                 f' --box_size {size_x:.2f} {size_y:.2f} {size_z:.2f}'
             )
@@ -752,19 +756,26 @@ class VinaDockingEngine(DockingEngine):
         that = self
         class WorkerJanitor(QObject):
             finished = pyqtSignal()
+            def __init__(self):
+                super().__init__()
+                self._running = True
             def run(self):
-                while True:
-                    sleep(.5)
-                    if len([*that.queue_dir.iterdir()]) == 0:
-                        break
-                    for queue_pdbqt in that.queue_dir.iterdir():
-                        result_pdbqt = queue_pdbqt.name[:-6] + "_out.pdbqt"
-                        result_pdbqt = that.results_dir / result_pdbqt
-                        if result_pdbqt.exists():
-                            queue_pdbqt.unlink()
-                            that.increment_step(1)
+                try:
+                    while self._running:
+                        sleep(0.5)
+                        if len([*that.queue_dir.iterdir()]) != 0:
+                            for queue_pdbqt in that.queue_dir.iterdir():
+                                result_pdbqt = queue_pdbqt.name[:-6] + "_out.pdbqt"
+                                result_pdbqt = that.results_dir / result_pdbqt
+                                if result_pdbqt.exists():
+                                    queue_pdbqt.unlink()
+                                    that.increment_step(1)
+                        else:
                             break
-                self.finished.emit()
+                finally:
+                    self.finished.emit()
+            def stop(self):
+                self._running = False
         thread = QThread()
         worker = WorkerJanitor()
         worker.moveToThread(thread)
@@ -809,7 +820,6 @@ class VinaDockingEngine(DockingEngine):
         """)
         remove_threads()
         self.manager.finished.emit()
-        
 
 
 class PyMOLComboObjectBox(QComboBox):
