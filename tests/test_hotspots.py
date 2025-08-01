@@ -4,21 +4,24 @@ from xdrugpy.hotspots import (
     load_ftmap, eftmap_overlap, _eftmap_overlap_get_aromatic, plot_hca,
     plot_cross_similarity, HeatmapFunction, fp_sim, res_sim)
 from xdrugpy.utils import expression_selector, multiple_expression_selector
-from PIL import Image
 import numpy as np
+import matplotlib as mpl
 
+
+mpl.rcParams['svg.hashsalt'] = '42'
+mpl.rcParams['svg.id'] = '42'
+np.random.seed(42)
 pkg_data = os.path.dirname(__file__) + '/data'
 
 
 def images_identical(img1_path, img2_path):
-    """DeepSeek"""
-    img1 = Image.open(img1_path)
-    img2 = Image.open(img2_path)
-    if img1.size != img2.size or img1.mode != img2.mode:
-        return False
-    arr1 = np.array(img1)
-    arr2 = np.array(img2)
-    return np.array_equal(arr1, arr2)
+    with open(img1_path) as f1, open(img2_path) as f2:
+        f1 = [l for l in f1.readlines() if '<dc:date>' not in l]
+        f2 = [l for l in f2.readlines() if '<dc:date>' not in l]
+        for l1, l2 in zip(f1, f2):
+            if l1 != l2:
+                return False
+    return True
 
 
 def test_eftmap_overlap():
@@ -87,8 +90,8 @@ def test_hca():
     load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'group')
 
     expr = "*.CS_* S>=5"
-    img_ref = f'{pkg_data}/test_hca_ref.png'
-    img_gen = f'{pkg_data}/test_hca_gen.png'
+    img_ref = f'{pkg_data}/test_hca_ref.svg'
+    img_gen = f'{pkg_data}/test_hca_gen.svg'
 
     dendro, medoids = plot_hca(expr, color_threshold=0.5, annotate=True, axis=img_gen)
 
@@ -104,8 +107,8 @@ def test_cross_similarity():
     load_ftmap(f'{pkg_data}/A7YT55_6css_atlas.pdb', 'A7YT55_6css')
     expr = "*.K15_*"
 
-    img_ref = f'{pkg_data}/test_cross_similarity_ref.png'
-    img_gen = f'{pkg_data}/test_cross_similarity_gen.png'
+    img_ref = f'{pkg_data}/test_cross_similarity_ref.svg'
+    img_gen = f'{pkg_data}/test_cross_similarity_gen.svg'
     
     plot_cross_similarity(
         expr,
@@ -124,11 +127,11 @@ def test_fpt():
     load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
     load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
 
-    img_gen1 = f'{pkg_data}/test_fpt1_gen.png'
-    img_gen2 = f'{pkg_data}/test_fpt2_gen.png'
+    img_gen1 = f'{pkg_data}/test_fpt1_gen.svg'
+    img_gen2 = f'{pkg_data}/test_fpt2_gen.svg'
 
-    img_ref1 = f'{pkg_data}/test_fpt1_ref.png'
-    img_ref2 = f'{pkg_data}/test_fpt2_ref.png'
+    img_ref1 = f'{pkg_data}/test_fpt1_ref.svg'
+    img_ref2 = f'{pkg_data}/test_fpt2_ref.svg'
 
     fp_sim(
         "1dq8.K15_D_00 : 1dq9.K15_D_00 : 1dqa.K15_B_00",
