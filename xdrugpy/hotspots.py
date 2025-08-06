@@ -493,8 +493,10 @@ def dc(
     """
     xyz1 = pm.get_coords(f"({sel1}) and not elem H", state=state1)
     xyz2 = pm.get_coords(f"({sel2}) and not elem H", state=state2)
-
-    dc_ = (distance_matrix(xyz1, xyz2) < radius).sum()
+    if xyz1 is None or xyz2 is None:
+        dc_ = 0
+    else:
+        dc_ = (distance_matrix(xyz1, xyz2) < radius).sum()
     if not quiet:
         print(f"DC: {dc_:.2f}")
     return dc_
