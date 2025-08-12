@@ -486,6 +486,7 @@ class DockingEngine:
     def __post_init__(self):
         if not self.manager:
             self.manager = MagicMock()
+            self.manager.logEvent.emit = print
         self.project_dir = Path(self.project_dir)
         if self.project_dir.is_dir():
             if len([*self.project_dir.iterdir()]) > 0:
