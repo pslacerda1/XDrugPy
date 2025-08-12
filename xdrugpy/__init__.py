@@ -82,10 +82,10 @@ def __init_plugin__(app=None):
     print("This version of XDrugPy is intended for non-comercial and academic purposes only.")
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
-    from .rms import __init_plugin__ as __init_rmsf__
+    from .multi import __init_plugin__ as __init_multi__
     __init_hotspots__()
     __init_docking__()
-    __init_rmsf__()
+    __init_multi__()
     from pymol import cmd
     cmd.undo_disable()
 

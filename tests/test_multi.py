@@ -3,7 +3,7 @@ import matplotlib as mpl
 import numpy as np
 from pymol import cmd as pm
 from xdrugpy.hotspots import load_ftmap
-from xdrugpy.rms import rmsf#, rmsd_hca
+from xdrugpy.multi import rmsf, fetch_similar
 
 
 mpl.rcParams['svg.hashsalt'] = '42'
@@ -11,6 +11,7 @@ mpl.rcParams['svg.id'] = '42'
 np.random.seed(42)
 
 pkg_data = os.path.dirname(__file__) + '/data'
+
 
 
 def images_identical(img1_path, img2_path):
@@ -35,6 +36,19 @@ def test_rmsf():
     rmsf("*.K15_D_00", '*.protein', site_margin=5, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
+
+def test_fetch_similar():
+    pm.reinitialize()
+    fetch_similar('1e92', 1, 0.9, max_entries=20)
+    assert len(pm.get_object_list()) == 16
+
+    pm.reinitialize()
+    fetch_similar('1e92', 1, 0.9, site='resn HBI and chain A', max_entries=20)
+    assert len(pm.get_object_list()) == 1
+
+    pm.reinitialize()
+    fetch_similar('1b5h', 1, 0.9, site='chain B', max_entries=50)
+    assert len(pm.get_object_list()) == 3
 
 # def test_rmsd_hca():
 #     pm.reinitialize()

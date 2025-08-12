@@ -3,8 +3,80 @@ from collections import defaultdict
 from functools import lru_cache
 import numpy as np
 from fnmatch import fnmatch
+from rcsbapi.search import SeqSimilarityQuery
 
-from .utils import declare_command, mpl_axis, plot_hca_base, multiple_expression_selector
+from .utils import declare_command, mpl_axis
+
+
+
+@declare_command
+def fetch_similar(
+    pdb_id: str,
+    asm_id: int,
+    identity_cutoff: float,
+    site: str=None,
+    site_margin: float = 4.0,
+    max_entries:int = 50
+):
+    pdb_id = pdb_id.upper()
+    obj0 = '%s-%s' % (pdb_id, asm_id)
+    pm.fetch(pdb_id, obj0, type='pdb%s' % asm_id)
+    seq = []
+    pm.iterate(
+        f'%{obj0} & guide & alt +A',
+        'seq.append((chain, oneletter))',
+        space=locals()
+    )
+    chain = None
+    sequences = []
+    for new_chain, oneletter in seq:
+        if new_chain != chain:
+            chain = new_chain
+            sequences.append("")
+        sequences[-1] += oneletter
+    visited_chains = set()
+    visited_objs = {obj0}
+    for seq in sequences:
+        if len(seq) <= 25 or seq in visited_chains:
+            continue
+        visited_chains.add(seq)
+        query = SeqSimilarityQuery(
+            seq,
+            identity_cutoff=identity_cutoff,
+            sequence_type="protein"
+        )
+        for asm in list(query("assembly"))[:max_entries]:
+            asm = asm.split('-')
+            pdb_id, asm_id = asm[0], asm[1]
+            obj = '%s-%s' % (pdb_id, asm_id)
+            if obj in visited_objs:
+                continue
+            visited_objs.add(obj)
+            pm.fetch(pdb_id, obj, type='pdb%s' % asm_id)
+            pm.cealign(obj0, obj)
+            if not site:
+                continue
+            items = set()
+            pm.iterate(
+                f'(%{obj} & not (polymer | resn HOH)) within {site_margin} of ({site})',
+                'items.add((resn, chain))',
+                space=locals()
+            )
+            if items:
+                pm.delete(obj)
+                continue
+            peptides = set()
+            pm.iterate(
+                f'(%{obj} & polymer) within {site_margin} of ({site})',
+                'peptides.add(chain)',
+                space=locals()
+            )
+            for chain in peptides:
+                if pm.count_atoms(f'%{obj} & name CA & chain {chain}') < 25:
+                    pm.delete(obj)
+                    break
+            else:
+                pass
 
 
 @declare_command
@@ -183,5 +255,114 @@ EXAMPLES
 #     return plot_hca_base(max(X)-X, frames, linkage_method, color_threshold, annotate, axis)
 
 
+from pymol import Qt
+
+QWidget = Qt.QtWidgets.QWidget
+QFileDialog = Qt.QtWidgets.QFileDialog
+QFormLayout = Qt.QtWidgets.QFormLayout
+QPushButton = Qt.QtWidgets.QPushButton
+QSpinBox = Qt.QtWidgets.QSpinBox
+QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
+QLineEdit = Qt.QtWidgets.QLineEdit
+QCheckBox = Qt.QtWidgets.QCheckBox
+QVBoxLayout = Qt.QtWidgets.QVBoxLayout
+QHBoxLayout = Qt.QtWidgets.QHBoxLayout
+QDialog = Qt.QtWidgets.QDialog
+QComboBox = Qt.QtWidgets.QComboBox
+QTabWidget = Qt.QtWidgets.QTabWidget
+QLabel = Qt.QtWidgets.QLabel
+QTableWidget = Qt.QtWidgets.QTableWidget
+QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
+QGroupBox = Qt.QtWidgets.QGroupBox
+QHeaderView = Qt.QtWidgets.QHeaderView
+
+QtCore = Qt.QtCore
+QIcon = Qt.QtGui.QIcon
+
+
+class FinderWidget(QWidget):
+
+    def __init__(self):
+        super().__init__()
+
+        layout = QFormLayout()
+        self.setLayout(layout)
+
+        self.pdbLine = QLineEdit()
+        layout.addRow("PDB:", self.pdbLine)
+
+        self.assemblySpin = QSpinBox()
+        self.assemblySpin.setValue(1)
+        self.assemblySpin.setMinimum(1)
+        self.assemblySpin.setMaximum(9)
+        layout.addRow("Assembly:", self.assemblySpin)
+
+        self.identityCutoffSpin = QDoubleSpinBox()
+        self.identityCutoffSpin.setMinimum(0.300)
+        self.identityCutoffSpin.setMaximum(1.000)
+        self.identityCutoffSpin.setValue(0.900)
+        self.identityCutoffSpin.setSingleStep(0.050)
+        self.identityCutoffSpin.setDecimals(3)
+        layout.addRow("Identity cutoff:", self.identityCutoffSpin)
+
+        self.siteLine = QLineEdit()
+        layout.addRow("Site:", self.siteLine)
+
+        self.siteMarginSpin = QDoubleSpinBox()
+        self.siteMarginSpin.setMinimum(1.0)
+        self.siteMarginSpin.setMaximum(10.0)
+        self.siteMarginSpin.setValue(3.0)
+        self.siteMarginSpin.setSingleStep(0.5)
+        self.siteMarginSpin.setDecimals(1)
+        layout.addRow("Site margin:", self.siteMarginSpin)
+
+        self.maxEntriesSpin = QSpinBox()
+        self.maxEntriesSpin.setValue(50)
+        self.maxEntriesSpin.setMinimum(2)
+        self.maxEntriesSpin.setMaximum(9999)
+        layout.addRow("Max entries:", self.maxEntriesSpin)
+
+        fetchButton = QPushButton("Find")
+        fetchButton.clicked.connect(self.find)
+        layout.addWidget(fetchButton)
+
+    def find(self):
+        fetch_similar(
+            pdb_id=self.pdbLine.text().strip(),
+            asm_id=self.assemblySpin.value(),
+            identity_cutoff=self.identityCutoffSpin.value(),
+            site=self.siteLine.text().strip(),
+            site_margin=self.siteMarginSpin.value(),
+            max_entries=self.maxEntriesSpin.value(),
+        )
+
+
+class MainDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.resize(300, 250)
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        self.setWindowTitle("XDrugPy")
+
+        tab = QTabWidget()
+        tab.addTab(FinderWidget(), "Finder")
+
+        layout.addWidget(tab)
+
+
+dialog = None
+
+
+def run_plugin_gui():
+    global dialog
+    if dialog is None:
+        dialog = MainDialog()
+    dialog.show()
+
+
 def __init_plugin__(app=None):
-    pass
+    from pymol.plugins import addmenuitemqt
+    addmenuitemqt("XDrugPy::Multi", run_plugin_gui)
