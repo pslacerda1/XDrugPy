@@ -18,8 +18,13 @@ from matplotlib import pyplot as plt
 from strenum import StrEnum
 
 from .utils import (
-    declare_command, Selection, multiple_expression_selector,
-    mpl_axis, expression_selector, plot_hca_base, get_mapping
+    declare_command,
+    Selection,
+    multiple_expression_selector,
+    mpl_axis,
+    expression_selector,
+    plot_hca_base,
+    get_mapping,
 )
 
 from pymol import cmd as pm
@@ -127,18 +132,23 @@ def get_kozakov2015(group, clusters, max_length):
         pm.create(new_name, hs.selection)
         pm.group(group, new_name)
         hs.selection = new_name
-        set_properties(hs, new_name, {
-            "Type": "K15",
-            "Group": group,
-            'Selection': new_name,
-            "Class": hs.kozakov_class,
-            "S": hs.strength,
-            "S0": hs.strength0,
-            "CD": round(hs.center_center, 2),
-            "MD": round(hs.max_dist, 2),
-            "Length": hs.length,
-        })
+        set_properties(
+            hs,
+            new_name,
+            {
+                "Type": "K15",
+                "Group": group,
+                "Selection": new_name,
+                "Class": hs.kozakov_class,
+                "S": hs.strength,
+                "S0": hs.strength0,
+                "CD": round(hs.center_center, 2),
+                "MD": round(hs.max_dist, 2),
+                "Length": hs.length,
+            },
+        )
     return k15
+
 
 def get_fpocket(group, protein):
     pockets = []
@@ -147,25 +157,23 @@ def get_fpocket(group, protein):
         protein_pdb = f"{tempdir}/{group}.pdb"
         pm.save(protein_pdb, selection=protein)
         subprocess.check_call(
-            [
-                shutil.which('fpocket'),
-                '-f',
-                protein_pdb
-            ],
+            [shutil.which("fpocket"), "-f", protein_pdb],
         )
-        header_re = re.compile(r'^HEADER\s+\d+\s+-(.*):(.*)$')
+        header_re = re.compile(r"^HEADER\s+\d+\s+-(.*):(.*)$")
         for pocket_pdb in glob(f"{tempdir}/{group}_out/pockets/pocket*_atm.pdb"):
-            idx = os.path.basename(pocket_pdb).replace('pocket', '').replace('_atm.pdb', '')
-            idx = int(idx)
-            pocket = SimpleNamespace(
-                selection = f'{group}.fpocket_{idx:02}'
+            idx = (
+                os.path.basename(pocket_pdb)
+                .replace("pocket", "")
+                .replace("_atm.pdb", "")
             )
+            idx = int(idx)
+            pocket = SimpleNamespace(selection=f"{group}.fpocket_{idx:02}")
             pm.delete(pocket.selection)
             pm.load(pocket_pdb, pocket.selection)
             pm.set_property("Type", "Fpocket", pocket.selection)
             pm.set_property("Group", group)
             pm.set_property("Selection", pocket.selection)
-            for line in pm.get_property('pdb_header', pocket.selection).split('\n'):
+            for line in pm.get_property("pdb_header", pocket.selection).split("\n"):
                 if match := header_re.match(line):
                     prop = match.group(1).strip()
                     value = float(match.group(2))
@@ -176,19 +184,22 @@ def get_fpocket(group, protein):
     return pockets
 
 
-
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
         new_name = f"{group}.CS_{idx:02}"
         pm.create(new_name, cs.selection)
         cs.selection = new_name
         pm.group(group, new_name)
-        set_properties(cs, new_name, {
-            "Type": "CS",
-            "Group": group,
-            "Selection": new_name,
-            "S": cs.strength,
-        })
+        set_properties(
+            cs,
+            new_name,
+            {
+                "Type": "CS",
+                "Group": group,
+                "Selection": new_name,
+                "S": cs.strength,
+            },
+        )
     pm.delete("consensus.*")
     pm.delete("crosscluster.*")
 
@@ -203,14 +214,18 @@ def process_eclusters(group, eclusters):
         coords = pm.get_coords(new_name)
         md = distance_matrix(coords, coords).max()
 
-        set_properties(acs, new_name, {
-            "Type": "ACS", 
-            "Group": group, 
-            "Selection": new_name,
-            "Class": acs.probe_type, 
-            "S": acs.strength, 
-            "MD": round(md, 2)
-        })
+        set_properties(
+            acs,
+            new_name,
+            {
+                "Type": "ACS",
+                "Group": group,
+                "Selection": new_name,
+                "Class": acs.probe_type,
+                "S": acs.strength,
+                "MD": round(md, 2),
+            },
+        )
     pm.delete("clust.*")
 
 
@@ -237,6 +252,7 @@ def get_egbert2019(group, fpo_list, clusters):
             e19.append(SimpleNamespace(selection=new_name))
             idx_e19 += 1
     return e19
+
 
 def get_kozakov2015_large(group, fpo_list, clusters):
     k15l = []
@@ -268,10 +284,10 @@ def get_kozakov2015_large(group, fpo_list, clusters):
         i_sz = np.argmin(c.strength for c in pocket_clusters)
         sz = pocket_clusters[i_sz].strength
 
-        if 13 <= s0 < 16 and cd >=8 and md >= 10 and sz >= 5:
+        if 13 <= s0 < 16 and cd >= 8 and md >= 10 and sz >= 5:
             new_name = f"{group}.K15_BL_{idx:02}"
             klass = "BL"
-        if s0 >= 16 and cd >=8 and md >= 10 and sz >= 5:
+        if s0 >= 16 and cd >= 8 and md >= 10 and sz >= 5:
             new_name = f"{group}.K15_DL_{idx:02}"
             klass = "DL"
         else:
@@ -282,33 +298,32 @@ def get_kozakov2015_large(group, fpo_list, clusters):
         hs.kozakov_class = klass
         pm.create(new_name, sel)
         pm.group(group, new_name)
-        set_properties(hs, new_name, {
-            "Type": "K15",
-            "Group": group,
-            'Selection': new_name,
-            "Class": klass,
-            "S": strength,
-            "S0": s0,
-            "CD": round(cd, 2),
-            "MD": round(md, 2),
-            "Length": len(pocket_clusters),
-            "Fpocket": pocket.selection
-        })
+        set_properties(
+            hs,
+            new_name,
+            {
+                "Type": "K15",
+                "Group": group,
+                "Selection": new_name,
+                "Class": klass,
+                "S": strength,
+                "S0": s0,
+                "CD": round(cd, 2),
+                "MD": round(md, 2),
+                "Length": len(pocket_clusters),
+                "Fpocket": pocket.selection,
+            },
+        )
         hs.selection = hs.Selection
         if hs.kozakov_class:
             k15l.append(hs)
-        
+
     return k15l
-
-
 
 
 @declare_command
 def load_ftmap(
-    filename: Path,
-    group: str = "",
-    k15_max_length: int = 3,
-    run_fpocket: bool = False
+    filename: Path, group: str = "", k15_max_length: int = 3, run_fpocket: bool = False
 ):
     try:
         return _load_ftmap(filename, group, k15_max_length, run_fpocket)
@@ -317,10 +332,7 @@ def load_ftmap(
 
 
 def _load_ftmap(
-    filename: Path,
-    group: str = "",
-    k15_max_length: int = 3,
-    run_fpocket: bool = False
+    filename: Path, group: str = "", k15_max_length: int = 3, run_fpocket: bool = False
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -385,7 +397,7 @@ def _load_ftmap(
 
     pm.disable(f"{group}.CS_*")
     pm.disable(f"{group}.fpocket_*")
-    
+
     pm.set("mesh_mode", 1)
     pm.orient("all")
 
@@ -552,8 +564,8 @@ def fp_sim(
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = 0.0,
     annotate: bool = True,
-    axis_fingerprint: str = '',
-    axis_dendrogram: str = '',
+    axis_fingerprint: str = "",
+    axis_dendrogram: str = "",
     quiet: int = True,
 ):
     """
@@ -580,22 +592,21 @@ def fp_sim(
     groups = set()
     for object_set in multiple_expression_selector(exprs):
         for object in object_set:
-            if group := pm.get_property('Group', object):
+            if group := pm.get_property("Group", object):
                 hotspots.append(object)
                 groups.add(group)
 
     proteins = [f"{g}.protein" for g in groups]
-    mapping = get_mapping(
-        proteins,
-        site=site,
-        radius=radius
-    )
+    mapping = get_mapping(proteins, site=site, radius=radius)
     fpts = []
     if axis_fingerprint is not False:
-        with mpl_axis(axis_fingerprint, nrows=len(hotspots), sharex=True, constrained_layout=True) as axs:
+        with mpl_axis(
+            axis_fingerprint, nrows=len(hotspots), sharex=True, constrained_layout=True
+        ) as axs:
             for hs in hotspots:
                 fpt = {}
-                @mapping.groupby(['chain', 'resi'], as_index=False).apply
+
+                @mapping.groupby(["chain", "resi"], as_index=False).apply
                 def apply(group):
                     for idx, row in group.iterrows():
                         resn = row.oneletter
@@ -605,8 +616,9 @@ def fp_sim(
                         )
                         fpt[lbl] = fpt.get(lbl, 0) + cnt
                         break
+
                 fpts.append(fpt)
-                
+
             fpt0 = fpts[0]
             if not all([len(fpt0) == len(fpt) for fpt in fpts]):
                 raise ValueError(
@@ -616,9 +628,9 @@ def fp_sim(
             if not isinstance(axs, (np.ndarray, list)):
                 axs = [axs]
             for ax, fpt, hs in zip(axs, fpts, hotspots):
-                labels = ['%s %s:%s' % k for k in fpt]  
+                labels = ["%s %s:%s" % k for k in fpt]
                 arange = np.arange(len(fpt))
-                ax.bar(arange, fpt.values(), color='C0')
+                ax.bar(arange, fpt.values(), color="C0")
                 ax.set_title(hs)
                 ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
                 ax.set_xticks(arange, labels=labels, rotation=90)
@@ -647,12 +659,11 @@ def fp_sim(
                 linkage_method=linkage_method,
                 color_threshold=color_threshold,
                 annotate=annotate,
-                axis=ax
+                axis=ax,
             )
             for label in ax.xaxis.get_majorticklabels():
                 label.set_horizontalalignment("right")
     return fpts, corrs, labels
-
 
 
 @declare_command
@@ -713,8 +724,8 @@ def res_sim(
         res_sim 8DSU.D_001*, 6XHM.D_001*
         res_sim 8DSU.CS_*, 6XHM.CS_*
     """
-    group1 = pm.get_property('Group', hs1)
-    group2 = pm.get_property('Group', hs2)
+    group1 = pm.get_property("Group", hs1)
+    group2 = pm.get_property("Group", hs2)
 
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
     sel2 = f"{group2}.protein within {radius} from ({hs2})"
@@ -773,7 +784,7 @@ def _eftmap_overlap_get_aromatic(lig):
     lig_model = pm.get_model(lig)
     aromatic = set()
     for bond in lig_model.bond:
-        if bond.order == 4:   # This is how ChemPy detect aromatic bonds
+        if bond.order == 4:  # This is how ChemPy detect aromatic bonds
             aromatic.update(bond.index)
     xyz = []
     for idx in aromatic:
@@ -799,15 +810,15 @@ def _eftmap_overlap_get_halogen(lig):
 
 
 def eftmap_overlap(lig, hs, radius=2):
-    if '.ACS_donor_' in hs:
+    if ".ACS_donor_" in hs:
         lig_xyz = _eftmap_overlap_get_donor(lig)
-    elif '.ACS_acceptor_' in hs:
+    elif ".ACS_acceptor_" in hs:
         lig_xyz = _eftmap_overlap_get_acceptor(lig)
-    elif '.ACS_apolar_' in hs:
+    elif ".ACS_apolar_" in hs:
         lig_xyz = _eftmap_overlap_get_apolar(lig)
-    elif '.ACS_halogen' in hs:
+    elif ".ACS_halogen" in hs:
         lig_xyz = _eftmap_overlap_get_halogen(lig)
-    elif '.ACS_aromatic' in hs:
+    elif ".ACS_aromatic" in hs:
         lig_xyz = _eftmap_overlap_get_aromatic(lig)
     else:
         raise RuntimeError(f"Unknown hotspot type: {hs}")
@@ -832,7 +843,7 @@ def plot_cross_similarity(
     annotate: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
-    axis: str = ''
+    axis: str = "",
 ):
     """
     Compute the similarity between matching objects using a similarity function.
@@ -848,13 +859,14 @@ def plot_cross_similarity(
         plot_pairwise_similarity *.D_*. align=True
         plot_pairwise_similarity *.D_000_*_* *.DS_*
     """
+
     def sort(obj):
         klass = pm.get_property("Class", obj)
         return str(klass), obj
 
     objects = expression_selector(exprs)
     objects = list(sorted(objects, key=sort))
-    
+
     X = []
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
@@ -879,8 +891,8 @@ def plot_cross_similarity(
                         method="overlap",
                         seq_align=align,
                     )
-            X.append(1-ret)
-    
+            X.append(1 - ret)
+
     plot_hca_base(X, objects, linkage_method, color_threshold, annotate, axis)
     return X, objects
 
@@ -941,7 +953,7 @@ def plot_hca(
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
     annotate: bool = False,
-    axis: str = None
+    axis: str = None,
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1006,7 +1018,7 @@ def plot_hca(
 
     object_list = list(expression_selector(exprs))
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, object_list
-    
+
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "K15":
         n_props = 4
@@ -1046,7 +1058,6 @@ def plot_hca(
             d = _euclidean_like(hs_type, p1, p2, j)
             X.append(d)
     return plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis)
-
 
 
 #
@@ -1208,11 +1219,11 @@ class TableWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.selected_objs = set()
-        self.current_tab = 'K15'
-        
+        self.current_tab = "K15"
+
         layout = QVBoxLayout()
         self.setLayout(layout)
-        
+
         self.filter_line = QLineEdit("*")
         layout.addWidget(self.filter_line)
 
@@ -1220,17 +1231,26 @@ class TableWidget(QWidget):
         def textEdited(expr):
             self.selected_objs = expression_selector(expr, self.current_tab)
             self.refresh()
+
         tab = QTabWidget()
         layout.addWidget(tab)
-        
+
         self.hotspotsMap = {
-            ("Kozakov2015", "K15"): ["Class", "S", "S0", "CD", "MD", "Length", "Fpocket"],
+            ("Kozakov2015", "K15"): [
+                "Class",
+                "S",
+                "S0",
+                "CD",
+                "MD",
+                "Length",
+                "Fpocket",
+            ],
             ("CS", "CS"): ["S"],
             ("ACS", "ACS"): ["Class", "S", "MD"],
-            ("Egbert2019", "E19"): ["Fpocket", "S","S0", "S1", "Length"],
+            ("Egbert2019", "E19"): ["Fpocket", "S", "S0", "S1", "Length"],
             ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
-        
+
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
             table = self.TableWidgetImpl(props)
@@ -1247,7 +1267,6 @@ class TableWidget(QWidget):
         exportButton = QPushButton(QIcon("save"), "Export Tables")
         exportButton.clicked.connect(self.export)
         layout.addWidget(exportButton)
-
 
     def showEvent(self, event):
         self.filter_line.textEdited.emit(self.filter_line.text())
@@ -1266,7 +1285,7 @@ class TableWidget(QWidget):
             for obj in pm.get_names("objects"):
                 if not pm.get_property_list(obj):
                     continue
-                obj_type = pm.get_property('Type', obj)
+                obj_type = pm.get_property("Type", obj)
                 if obj_type == key:
                     # if len(self.selected_objs) == 0:
                     #     self.appendRow(title, key, obj)
@@ -1407,13 +1426,7 @@ class SimilarityWidget(QWidget):
         annotate = self.annotateCheck.isChecked()
 
         plot_cross_similarity(
-            expression,
-            method,
-            radius,
-            align,
-            annotate,
-            linkage_method,
-            color_threshold
+            expression, method, radius, align, annotate, linkage_method, color_threshold
         )
 
     def plot_dendrogram(self):
@@ -1430,7 +1443,7 @@ class SimilarityWidget(QWidget):
             residue_align,
             linkage_method,
             color_threshold,
-            annotate
+            annotate,
         )
 
 
@@ -1504,7 +1517,7 @@ class CountWidget(QWidget):
         self.dendrogramCheck = QCheckBox()
         self.dendrogramCheck.setChecked(False)
         boxLayout.addRow("Dendrogram:", self.dendrogramCheck)
-        
+
         self.annotateCheck = QCheckBox()
         self.annotateCheck.setChecked(True)
         boxLayout.addRow("Annotate:", self.annotateCheck)
@@ -1546,11 +1559,11 @@ class CountWidget(QWidget):
         annotate = self.annotateCheck.isChecked()
 
         if fingerprints:
-            axis_fingerprints = ''
+            axis_fingerprints = ""
         else:
             axis_fingerprints = False
         if dendrogram:
-            axis_dendrogram = ''
+            axis_dendrogram = ""
         else:
             axis_dendrogram = False
 
@@ -1575,7 +1588,7 @@ class MainDialog(QDialog):
 
         layout = QVBoxLayout()
         self.setLayout(layout)
-        self.setWindowTitle("XDrugPy")
+        self.setWindowTitle("(XDrugPy) Hotspots")
 
         tab = QTabWidget()
         tab.addTab(LoadWidget(), "Load")
@@ -1598,4 +1611,5 @@ def run_plugin_gui():
 
 def __init_plugin__(app=None):
     from pymol.plugins import addmenuitemqt
-    addmenuitemqt("XDrugPy::Hotspots", run_plugin_gui)
+
+    addmenuitemqt("(XDrugPy) Hotspots", run_plugin_gui)

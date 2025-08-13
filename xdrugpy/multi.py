@@ -17,19 +17,17 @@ def fetch_similar(
     pdb_id: str,
     asm_id: int,
     identity_cutoff: float,
-    site: str=None,
+    site: str = None,
     site_margin: float = 4.0,
     prosthetic_groups: str = PROSTHETIC_GROUPS,
-    max_entries:int = 50,
+    max_entries: int = 50,
 ):
     pdb_id = pdb_id.upper()
-    obj0 = '%s-%s' % (pdb_id, asm_id)
-    pm.fetch(pdb_id, obj0, type='pdb%s' % asm_id)
+    obj0 = "%s-%s" % (pdb_id, asm_id)
+    pm.fetch(pdb_id, obj0, type="pdb%s" % asm_id)
     seq = []
     pm.iterate(
-        f'%{obj0} & guide & alt +A',
-        'seq.append((chain, oneletter))',
-        space=locals()
+        f"%{obj0} & guide & alt +A", "seq.append((chain, oneletter))", space=locals()
     )
     chain = None
     sequences = []
@@ -45,27 +43,25 @@ def fetch_similar(
             continue
         visited_chains.add(seq)
         query = SeqSimilarityQuery(
-            seq,
-            identity_cutoff=identity_cutoff,
-            sequence_type="protein"
+            seq, identity_cutoff=identity_cutoff, sequence_type="protein"
         )
         for asm in list(query("assembly"))[:max_entries]:
-            asm = asm.split('-')
+            asm = asm.split("-")
             pdb_id, asm_id = asm[0], asm[1]
-            obj = '%s-%s' % (pdb_id, asm_id)
+            obj = "%s-%s" % (pdb_id, asm_id)
             if obj in visited_objs:
                 continue
             visited_objs.add(obj)
-            pm.fetch(pdb_id, obj, type='pdb%s' % asm_id)
+            pm.fetch(pdb_id, obj, type="pdb%s" % asm_id)
             pm.cealign(obj0, obj)
             if not site:
                 continue
             stop = False
             items = set()
             pm.iterate(
-                f'(%{obj} & not (polymer | resn HOH)) within {site_margin} of ({site})',
-                'items.add((resn, chain))',
-                space=locals()
+                f"(%{obj} & not (polymer | resn HOH)) within {site_margin} of ({site})",
+                "items.add((resn, chain))",
+                space=locals(),
             )
             for resn, chain in items:
                 if resn not in prosthetic_groups:
@@ -76,12 +72,12 @@ def fetch_similar(
                 continue
             peptides = set()
             pm.iterate(
-                f'(%{obj} & polymer) within {site_margin} of ({site})',
-                'peptides.add(chain)',
-                space=locals()
+                f"(%{obj} & polymer) within {site_margin} of ({site})",
+                "peptides.add(chain)",
+                space=locals(),
             )
             for chain in peptides:
-                if pm.count_atoms(f'%{obj} & name CA & chain {chain}') < 25:
+                if pm.count_atoms(f"%{obj} & name CA & chain {chain}") < 25:
                     pm.delete(obj)
                     stop = True
                     break
@@ -92,45 +88,45 @@ def fetch_similar(
 @declare_command
 def rmsf(
     prot_expr: str,
-    ref_site: str = '*',
-    site_margin:float = 3.0,
+    ref_site: str = "*",
+    site_margin: float = 3.0,
     qualifier: str = RMSF_QUALIFIER,
     pretty: bool = True,
-    axis: str = ''
+    axis: str = "",
 ):
     """
-DESCRIPTION
-    Calculate the RMSF of multiple related structures.
+    DESCRIPTION
+        Calculate the RMSF of multiple related structures.
 
-    A reference site must be supplied to focus, however full protein
-    analysis can be achieved with a star * wildcard. A protein
-    expression based on fnmatch to select the structures to calculate
-    the RMSF must also be supplied.
+        A reference site must be supplied to focus, however full protein
+        analysis can be achieved with a star * wildcard. A protein
+        expression based on fnmatch to select the structures to calculate
+        the RMSF must also be supplied.
 
-OPTIONS
-    prot_expr: str
-        An expression to select the structures to calculate the RMSF.
-    ref_site: str
-        A site expression to focus the RMSF calculation.
-    site_margin: float = 3.0
-        The margin to consider the site around the ref_site.
-    qualifier: str = 'name CA'
-        A qualifier to select the atoms to calculate the RMSF.
-    pretty: bool = True
-        If True, it will show the RMSF in a pretty way. 
-
-
-EXAMPLES
-    # Calculate RMSF of site residues 10-150 for all proteins in the
-    # session.
-    rmsf resi 10-150, *.protein, pretty=False
+    OPTIONS
+        prot_expr: str
+            An expression to select the structures to calculate the RMSF.
+        ref_site: str
+            A site expression to focus the RMSF calculation.
+        site_margin: float = 3.0
+            The margin to consider the site around the ref_site.
+        qualifier: str = 'name CA'
+            A qualifier to select the atoms to calculate the RMSF.
+        pretty: bool = True
+            If True, it will show the RMSF in a pretty way.
 
 
-    # Calculate RMSF of the full protein considering 1ABC and 2XYZ.
-    rmsf *, 1ABC.protein 2XYZ.protein
-    
-    # Use all atoms instead of only alpha carbons.
-    rmsf *, *.protein, qualifier=*
+    EXAMPLES
+        # Calculate RMSF of site residues 10-150 for all proteins in the
+        # session.
+        rmsf resi 10-150, *.protein, pretty=False
+
+
+        # Calculate RMSF of the full protein considering 1ABC and 2XYZ.
+        rmsf *, 1ABC.protein 2XYZ.protein
+
+        # Use all atoms instead of only alpha carbons.
+        rmsf *, *.protein, qualifier=*
 
     """
     frames = []
@@ -141,11 +137,11 @@ EXAMPLES
     f0 = frames[0]
     site = set()
     pm.iterate(
-        f'(%{f0} & polymer) within {site_margin} of ({ref_site})',
-        'site.add((resn,int(resi),chain))',
-        space={'site': site}
+        f"(%{f0} & polymer) within {site_margin} of ({ref_site})",
+        "site.add((resn,int(resi),chain))",
+        space={"site": site},
     )
-    
+
     @lru_cache(25000)
     def get_residues(frame):
         residues = []
@@ -158,11 +154,11 @@ EXAMPLES
                 sele += f"(c. {chain} &"
             else:
                 sele += f" | (c. {chain} &"
-            idx_resids = "+".join(str(r[1]) for r in site)# if r[2] == chain)
-            sele += f' i. {idx_resids}'
+            idx_resids = "+".join(str(r[1]) for r in site)  # if r[2] == chain)
+            sele += f" i. {idx_resids}"
             sele += ") "
         sele += ")"
-        
+
         for a in pm.get_model(sele).atom:
             resi = (a.resn, int(a.resi), a.chain)
             if resi in site:
@@ -176,7 +172,7 @@ EXAMPLES
         resis, coordinates = get_residues(fr)
         for resi, coords in zip(resis, coordinates):
             if resi not in X:
-                X[resi] = np.empty((0,3))
+                X[resi] = np.empty((0, 3))
             X[resi] = np.vstack([X[resi], coords])
 
     # Sort residues
@@ -194,22 +190,22 @@ EXAMPLES
     for resi, coords in X.items():
         rmsf = np.sum((coords - means[resi]) ** 2) / coords.shape[0]
         rmsf = np.sqrt(rmsf)
-        label = '%s %s:%s' % resi
+        label = "%s %s:%s" % resi
         pm.alter(f"{f0} & i. {resi[1]} & c. {resi[2]}", f"p.rmsf={rmsf}")
         LABELS.append(label)
         RMSF.append(rmsf)
-    
+
     # Show data
     if pretty:
-        pm.hide('everything', f"{f0} & polymer")
+        pm.hide("everything", f"{f0} & polymer")
         pm.show_as("line", f"{f0} & polymer")
         pm.spectrum("p.rmsf", "rainbow", f"{f0} & polymer")
 
     with mpl_axis(axis, constrained_layout=True) as ax:
         ax.bar(LABELS, RMSF)
         ax.set_ylabel("RMSF")
-        ax.tick_params(axis='x', rotation=90)
-    
+        ax.tick_params(axis="x", rotation=90)
+
     return RMSF, LABELS
 
 
@@ -248,7 +244,7 @@ EXAMPLES
 #         'site.add((resn,resi,chain))',
 #         space={'site': site}
 #     )
-    
+
 #     # Aggregate coords from all frames
 #     X = []
 #     for i1, f1 in enumerate(frames):
@@ -298,7 +294,7 @@ class FinderWidget(QWidget):
         self.setLayout(layout)
 
         self.pdbLine = QLineEdit()
-        layout.addRow("PDB:", self.pdbLine)
+        layout.addRow("Query PDB:", self.pdbLine)
 
         self.assemblySpin = QSpinBox()
         self.assemblySpin.setValue(1)
@@ -400,7 +396,7 @@ class MainDialog(QDialog):
 
         layout = QVBoxLayout()
         self.setLayout(layout)
-        self.setWindowTitle("XDrugPy")
+        self.setWindowTitle("(XDrugPy) Multi")
 
         tab = QTabWidget()
         tab.addTab(FinderWidget(), "Finder")
@@ -421,4 +417,5 @@ def run_plugin_gui():
 
 def __init_plugin__(app=None):
     from pymol.plugins import addmenuitemqt
-    addmenuitemqt("XDrugPy::Multi", run_plugin_gui)
+
+    addmenuitemqt("(XDrugPy) Multi", run_plugin_gui)

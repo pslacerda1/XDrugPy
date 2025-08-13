@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(
-    name='XDrugPy',
-    version='0.1',
-    packages=['xdrugpy'],
+    name="XDrugPy",
+    version="0.1",
+    packages=["xdrugpy"],
 )

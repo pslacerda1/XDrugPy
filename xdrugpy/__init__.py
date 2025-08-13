@@ -25,7 +25,7 @@ vina_exe = f"{RESOURCES_DIR}/vina"
 if system == "windows":
     vina_exe += ".exe"
 if not exists(vina_exe):
-    print(f'Installing AutoDock Vina on', vina_exe)
+    print(f"Installing AutoDock Vina on", vina_exe)
     urlretrieve(vina_url, vina_exe)
     os.chmod(vina_exe, stat.S_IEXEC)
 
@@ -33,17 +33,17 @@ if not exists(vina_exe):
 # INSTALL FPOCKET
 #
 match system:
-    case 'windows':
-        bin_fname = 'fpocket.exe'
-    case 'linux' | 'darwin':
-        bin_fname = 'fpocket'
+    case "windows":
+        bin_fname = "fpocket.exe"
+    case "linux" | "darwin":
+        bin_fname = "fpocket"
 fpocket_exe = f"{RESOURCES_DIR}/{bin_fname}"
 if not exists(fpocket_exe):
     import os
     import stat
     from urllib.request import urlretrieve
 
-    print(f'Installing Fpocket on', fpocket_exe)
+    print(f"Installing Fpocket on", fpocket_exe)
     fpocket_url = f"https://github.com/pslacerda/XDrugPy/raw/refs/heads/master/bin/fpocket.{system}"
     urlretrieve(fpocket_url, fpocket_exe)
     os.chmod(fpocket_exe, stat.S_IEXEC)
@@ -65,28 +65,30 @@ except ImportError:
 try:
     import plip, rdkit, openbabel
 except ImportError:
-    run_system(
-        "conda install -y"
-        " plip 'rdkit<2024'"
-    )
+    run_system("conda install -y" " plip 'rdkit<2024'")
 
 #
 # INITIALIZE THE PLUGIN
 #
 if system == "windows":
-    os.environ['PATH'] = "%s;%s" % (RESOURCES_DIR, os.environ['PATH'])
+    os.environ["PATH"] = "%s;%s" % (RESOURCES_DIR, os.environ["PATH"])
 else:
-    os.environ['PATH'] = "%s:%s" % (RESOURCES_DIR, os.environ['PATH'])
-    
+    os.environ["PATH"] = "%s:%s" % (RESOURCES_DIR, os.environ["PATH"])
+
+
 def __init_plugin__(app=None):
-    print("This version of XDrugPy is intended for non-comercial and academic purposes only.")
+    print(
+        "This version of XDrugPy is intended for non-comercial and academic purposes only."
+    )
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
     from .multi import __init_plugin__ as __init_multi__
+
     __init_hotspots__()
     __init_docking__()
     __init_multi__()
     from pymol import cmd
+
     cmd.undo_disable()
 
 

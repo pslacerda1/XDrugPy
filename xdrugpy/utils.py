@@ -24,18 +24,24 @@ from functools import lru_cache
 QStandardPaths = Qt.QtCore.QStandardPaths
 
 
-RESOURCES_DIR = Path(QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation))
+RESOURCES_DIR = Path(
+    QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
+)
 RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
 
-LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / 'libs/ligands/')
+LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/ligands/")
 LIGAND_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 
-RECEPTOR_LIBRARIES_DIR = Path(RESOURCES_DIR / 'libs/receptors/')
+RECEPTOR_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/receptors/")
 RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 
-TEMPDIR = Path(mkdtemp(prefix='XDrugPy-'))
+TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
+
+
 def clear_temp():
     rmtree(TEMPDIR)
+
+
 atexit.register(clear_temp)
 
 
@@ -44,7 +50,7 @@ Residue = namedtuple("Reisude", "model index resn resi chain x y z oneletter")
 
 def run(command, log=True, cwd=None, env=os.environ):
     if log:
-        print('RUNNING PROCESS:', command)            
+        print("RUNNING PROCESS:", command)
     ret = subprocess.run(
         command,
         stdout=subprocess.PIPE,
@@ -53,13 +59,13 @@ def run(command, log=True, cwd=None, env=os.environ):
         shell=True,
         env=env,
     )
-    output = ret.stdout.decode(errors='replace')
+    output = ret.stdout.decode(errors="replace")
     success = ret.returncode == 0
     return output, success
 
 
 def run_system(command):
-    print('RUNNING SYSTEM PROCESS:', command)
+    print("RUNNING SYSTEM PROCESS:", command)
     os.system(command)
 
 
@@ -172,23 +178,32 @@ def expression_selector(expr, type=None):
             if fnmatch(obj, part):
                 objects1.add(obj)
             else:
-                match = re.match(r'(Class|S|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|=|>|<)(.*)', part)
+                match = re.match(
+                    r"(Class|S|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|=|>|<)(.*)", part
+                )
                 if match:
                     atom_data = {}
                     pm.iterate(
                         obj,
-                        dedent("""
+                        dedent(
+                            """
                             atom_data[model] = {
                                 'Type': p.Type, 'Class':p.Class, 'S':p.S, 'S0':p.S0, 'S1':p.S1, 'CD':p.CD, 'MD':p.MD
                             }
-                        """),
-                        space={"atom_data": atom_data}
+                        """
+                        ),
+                        space={"atom_data": atom_data},
                     )
-                    no_data = not atom_data or obj not in atom_data or atom_data[obj]['Type'] is None
+                    no_data = (
+                        not atom_data
+                        or obj not in atom_data
+                        or atom_data[obj]["Type"] is None
+                    )
                     if no_data:
                         continue
-                    if type is not None and type != atom_data[obj]['Type']:
+                    if type is not None and type != atom_data[obj]["Type"]:
                         continue
+
                     def convert_type(value):
                         try:
                             return int(value)
@@ -197,9 +212,10 @@ def expression_selector(expr, type=None):
                                 return float(value)
                             except:
                                 return f"'{value}'"
+
                     op = match.groups()[1]
-                    if op == '=':
-                        op = '=='
+                    if op == "=":
+                        op = "=="
                     prop = match.groups()[0]
                     value = match.groups()[2]
                     prop = convert_type(atom_data[obj][prop])
@@ -217,20 +233,20 @@ def expression_selector(expr, type=None):
     if not objects1:
         if type is not None:
             for obj in pm.get_names("objects"):
-                if pm.get_property('Type', obj) == type:
+                if pm.get_property("Type", obj) == type:
                     objects1.add(obj)
     if not objects2:
         objects2 = objects1
     if objects2 and not objects1:
         return objects2
     else:
-        objects = (objects1.intersection(objects2))
+        objects = objects1.intersection(objects2)
     return objects
 
 
 def multiple_expression_selector(exprs, type=None):
     object_list = []
-    for expr in exprs.split(':'):
+    for expr in exprs.split(":"):
         object_list.append(expression_selector(expr, type=type))
     return object_list
 
@@ -246,59 +262,63 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
     dendro = sch.dendrogram(
         Z,
         labels=labels,
-        orientation='top',
+        orientation="top",
         color_threshold=color_threshold,
         distance_sort=True,
         leaf_rotation=90,
         ax=ax_dend_top,
         no_labels=True,
     )
-    ax_dend_top.axhline(color_threshold, color="gray", ls='--')
+    ax_dend_top.axhline(color_threshold, color="gray", ls="--")
 
     X = 1 - distance.squareform(X)
     np.fill_diagonal(X, 1)
 
-    Y = X  #XXX Why?
-    X = X[dendro['leaves'], :]
-    X = X[:, dendro['leaves']]
+    Y = X  # XXX Why?
+    X = X[dendro["leaves"], :]
+    X = X[:, dendro["leaves"]]
 
-    ax_heat.set_xticks(range(len(dendro['ivl'])), dendro['ivl'])
-    ax_heat.set_yticks(range(len(dendro['ivl'])), dendro['ivl'])
-    ax_heat.tick_params(axis='x', rotation=90)
+    ax_heat.set_xticks(range(len(dendro["ivl"])), dendro["ivl"])
+    ax_heat.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
+    ax_heat.tick_params(axis="x", rotation=90)
     ax_heat.yaxis.tick_right()
-    ax_heat.imshow(X, aspect='auto', vmin=0, vmax=max(1, X.max()))
+    ax_heat.imshow(X, aspect="auto", vmin=0, vmax=max(1, X.max()))
 
     if annotate:
         for i1, x1 in enumerate(X):
             for i2, x2 in enumerate(X):
                 y = X[i1, i2]
                 if y >= 0.5:
-                    color = 'black'
+                    color = "black"
                 else:
-                    color = 'white'
-                label = f'{y:.2f}'
-                ax_heat.text(i2, i1, label, color=color, ha='center', va='center')
+                    color = "white"
+                label = f"{y:.2f}"
+                ax_heat.text(i2, i1, label, color=color, ha="center", va="center")
 
     min_dists = defaultdict(list)
-    colors = set(dendro["leaves_color_list"]) - {'C0'}
+    colors = set(dendro["leaves_color_list"]) - {"C0"}
     if not colors:
-        colors = {'C0'}
+        colors = {"C0"}
     for color in colors:
-        for leaf1_idx, leaf_label1, color1 in zip(dendro['leaves'], dendro['ivl'], dendro['leaves_color_list']):
+        for leaf1_idx, leaf_label1, color1 in zip(
+            dendro["leaves"], dendro["ivl"], dendro["leaves_color_list"]
+        ):
             if color != color1:
                 continue
             d = 0
-            for leaf2_idx, _, color2 in zip(dendro['leaves'], dendro['ivl'], dendro["leaves_color_list"]):
+            for leaf2_idx, _, color2 in zip(
+                dendro["leaves"], dendro["ivl"], dendro["leaves_color_list"]
+            ):
                 if color != color2:
                     continue
                 new_d_X = X[leaf1_idx, leaf2_idx]
-                new_d_Y = Y[leaf1_idx, leaf2_idx] #XXX Why?
+                new_d_Y = Y[leaf1_idx, leaf2_idx]  # XXX Why?
                 d += new_d_Y
             min_dists[(color, leaf_label1)] = d
 
     medoids = {}
     for color in colors:
-        min_d = float('inf')
+        min_d = float("inf")
         min_leaves = []
         started = False
         for (color1, leaf_label1), d_sum in min_dists.items():
@@ -310,21 +330,18 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
                     if color2 == color1:
                         if d_sum1 - min_d < 1e-10:
                             min_d = d_sum1
-            if d_sum - min_d  <= 1e-10:
+            if d_sum - min_d <= 1e-10:
                 min_d = d_sum
                 min_leaves.append(leaf_label1)
         medoids[color] = min_leaves
 
-    ticklabels = [
-        *ax_heat.get_xticklabels(),
-        *ax_heat.get_yticklabels()
-    ]
+    ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
     for color in colors:
         for label in ticklabels:
             if label.get_text() in medoids[color]:
                 label.set_color(color)
                 label.set_fontstyle("italic")
-    
+
     if not axis:
         # TODO why this fail?
         # plt.tight_layout()
@@ -337,25 +354,27 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
 
 
 lru_cache(999999999)
+
+
 def get_residue_from_object(obj, idx):
     res = []
     pm.iterate_state(
         -1,
         f"%{obj} & index {idx}",
-        'res.append(Residue(model, int(index), resn, int(resi), chain, float(x), float(y), float(z), oneletter))',
-        space={'res': res, 'Residue': Residue}
+        "res.append(Residue(model, int(index), resn, int(resi), chain, float(x), float(y), float(z), oneletter))",
+        space={"res": res, "Residue": Residue},
     )
     return res[0]
 
 
 def get_mapping(
     polymers: Selection,
-    site: str = '*',
+    site: str = "*",
     radius: float = 2,
-):    
+):
     # Get polymers to be mapped to reference site
     ref_polymer = polymers[0]
-    polymers = {p: True for p in polymers} # ordered set
+    polymers = {p: True for p in polymers}  # ordered set
 
     # Do the alignmnet
     mappings = np.empty((0, 9))
@@ -366,7 +385,7 @@ def get_mapping(
                 f"{ref_polymer} within {radius} from {site}",
                 polymer,
                 transform=False,
-                object=aln_obj
+                object=aln_obj,
             )
             aln = pm.get_raw_alignment(aln_obj)
         finally:
