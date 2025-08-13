@@ -29,11 +29,18 @@ def test_rmsf():
     load_ftmap(f'{pkg_data}/1dq8_atlas.pdb', '1dq8')
     load_ftmap(f'{pkg_data}/1dq9_atlas.pdb', '1dq9')
     load_ftmap(f'{pkg_data}/1dqa_atlas.pdb', '1dqa')
-
     img_ref = f'{pkg_data}/test_rmsf_ref.svg'
     img_gen = f'{pkg_data}/test_rmsf_gen.svg'
-    
-    rmsf("*.K15_D_00", '*.protein', site_margin=5, axis=img_gen)
+    rmsf('*.protein', "*.K15_D_00", site_margin=5, axis=img_gen)
+    assert images_identical(img_ref, img_gen)
+
+def test_rmsf_slow():
+    pm.reinitialize()
+    img_ref = f'{pkg_data}/test_rmsf_slow_ref.svg'
+    img_gen = f'{pkg_data}/test_rmsf_slow_gen.svg'
+    fetch_similar('1e92', 1, 0.9, max_entries=20)
+    assert len(pm.get_object_list()) == 16
+    rmsf('*', "resn HBI", site_margin=5, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
 

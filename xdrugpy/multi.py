@@ -8,6 +8,9 @@ from rcsbapi.search import SeqSimilarityQuery
 from .utils import declare_command, mpl_axis
 
 
+PROSTHETIC_GROUPS = "HEM FAD NAP NDP ADP FMN"
+RMSF_QUALIFIER = "name CA"
+
 
 @declare_command
 def fetch_similar(
@@ -16,7 +19,8 @@ def fetch_similar(
     identity_cutoff: float,
     site: str=None,
     site_margin: float = 4.0,
-    max_entries:int = 50
+    prosthetic_groups: str = PROSTHETIC_GROUPS,
+    max_entries:int = 50,
 ):
     pdb_id = pdb_id.upper()
     obj0 = '%s-%s' % (pdb_id, asm_id)
@@ -56,14 +60,19 @@ def fetch_similar(
             pm.cealign(obj0, obj)
             if not site:
                 continue
+            stop = False
             items = set()
             pm.iterate(
                 f'(%{obj} & not (polymer | resn HOH)) within {site_margin} of ({site})',
                 'items.add((resn, chain))',
                 space=locals()
             )
-            if items:
-                pm.delete(obj)
+            for resn, chain in items:
+                if resn not in prosthetic_groups:
+                    pm.delete(obj)
+                    stop = True
+                    break
+            if stop:
                 continue
             peptides = set()
             pm.iterate(
@@ -74,17 +83,18 @@ def fetch_similar(
             for chain in peptides:
                 if pm.count_atoms(f'%{obj} & name CA & chain {chain}') < 25:
                     pm.delete(obj)
+                    stop = True
                     break
-            else:
-                pass
+            if stop:
+                continue
 
 
 @declare_command
 def rmsf(
-    ref_site: str,
     prot_expr: str,
+    ref_site: str = '*',
     site_margin:float = 3.0,
-    qualifier: str = 'name CA',
+    qualifier: str = RMSF_QUALIFIER,
     pretty: bool = True,
     axis: str = ''
 ):
@@ -98,10 +108,10 @@ DESCRIPTION
     the RMSF must also be supplied.
 
 OPTIONS
-    ref_site: str
-        A site expression to focus the RMSF calculation.
     prot_expr: str
         An expression to select the structures to calculate the RMSF.
+    ref_site: str
+        A site expression to focus the RMSF calculation.
     site_margin: float = 3.0
         The margin to consider the site around the ref_site.
     qualifier: str = 'name CA'
@@ -148,7 +158,7 @@ EXAMPLES
                 sele += f"(c. {chain} &"
             else:
                 sele += f" | (c. {chain} &"
-            idx_resids = "+".join(str(r[1]) for r in site if r[2] == chain)
+            idx_resids = "+".join(str(r[1]) for r in site)# if r[2] == chain)
             sele += f' i. {idx_resids}'
             sele += ") "
         sele += ")"
@@ -195,9 +205,8 @@ EXAMPLES
         pm.show_as("line", f"{f0} & polymer")
         pm.spectrum("p.rmsf", "rainbow", f"{f0} & polymer")
 
-    with mpl_axis(axis) as ax:
+    with mpl_axis(axis, constrained_layout=True) as ax:
         ax.bar(LABELS, RMSF)
-        ax.set_xlabel("Residue")
         ax.set_ylabel("RMSF")
         ax.tick_params(axis='x', rotation=90)
     
@@ -316,6 +325,9 @@ class FinderWidget(QWidget):
         self.siteMarginSpin.setDecimals(1)
         layout.addRow("Site margin:", self.siteMarginSpin)
 
+        self.prostheticLine = QLineEdit(PROSTHETIC_GROUPS)
+        layout.addRow("Prosthetic groups:", self.prostheticLine)
+
         self.maxEntriesSpin = QSpinBox()
         self.maxEntriesSpin.setValue(50)
         self.maxEntriesSpin.setMinimum(2)
@@ -333,7 +345,50 @@ class FinderWidget(QWidget):
             identity_cutoff=self.identityCutoffSpin.value(),
             site=self.siteLine.text().strip(),
             site_margin=self.siteMarginSpin.value(),
+            prosthetic_groups=self.prostheticLine.text().strip().split(),
             max_entries=self.maxEntriesSpin.value(),
+        )
+
+
+class RmsfWidget(QWidget):
+
+    def __init__(self):
+        super().__init__()
+
+        layout = QFormLayout()
+        self.setLayout(layout)
+
+        self.proteinExprLine = QLineEdit()
+        layout.addRow("Proteins expression:", self.proteinExprLine)
+
+        self.refSiteLine = QLineEdit("*")
+        layout.addRow("Reference site:", self.refSiteLine)
+
+        self.siteMarginSpin = QDoubleSpinBox()
+        self.siteMarginSpin.setMinimum(1.0)
+        self.siteMarginSpin.setMaximum(10.0)
+        self.siteMarginSpin.setValue(3.0)
+        self.siteMarginSpin.setSingleStep(0.5)
+        self.siteMarginSpin.setDecimals(1)
+        layout.addRow("Site margin:", self.siteMarginSpin)
+
+        self.qualifierLine = QLineEdit(RMSF_QUALIFIER)
+        layout.addRow("Qualifier:", self.qualifierLine)
+
+        self.prettyCheck = QCheckBox()
+        layout.addRow("Pretty:", self.prettyCheck)
+
+        calcButton = QPushButton("Calc")
+        calcButton.clicked.connect(self.calc)
+        layout.addWidget(calcButton)
+
+    def calc(self):
+        rmsf(
+            prot_expr=self.proteinExprLine.text().strip(),
+            ref_site=self.refSiteLine.text().strip(),
+            site_margin=self.siteMarginSpin.value(),
+            qualifier=self.qualifierLine.text().strip(),
+            pretty=self.prettyCheck.isChecked(),
         )
 
 
@@ -349,6 +404,7 @@ class MainDialog(QDialog):
 
         tab = QTabWidget()
         tab.addTab(FinderWidget(), "Finder")
+        tab.addTab(RmsfWidget(), "RMSF")
 
         layout.addWidget(tab)
 
