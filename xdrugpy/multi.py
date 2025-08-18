@@ -1,15 +1,54 @@
 from pymol import cmd as pm
-from collections import defaultdict
+from collections import namedtuple, defaultdict, Counter
 from functools import lru_cache
+import requests
 import numpy as np
 from fnmatch import fnmatch
 from rcsbapi.search import SeqSimilarityQuery
+from functools import cache
 
 from .utils import declare_command, mpl_axis
 
 
-PROSTHETIC_GROUPS = "HEM FAD NAP NDP ADP FMN"
-RMSF_QUALIFIER = "name CA"
+PROSTHETIC_GROUPS = "HEM FAD NAP NDP ADP FMN EDO"
+RMSF_DEFAULT_QUALIFIER = "name CA"
+
+Uniprot = namedtuple(
+    'Uniprot',
+    'pdb_id uniprot_id chain_id uniprot_name length'
+)
+
+
+@cache
+def get_uniprot_from_pdbe(pdb_id: str):
+    """
+    Retrieves UniProt ID(s) for a given PDB ID using the PDBe API.
+    """
+
+    session = requests.Session()
+
+    pdb_id = pdb_id.lower()
+    url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{pdb_id}"
+    
+    response = session.get(url)
+    data = response.json()
+
+    ret = []
+    if pdb_id in data and "UniProt" in data[pdb_id]:
+        done = set()
+        for uniprot_id, mappings in data[pdb_id]['UniProt'].items():
+            uniprot_name = mappings['name']
+            for mapping in mappings['mappings']:
+                start = mapping['unp_start']
+                end = mapping['unp_end']
+                length = end - start + 1
+                chain_id = mapping['chain_id']
+                entry =  Uniprot(pdb_id, uniprot_id, chain_id, uniprot_name, length)
+                if entry in done:
+                    continue
+                done.add(entry)
+                ret.append(entry)
+    return ret
 
 
 @declare_command
@@ -17,72 +56,70 @@ def fetch_similar(
     pdb_id: str,
     asm_id: int,
     identity_cutoff: float,
-    site: str = None,
+    unbound_site: str = None,
     site_margin: float = 4.0,
     prosthetic_groups: str = PROSTHETIC_GROUPS,
     max_entries: int = 50,
 ):
     pdb_id = pdb_id.upper()
-    obj0 = "%s-%s" % (pdb_id, asm_id)
+    obj0 = "%s_%s" % (pdb_id, asm_id)
     pm.fetch(pdb_id, obj0, type="pdb%s" % asm_id)
     seq = []
     pm.iterate(
         f"%{obj0} & guide & alt +A", "seq.append((chain, oneletter))", space=locals()
     )
-    chain = None
+    chain_id = None
     sequences = []
     for new_chain, oneletter in seq:
-        if new_chain != chain:
-            chain = new_chain
+        if new_chain != chain_id:
+            chain_id = new_chain
             sequences.append("")
         sequences[-1] += oneletter
-    visited_chains = set()
-    visited_objs = {obj0}
+    results = {}
     for seq in sequences:
-        if len(seq) <= 25 or seq in visited_chains:
+        if len(seq) < 25:
             continue
-        visited_chains.add(seq)
         query = SeqSimilarityQuery(
             seq, identity_cutoff=identity_cutoff, sequence_type="protein"
         )
         for asm in list(query("assembly"))[:max_entries]:
             asm = asm.split("-")
             pdb_id, asm_id = asm[0], asm[1]
-            obj = "%s-%s" % (pdb_id, asm_id)
-            if obj in visited_objs:
-                continue
-            visited_objs.add(obj)
+            obj = "%s_%s" % (pdb_id, asm_id)
             pm.fetch(pdb_id, obj, type="pdb%s" % asm_id)
             pm.cealign(obj0, obj)
-            if not site:
-                continue
-            stop = False
+            found = set()
             items = set()
+            if not unbound_site:
+                continue
             pm.iterate(
-                f"(%{obj} & not (polymer | resn HOH)) within {site_margin} of ({site})",
-                "items.add((resn, chain))",
+                f"(%{obj} & not (polymer | resn HOH)) within {site_margin} of (%{obj0} and {unbound_site})",
+                "items.add((resn, resi, chain))",
                 space=locals(),
             )
-            for resn, chain in items:
+            for resn, resi, chain_id in items:
                 if resn not in prosthetic_groups:
-                    pm.delete(obj)
-                    stop = True
-                    break
-            if stop:
-                continue
+                    found.add((pdb_id, asm_id, resn, resi, chain_id))
             peptides = set()
             pm.iterate(
-                f"(%{obj} & polymer) within {site_margin} of ({site})",
+                f"(%{obj} & polymer) within {site_margin} of ({unbound_site})",
                 "peptides.add(chain)",
                 space=locals(),
             )
-            for chain in peptides:
-                if pm.count_atoms(f"%{obj} & name CA & chain {chain}") < 25:
-                    pm.delete(obj)
-                    stop = True
-                    break
-            if stop:
-                continue
+            for chain_id in peptides:
+                if pm.count_atoms(f"%{obj} & name CA & chain {chain_id}") < 25:
+                    found.add((pdb_id, asm_id, None, None, chain_id))
+            for pdb_id, asm_id, resn, resi, chain_id in found:
+                if pdb_id not in results:
+                    results[pdb_id] = {}
+                if asm_id not in results[pdb_id]:
+                    results[pdb_id][asm_id] = {}
+                results[pdb_id][asm_id][chain_id] = dict(pdb_id=pdb_id, asm_id=asm_id, resn=resn, resi=resi, chain_id=chain_id)
+                obj = "%s_%s" % (pdb_id, asm_id)
+                if obj0 == obj:
+                    continue
+                pm.delete(obj)
+    return results
 
 
 @declare_command
@@ -90,7 +127,7 @@ def rmsf(
     prot_expr: str,
     ref_site: str = "*",
     site_margin: float = 3.0,
-    qualifier: str = RMSF_QUALIFIER,
+    qualifier: str = RMSF_DEFAULT_QUALIFIER,
     pretty: bool = True,
     axis: str = "",
 ):
@@ -280,6 +317,8 @@ QTableWidget = Qt.QtWidgets.QTableWidget
 QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
 QGroupBox = Qt.QtWidgets.QGroupBox
 QHeaderView = Qt.QtWidgets.QHeaderView
+QTreeWidget = Qt.QtWidgets.QTreeWidget
+QTreeWidgetItem = Qt.QtWidgets.QTreeWidgetItem
 
 QtCore = Qt.QtCore
 QIcon = Qt.QtGui.QIcon
@@ -290,9 +329,9 @@ class FinderWidget(QWidget):
     def __init__(self):
         super().__init__()
 
-        layout = QFormLayout()
+        layout = self.layout = QFormLayout()
         self.setLayout(layout)
-
+        
         self.pdbLine = QLineEdit()
         layout.addRow("Query PDB:", self.pdbLine)
 
@@ -334,16 +373,47 @@ class FinderWidget(QWidget):
         fetchButton.clicked.connect(self.find)
         layout.addWidget(fetchButton)
 
+        self.tree = None
+
+    # def refresh(self, data):
+    #     if self.tree:
+    #         self.layout.removeWidget(self.tree)
+    #         self.tree.setParent(None)
+
+    #     self.tree = QTreeWidget()
+    #     self.tree.setColumnCount(2)
+    #     self.tree.setHeaderLabels(["Structure", "UniProt"])
+    #     self.tree.header().setSectionResizeMode(QHeaderView.Stretch)
+
+    #     for pdb, assemblies in data.items():
+    #         pdb_item = QTreeWidgetItem([pdb])
+    #         self.tree.addTopLevelItem(pdb_item)
+
+    #         for asm, chains in assemblies.items():
+    #             asm_item = QTreeWidgetItem([f"Assembly {asm}"])
+    #             pdb_item.addChild(asm_item)
+
+    #             for chain, uniprot in chains.items():
+    #                 chain_item = QTreeWidgetItem([
+    #                     f"Chain {chain}",
+    #                     "(%s) %s" %(uniprot.uniprot_id, uniprot.uniprot_name)]
+    #                 )
+    #                 asm_item.addChild(chain_item)
+
+    #     self.tree.expandAll()
+    #     self.layout.addWidget(self.tree)
+
     def find(self):
-        fetch_similar(
+        data = fetch_similar(
             pdb_id=self.pdbLine.text().strip(),
             asm_id=self.assemblySpin.value(),
             identity_cutoff=self.identityCutoffSpin.value(),
-            site=self.siteLine.text().strip(),
+            unbound_site=self.siteLine.text().strip(),
             site_margin=self.siteMarginSpin.value(),
             prosthetic_groups=self.prostheticLine.text().strip().split(),
             max_entries=self.maxEntriesSpin.value(),
         )
+        # self.refresh(data)
 
 
 class RmsfWidget(QWidget):
@@ -368,7 +438,7 @@ class RmsfWidget(QWidget):
         self.siteMarginSpin.setDecimals(1)
         layout.addRow("Site margin:", self.siteMarginSpin)
 
-        self.qualifierLine = QLineEdit(RMSF_QUALIFIER)
+        self.qualifierLine = QLineEdit(RMSF_DEFAULT_QUALIFIER)
         layout.addRow("Qualifier:", self.qualifierLine)
 
         self.prettyCheck = QCheckBox()
