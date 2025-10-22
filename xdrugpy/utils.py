@@ -353,9 +353,7 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
     return dendro, medoids
 
 
-lru_cache(999999999)
-
-
+@lru_cache(999999999)
 def get_residue_from_object(obj, idx):
     res = []
     pm.iterate_state(

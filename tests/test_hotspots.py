@@ -163,3 +163,25 @@ def test_res_sim():
     load_ftmap(pkg_data + "/3mer_c10.pdb")
     load_ftmap(pkg_data + "/3mer_c16.pdb")
     assert res_sim("3mer_c10.K15_B_00", "3mer_c16.K15_D_00", radius=4) == 11 / 18
+
+
+def test_bekar_cesaretli_2025():
+    pm.reinitialize()
+    ftmap = load_ftmap([
+        pkg_data + "/3mer_c16.pdb",
+        pkg_data + "/3mer_c16-2.pdb"
+    ], bekar_label='MyObject')
+    assert ftmap.bekar25
+    assert ftmap.k15d_count == 2
+    assert ftmap.cs16_count == 2
+    assert 'BC25' == pm.get_property('Type', '_bekar25_MyObject')
+
+    pm.reinitialize()
+    ftmap = load_ftmap([
+        pkg_data + "/3mer_c10.pdb",
+        pkg_data + "/3mer_c16.pdb"
+    ], bekar_label='MyObject')
+    assert not ftmap.bekar25
+    assert ftmap.k15d_count == 1
+    assert ftmap.cs16_count == 2
+    assert '_bekar25_MyObject' not in pm.get_object_list()

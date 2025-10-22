@@ -5,9 +5,9 @@ import re
 import tempfile
 from glob import glob
 from itertools import combinations
-from pathlib import Path
 from types import SimpleNamespace
 from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -320,15 +320,70 @@ def get_kozakov2015_large(group, fpo_list, clusters):
 
     return k15l
 
+class FtmapResults:
+    pass
 
 @declare_command
 def load_ftmap(
-    filename: Path, group: str = "", k15_max_length: int = 3, run_fpocket: bool = False
+    filenames: List[Path] | Path,
+    groups: Optional[str] = "",
+    k15_max_length: int = 3,
+    run_fpocket: bool = False,
+    bekar_label: bool = '',
 ):
-    try:
-        return _load_ftmap(filename, group, k15_max_length, run_fpocket)
-    except:
-        return _load_ftmap(filename, group, k15_max_length, run_fpocket)
+    if isinstance(filenames, (str, Path)):
+        filenames = [filenames]
+        conv = True
+    else:
+        conv = False
+    rets = []
+    for fnames, groups in zip(filenames, groups):
+        try:
+            rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
+        except:
+            rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
+    if conv:
+        return rets[0]
+    else:
+        ftmap = FtmapResults()
+        ftmap.results = rets
+        if bekar_label:
+            bekar, cs16_count, k15d_count = eval_bekar25_limits(bekar_label, rets)
+            ftmap.bekar25 = bekar
+            ftmap.cs16_count = cs16_count
+            ftmap.k15d_count = k15d_count
+        else:
+            ftmap.bekar25 = None
+            ftmap.cs16_count = None
+            ftmap.k15d_count = None
+        return ftmap
+
+
+def eval_bekar25_limits(label, ftmap_results):   
+    cs16_count = 0
+    k15d_count = 0
+    for res in ftmap_results:
+        for cs in res.clusters:
+            if cs.strength >= 16:
+                cs16_count += 1
+                break
+            elif cs.strength <= 15:
+                break
+        for k15 in res.kozakov2015:
+            if k15.kozakov_class in ["D", "DS", "DL"]:
+                k15d_count += 1
+                break
+            elif k15.kozakov_class in ["B", "BS", "BL"]:
+                break
+    bekar = cs16_count / len(ftmap_results) > 0.7 and k15d_count / len(ftmap_results) > 0.5
+    if bekar:
+        obj = f"_bekar25_{label}"
+        pm.pseudoatom(obj)
+        pm.set_property('Type', 'BC25', obj)
+        pm.set_property('Total', len(ftmap_results), obj)
+        pm.set_property('CS16', cs16_count, obj)
+        pm.set_property('K15D', k15d_count, obj)
+    return bekar, cs16_count, k15d_count
 
 
 def _load_ftmap(
@@ -599,26 +654,24 @@ def fp_sim(
     proteins = [f"{g}.protein" for g in groups]
     mapping = get_mapping(proteins, site=site, radius=radius)
     fpts = []
+    for hs in hotspots:
+        fpt = {}
+        @mapping.groupby(["chain", "resi"], as_index=False).apply
+        def apply(group):
+            for idx, row in group.iterrows():
+                resn = row.oneletter
+                lbl = (resn, row.resi, row.chain)
+                cnt = pm.count_atoms(
+                    f"({hs}) within {radius} of (byres %{row.model} & index {row['index']})"
+                )
+                fpt[lbl] = fpt.get(lbl, 0) + cnt
+                break
+        fpts.append(fpt)
+    
     if axis_fingerprint is not False:
         with mpl_axis(
             axis_fingerprint, nrows=len(hotspots), sharex=True, constrained_layout=True
         ) as axs:
-            for hs in hotspots:
-                fpt = {}
-
-                @mapping.groupby(["chain", "resi"], as_index=False).apply
-                def apply(group):
-                    for idx, row in group.iterrows():
-                        resn = row.oneletter
-                        lbl = (resn, row.resi, row.chain)
-                        cnt = pm.count_atoms(
-                            f"({hs}) within {radius} of (byres %{row.model} & index {row['index']})"
-                        )
-                        fpt[lbl] = fpt.get(lbl, 0) + cnt
-                        break
-
-                fpts.append(fpt)
-
             fpt0 = fpts[0]
             if not all([len(fpt0) == len(fpt) for fpt in fpts]):
                 raise ValueError(
@@ -650,7 +703,7 @@ def fp_sim(
                     corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
                     if np.isnan(corr):
                         corr = 0
-                    corrs.append(corr)
+                    corrs.append(1 - corr)
                     if not quiet:
                         print(f"Pearson correlation: {hs1} / {hs2}: {corr:.2f}")
             plot_hca_base(
@@ -1135,6 +1188,10 @@ class LoadWidget(QWidget):
         self.runFpocketCheck.setChecked(False)
         boxLayout.addRow("Run Fpocket:", self.runFpocketCheck)
 
+        self.bekarLabel = QLineEdit()
+        boxLayout.addWidget(self.bekarLabel)
+        boxLayout.addRow("Bekar-Cesaretli (2025) label:", self.bekarLabel)
+
     def pickFile(self):
         fileDIalog = QFileDialog()
         fileDIalog.setFileMode(QFileDialog.ExistingFiles)
@@ -1160,24 +1217,32 @@ class LoadWidget(QWidget):
     def removeRow(self):
         self.table.removeRow(self.table.currentRow())
 
-    def clearRows(self):
+    def clearInputs(self):
         self.table.setRowCount(0)
+        self.bekarLabel.setText()
 
     def load(self):
+        run_fpocket = self.runFpocketCheck.isChecked()
         max_length = self.maxLengthSpin.value()
+        bekar_label = self.bekarLabel.text().strip()
         try:
+            filenames = []
+            groups = []
             for row in range(self.table.rowCount()):
-                group = self.table.item(row, 0).text()
                 filename = self.table.item(row, 1).text()
-                run_fpocket = self.runFpocketCheck.isChecked()
-                load_ftmap(
-                    filename,
-                    group=group,
-                    k15_max_length=max_length,
-                    run_fpocket=run_fpocket,
-                )
+                group = self.table.item(row, 0).text()
+                filenames.append(filename)
+                groups.append(group)
         finally:
-            self.clearRows()
+            self.clearInputs()
+        
+        load_ftmap(
+            filenames,
+            groups=groups,
+            k15_max_length=max_length,
+            run_fpocket=run_fpocket,
+            bekar_label=bekar_label
+        )
 
 
 class SortableItem(QTableWidgetItem):
@@ -1247,6 +1312,7 @@ class TableWidget(QWidget):
             ],
             ("CS", "CS"): ["S"],
             ("ACS", "ACS"): ["Class", "S", "MD"],
+            ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D"],
             ("Egbert2019", "E19"): ["Fpocket", "S", "S0", "S1", "Length"],
             ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
@@ -1507,7 +1573,7 @@ class CountWidget(QWidget):
         self.nBinsSpin = QSpinBox()
         self.nBinsSpin.setValue(20)
         self.nBinsSpin.setMinimum(0)
-        self.nBinsSpin.setMaximum(100)
+        self.nBinsSpin.setMaximum(500)
         boxLayout.addRow("Fingerprint bins:", self.nBinsSpin)
 
         self.fingerprintsCheck = QCheckBox()
