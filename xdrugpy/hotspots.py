@@ -1186,7 +1186,7 @@ class LoadWidget(QWidget):
 
         self.runFpocketCheck = QCheckBox()
         self.runFpocketCheck.setChecked(False)
-        boxLayout.addRow("Run Fpocket:", self.runFpocketCheck)
+        boxLayout.addRow("Calc Fpocket, large and Egbert (2019):", self.runFpocketCheck)
 
         self.bekarLabel = QLineEdit()
         boxLayout.addWidget(self.bekarLabel)
@@ -1219,7 +1219,7 @@ class LoadWidget(QWidget):
 
     def clearInputs(self):
         self.table.setRowCount(0)
-        self.bekarLabel.setText()
+        self.bekarLabel.setText("")
 
     def load(self):
         run_fpocket = self.runFpocketCheck.isChecked()
