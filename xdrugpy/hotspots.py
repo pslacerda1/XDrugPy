@@ -326,13 +326,14 @@ class FtmapResults:
 @declare_command
 def load_ftmap(
     filenames: List[Path] | Path,
-    groups: Optional[str] = "",
+    groups: List[str] | str = "",
     k15_max_length: int = 3,
     run_fpocket: bool = False,
     bekar_label: bool = '',
 ):
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
+        groups = [groups]
         conv = True
     else:
         conv = False

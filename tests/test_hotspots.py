@@ -170,7 +170,9 @@ def test_bekar_cesaretli_2025():
     ftmap = load_ftmap([
         pkg_data + "/3mer_c16.pdb",
         pkg_data + "/3mer_c16-2.pdb"
-    ], bekar_label='MyObject')
+    ], groups=["3mer_c16", "3mer_c16-2"],
+        bekar_label='MyObject'
+    )
     assert ftmap.bekar25
     assert ftmap.k15d_count == 2
     assert ftmap.cs16_count == 2
@@ -180,7 +182,9 @@ def test_bekar_cesaretli_2025():
     ftmap = load_ftmap([
         pkg_data + "/3mer_c10.pdb",
         pkg_data + "/3mer_c16.pdb"
-    ], bekar_label='MyObject')
+    ], groups=["3mer_c10", "3mer_c16"],
+        bekar_label='MyObject'
+    )
     assert not ftmap.bekar25
     assert ftmap.k15d_count == 1
     assert ftmap.cs16_count == 2
