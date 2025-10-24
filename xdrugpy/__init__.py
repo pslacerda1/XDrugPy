@@ -1,80 +1,94 @@
 from os.path import exists
 import os
 import stat
-import platform
 from urllib.request import urlretrieve
+import platform
 
+from pymol import cmd as pm
 from .utils import run_system, RESOURCES_DIR
 
 
-#
-# INSTALL VINA
-#
-
-system = platform.system().lower()
-
-match system:
-    case "windows":
-        bin_fname = "vina_1.2.7_win.exe"
-    case "linux":
-        bin_fname = "vina_1.2.7_linux_x86_64"
-    case "darwin":
-        bin_fname = "vina_1.2.7_mac_x86_64"
-vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
-vina_exe = f"{RESOURCES_DIR}/vina"
-if system == "windows":
-    vina_exe += ".exe"
-if not exists(vina_exe):
-    print(f"Installing AutoDock Vina on", vina_exe)
-    urlretrieve(vina_url, vina_exe)
-    os.chmod(vina_exe, stat.S_IEXEC)
-
-#
-# INSTALL FPOCKET
-#
-match system:
-    case "windows":
-        bin_fname = "fpocket.exe"
-    case "linux" | "darwin":
-        bin_fname = "fpocket"
-fpocket_exe = f"{RESOURCES_DIR}/{bin_fname}"
-if not exists(fpocket_exe):
-    import os
-    import stat
-    from urllib.request import urlretrieve
-
-    print(f"Installing Fpocket on", fpocket_exe)
-    fpocket_url = f"https://github.com/pslacerda/XDrugPy/raw/refs/heads/master/bin/fpocket.{system}"
-    urlretrieve(fpocket_url, fpocket_exe)
-    os.chmod(fpocket_exe, stat.S_IEXEC)
+SYSTEM = platform.system().lower()
 
 
-#
-# INSTALL MORE REQUIREMENTS
-#
-try:
-    import scrubber, meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel, rcsbapi
+def install_executables():
+    #
+    # INSTALL VINA
+    #
 
-except ImportError:
-    run_system(
-        "pip install"
-        " lxml pandas openpyxl seaborn scipy matplotlib strenum openbabel-wheel rcsb-api"
-        " https://github.com/pslacerda/molscrub/archive/refs/heads/windows.exe.zip"
-        " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
-    )
+    match SYSTEM:
+        case "windows":
+            bin_fname = "vina_1.2.7_win.exe"
+        case "linux":
+            bin_fname = "vina_1.2.7_linux_x86_64"
+        case "darwin":
+            bin_fname = "vina_1.2.7_mac_x86_64"
+    vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
+    vina_exe = f"{RESOURCES_DIR}/vina"
+    if SYSTEM == "windows":
+        vina_exe += ".exe"
+    if not exists(vina_exe):
+        print(f"Installing AutoDock Vina on", vina_exe)
+        urlretrieve(vina_url, vina_exe)
+        os.chmod(vina_exe, stat.S_IEXEC)
 
-try:
-    import plip, rdkit, openbabel
-except ImportError:
-    run_system("conda install -y" " plip 'rdkit<2024'")
+    #
+    # INSTALL FPOCKET
+    #
+    match SYSTEM:
+        case "windows":
+            bin_fname = "fpocket.exe"
+        case "linux" | "darwin":
+            bin_fname = "fpocket"
+    fpocket_exe = f"{RESOURCES_DIR}/{bin_fname}"
+    if not exists(fpocket_exe):
+        print(f"Installing Fpocket on", fpocket_exe)
+        fpocket_url = f"https://github.com/pslacerda/XDrugPy/raw/refs/heads/master/bin/fpocket.{SYSTEM}"
+        urlretrieve(fpocket_url, fpocket_exe)
+        os.chmod(fpocket_exe, stat.S_IEXEC)
+
+
+def install_pip_packages():
+    #
+    # INSTALL MORE REQUIREMENTS
+    #
+    try:
+        import scrubber, meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel, rcsbapi
+
+    except ImportError:
+        run_system(
+            "pip install"
+            " lxml pandas openpyxl seaborn scipy matplotlib strenum openbabel-wheel rcsb-api"
+            " https://github.com/pslacerda/molscrub/archive/refs/heads/windows.exe.zip"
+            " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
+        )
+
+def install_conda_packages():
+    try:
+        import plip, rdkit
+    except ImportError:
+        run_system("conda install -y plip 'rdkit<2024'")
+
+
+@pm.extend
+def install_xdrugpy_requirements():
+    install_executables()
+    install_conda_packages()
+    install_pip_packages()
+
+
 
 #
 # INITIALIZE THE PLUGIN
 #
-if system == "windows":
+if SYSTEM == "windows":
     os.environ["PATH"] = "%s;%s" % (RESOURCES_DIR, os.environ["PATH"])
+    if not exists("{RESOURCES_DIR}/vina.exe"):
+        install_xdrugpy_requirements()
 else:
     os.environ["PATH"] = "%s:%s" % (RESOURCES_DIR, os.environ["PATH"])
+    if not exists("{RESOURCES_DIR}/vina"):
+        install_xdrugpy_requirements()
 
 
 def __init_plugin__(app=None):
