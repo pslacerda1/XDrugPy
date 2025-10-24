@@ -49,7 +49,7 @@ def get_clusters():
             )
         elif obj.startswith("consensus."):
             _, _, s = obj.split(".", maxsplit=3)
-            coords = pm.get_coords(obj)
+            coords = pm.get_coordset(obj)
             clusters.append(
                 SimpleNamespace(
                     selection=obj,
@@ -74,7 +74,6 @@ def get_clusters():
 def set_properties(obj, obj_name, properties):
     for prop, value in properties.items():
         pm.set_property(prop, value, obj_name)
-        pm.set_atom_property(prop, value, obj_name)
         setattr(obj, prop, value)
 
 
@@ -187,7 +186,7 @@ def get_fpocket(group, protein):
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
         new_name = f"{group}.CS_{idx:02}"
-        pm.create(new_name, cs.selection)
+        pm.set_name(cs.selection, new_name)
         cs.selection = new_name
         pm.group(group, new_name)
         set_properties(
@@ -207,11 +206,11 @@ def process_clusters(group, clusters):
 def process_eclusters(group, eclusters):
     for acs in eclusters:
         new_name = f"{group}.ACS_{acs.probe_type}_{acs.idx:02}"
-        pm.create(new_name, acs.selection)
+        pm.set_name(acs.selection, new_name)
         acs.selection = new_name
         pm.group(group, new_name)
 
-        coords = pm.get_coords(new_name)
+        coords = pm.get_coordset(new_name)
         md = distance_matrix(coords, coords).max()
 
         set_properties(
@@ -331,33 +330,37 @@ def load_ftmap(
     run_fpocket: bool = False,
     bekar_label: bool = '',
 ):
-    if isinstance(filenames, (str, Path)):
-        filenames = [filenames]
-        groups = [groups]
-        conv = True
-    else:
-        conv = False
-    rets = []
-    for fnames, groups in zip(filenames, groups):
-        try:
-            rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
-        except:
-            rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
-    if conv:
-        return rets[0]
-    else:
-        ftmap = FtmapResults()
-        ftmap.results = rets
-        if bekar_label:
-            bekar, cs16_count, k15d_count = eval_bekar25_limits(bekar_label, rets)
-            ftmap.bekar25 = bekar
-            ftmap.cs16_count = cs16_count
-            ftmap.k15d_count = k15d_count
+    try:
+        pm.set('defer_updates', 1)
+        if isinstance(filenames, (str, Path)):
+            filenames = [filenames]
+            groups = [groups]
+            conv = True
         else:
-            ftmap.bekar25 = None
-            ftmap.cs16_count = None
-            ftmap.k15d_count = None
-        return ftmap
+            conv = False
+        rets = []
+        for fnames, groups in zip(filenames, groups):
+            try:
+                rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
+            except:
+                rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
+        if conv:
+            return rets[0]
+        else:
+            ftmap = FtmapResults()
+            ftmap.results = rets
+            if bekar_label:
+                bekar, cs16_count, k15d_count = eval_bekar25_limits(bekar_label, rets)
+                ftmap.bekar25 = bekar
+                ftmap.cs16_count = cs16_count
+                ftmap.k15d_count = k15d_count
+            else:
+                ftmap.bekar25 = None
+                ftmap.cs16_count = None
+                ftmap.k15d_count = None
+            return ftmap
+    finally:
+        pm.set('defer_updates', 0)
 
 
 def eval_bekar25_limits(label, ftmap_results):   
@@ -516,8 +519,8 @@ def fo(
     EXAMPLE
         fo REF_LIG, ftmap1234.D_003_*_*
     """
-    atoms1 = pm.get_coords(f"({sel1}) and not elem H", state=state1)
-    atoms2 = pm.get_coords(f"({sel2}) and not elem H", state=state2)
+    atoms1 = pm.get_coordset(sel1, state=state1)
+    atoms2 = pm.get_coordset(sel2, state=state2)
     if atoms1 is None or atoms2 is None:
         fo_ = 0
     else:
@@ -559,8 +562,8 @@ def dc(
         dc ftmap1234.D.003, REF_LIG, radius=1.5
 
     """
-    xyz1 = pm.get_coords(f"({sel1}) and not elem H", state=state1)
-    xyz2 = pm.get_coords(f"({sel2}) and not elem H", state=state2)
+    xyz1 = pm.get_coordset(sel1, state=state1)
+    xyz2 = pm.get_coordset(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         dc_ = 0
     else:
@@ -738,8 +741,8 @@ def ho(
         radius  the distance to consider two atoms in contact (default: 2.5)
         quiet   define verbosity
     """
-    atoms1 = pm.get_coords(f"({hs1}) and not elem H")
-    atoms2 = pm.get_coords(f"({hs2}) and not elem H")
+    atoms1 = pm.get_coordset(hs1)
+    atoms2 = pm.get_coordset(hs2)
     dist = distance_matrix(atoms1, atoms2) - radius <= 0
     num_contacts1 = np.sum(np.any(dist, axis=1))
     num_contacts2 = np.sum(np.any(dist, axis=0))
@@ -1024,7 +1027,7 @@ def plot_hca(
     """
 
     def _get_property_vector(hs_type, obj):
-        x, y, z = np.mean(pm.get_coords(obj), axis=0)
+        x, y, z = np.mean(pm.get_coordset(obj), axis=0)
 
         if hs_type == "K15":
             S = pm.get_property("S", obj)

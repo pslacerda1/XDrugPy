@@ -51,10 +51,10 @@ def test_selector():
     assert len(expression_selector(expr)) == 2
 
     expr = "MD<14 S0>=16"
-    assert len(expression_selector(expr, "K15")) == 1
+    assert len(expression_selector(expr, type="K15")) == 1
 
     expr = "MD<14 S0>=16"
-    assert len(expression_selector(expr, "CS")) == 0
+    assert len(expression_selector(expr, type="CS")) == 0
 
     expr = "*K15* CD<9 S0>=20"
     assert len(expression_selector(expr)) == 3
