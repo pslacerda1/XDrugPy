@@ -339,7 +339,13 @@ def load_ftmap(
         else:
             conv = False
         rets = []
-        for fnames, groups in zip(filenames, groups):
+        if isinstance(groups, (tuple, list)):
+            iterable = zip(filenames, groups)
+        else:
+            iterable = []
+            for filename in filenames:
+                iterable.append((filename, os.path.basename(filename)))
+        for fnames, groups in iterable:
             try:
                 rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
             except:
@@ -622,6 +628,7 @@ def fp_sim(
     nbins: int = 5,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = 0.0,
+    hide_below_color_threshold: bool = False,
     annotate: bool = True,
     axis_fingerprint: str = "",
     axis_dendrogram: str = "",
@@ -715,6 +722,7 @@ def fp_sim(
                 labels,
                 linkage_method=linkage_method,
                 color_threshold=color_threshold,
+                hide_below_color_threshold=hide_below_color_threshold,
                 annotate=annotate,
                 axis=ax,
             )
@@ -900,6 +908,7 @@ def plot_cross_similarity(
     annotate: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
+    hide_below_color_threshold: bool = False,
     axis: str = "",
 ):
     """
@@ -950,7 +959,7 @@ def plot_cross_similarity(
                     )
             X.append(1 - ret)
 
-    plot_hca_base(X, objects, linkage_method, color_threshold, annotate, axis)
+    plot_hca_base(X, objects, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis)
     return X, objects
 
 
@@ -1003,12 +1012,13 @@ def hs_proj(
 
 
 @declare_command
-def plot_hca(
+def plot_euclidean_hca(
     exprs: Selection,
     residue_radius: float = 4.0,
     residue_align: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
+    hide_below_color_threshold: bool = False,
     annotate: bool = False,
     axis: str = None,
 ):
@@ -1026,53 +1036,6 @@ def plot_hca(
         plot_similarity *.K15_D_* *.K15_DS_*, linkage_method=average
     """
 
-    def _get_property_vector(hs_type, obj):
-        x, y, z = np.mean(pm.get_coordset(obj), axis=0)
-
-        if hs_type == "K15":
-            S = pm.get_property("S", obj)
-            S0 = pm.get_property("S0", obj)
-            CD = pm.get_property("CD", obj)
-            MD = pm.get_property("MD", obj)
-            return np.array([S, S0, CD, MD, x, y, z])
-        elif hs_type == "CS":
-            S = pm.get_property("S", obj)
-            return np.array([S, x, y, z])
-        elif hs_type == "ACS":
-            S = pm.get_property("S", obj)
-            MD = pm.get_property("MD", obj)
-            return np.array([S, MD, x, y, z])
-
-    def _euclidean_like(hs_type, p1, p2, j):
-        if hs_type == "K15":
-            return np.sqrt(
-                (p1[0] - p2[0]) ** 2
-                + (p1[1] - p2[1]) ** 2
-                + (p1[2] - p2[2]) ** 2
-                + (p1[3] - p2[3]) ** 2
-                + (p1[4] - p2[4]) ** 2
-                + (p1[5] - p2[5]) ** 2
-                + (p1[6] - p2[6]) ** 2
-                + (1 - j) ** 2
-            )
-        elif "CS":
-            return np.sqrt(
-                (p1[0] - p2[0]) ** 2
-                + (p1[1] - p2[1]) ** 2
-                + (p1[2] - p2[2]) ** 2
-                + (p1[3] - p2[3]) ** 2
-                + (1 - j) ** 2
-            )
-        elif hs_type == "ACS":
-            return np.sqrt(
-                (p1[0] - p2[0]) ** 2
-                + (p1[1] - p2[1]) ** 2
-                + (p1[2] - p2[2]) ** 2
-                + (p1[3] - p2[3]) ** 2
-                + (p1[4] - p2[4]) ** 2
-                + (1 - j) ** 2
-            )
-
     object_list = list(expression_selector(exprs))
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, object_list
 
@@ -1084,18 +1047,26 @@ def plot_hca(
     elif hs_type == "ACS":
         n_props = 2
     labels = []
+
     p = np.zeros((len(object_list), n_props + 3))
 
     for idx, obj in enumerate(object_list):
-        p[idx, :] = _get_property_vector(hs_type, obj)
         labels.append(obj)
-
-    for col in range(n_props + 3):
-        if max(p[:, col]) - min(p[:, col]) == 0:
-            p[:, col] = 0
-        else:
-            p[:, col] = (p[:, col] - min(p[:, col])) / (max(p[:, col]) - min(p[:, col]))
-
+        x, y, z = np.mean(pm.get_coordset(obj), axis=0)
+        if hs_type == "K15":
+            S = pm.get_property("S", obj)
+            S0 = pm.get_property("S0", obj)
+            CD = pm.get_property("CD", obj)
+            MD = pm.get_property("MD", obj)
+            p[idx, :] = np.array([S, S0, CD, MD, x, y, z])
+        elif hs_type == "CS":
+            S = pm.get_property("S", obj)
+            p[idx, :] = np.array([S, x, y, z])
+        elif hs_type == "ACS":
+            S = pm.get_property("S", obj)
+            MD = pm.get_property("MD", obj)
+            p[idx, :] = np.array([S, MD, x, y, z])
+        
     X = []
     for idx1, obj1 in enumerate(object_list):
         for idx2, obj2 in enumerate(object_list):
@@ -1103,18 +1074,11 @@ def plot_hca(
                 continue
             p1 = p[idx1, :]
             p2 = p[idx2, :]
-            if residue_align:
-                j = res_sim(
-                    obj1,
-                    obj2,
-                    radius=residue_radius,
-                    seq_align=residue_align,
-                )
-            else:
-                j = 1
-            d = _euclidean_like(hs_type, p1, p2, j)
+            d = np.sqrt(np.sum((p1-p2)**2))
             X.append(d)
-    return plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis)
+    X = np.array(X)
+    X = (X-X.min())/(X.max()-X.min())
+    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis)
 
 
 #
@@ -1507,7 +1471,7 @@ class SimilarityWidget(QWidget):
         color_threshold = self.colorThresholdSpin.value()
         annotate = self.annotateCheck.isChecked()
 
-        return plot_hca(
+        return plot_euclidean_hca(
             expression,
             residue_radius,
             residue_align,

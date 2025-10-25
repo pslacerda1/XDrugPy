@@ -4,7 +4,7 @@ from xdrugpy.hotspots import (
     load_ftmap,
     eftmap_overlap,
     _eftmap_overlap_get_aromatic,
-    plot_hca,
+    plot_euclidean_hca,
     plot_cross_similarity,
     HeatmapFunction,
     fp_sim,
@@ -14,9 +14,9 @@ from xdrugpy.utils import expression_selector, multiple_expression_selector
 import numpy as np
 import matplotlib as mpl
 
-
-mpl.rcParams["svg.hashsalt"] = "42"
-mpl.rcParams["svg.id"] = "42"
+mpl.use('SVG')
+mpl.rcParams['svg.hashsalt'] = 'fixed_salt_123'
+mpl.rcParams['svg.fonttype'] = 'none'
 np.random.seed(42)
 pkg_data = os.path.dirname(__file__) + "/data"
 
@@ -97,19 +97,27 @@ def test_multiple_selector():
     assert result[1] == {"group.CS_00"}
 
 
-def test_hca():
+def test_euclidean_hca():
     pm.reinitialize()
     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group")
 
-    expr = "*.CS_* S>=5"
-    img_ref = f"{pkg_data}/test_hca_ref.svg"
-    img_gen = f"{pkg_data}/test_hca_gen.svg"
+    expr = "*.K15_* S0>=5"
+    img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
+    img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
 
-    dendro, medoids = plot_hca(expr, color_threshold=0.5, annotate=True, axis=img_gen)
+    dendro, medoids = plot_euclidean_hca(expr, color_threshold=0.15, annotate=True, axis=img_gen)
+    
+    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_D_01"]
+    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_D_01"]
+    assert len(medoids["C1"]) == 0
 
-    assert medoids["C1"].pop() in ["group.CS_02", "group.CS_04"]
-    assert medoids["C1"].pop() in ["group.CS_02", "group.CS_04"]
-    assert medoids["C1"] == []
+    assert medoids["C2"].pop() in ["group.K15_D_02", "group.K15_D_03"]
+    assert medoids["C2"].pop() in ["group.K15_D_02", "group.K15_D_03"]
+    assert len(medoids["C2"]) == 0
+
+    assert medoids["C3"].pop() in ["group.K15_B_05"]
+    assert len(medoids["C3"]) == 0
+
     assert images_identical(img_ref, img_gen)
 
 
@@ -128,6 +136,7 @@ def test_cross_similarity():
         radius=4,
         annotate=True,
         axis=img_gen,
+        color_threshold=0.5
     )
     assert images_identical(img_ref, img_gen)
 

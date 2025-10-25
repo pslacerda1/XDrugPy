@@ -1,3 +1,4 @@
+import itertools
 import subprocess
 import os
 import atexit
@@ -251,14 +252,14 @@ def multiple_expression_selector(exprs, type=None):
     return object_list
 
 
-def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
+def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis):
     fig = plt.figure(constrained_layout=True)
     gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
     ax_dend_top = fig.add_subplot(gs[0])
     ax_heat = fig.add_subplot(gs[1])
-
-    X = np.array(X)
-    Z = linkage(X, method=linkage_method, optimal_ordering=True)
+    
+    dists = np.array(dists)
+    Z = linkage(dists, method=linkage_method, optimal_ordering=True)
     dendro = sch.dendrogram(
         Z,
         labels=labels,
@@ -269,12 +270,15 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
         ax=ax_dend_top,
         no_labels=True,
     )
-    ax_dend_top.axhline(color_threshold, color="gray", ls="--")
+    if color_threshold > 0:
+        ax_dend_top.axhline(color_threshold, color="gray", ls="--")
+    ax_dend_top.set_ylim(bottom=-0.005)
 
-    X = 1 - distance.squareform(X)
-    np.fill_diagonal(X, 1)
+    dists = distance.squareform(dists)
+    sims = 1 - dists
+    np.fill_diagonal(sims, 1)
 
-    Y = X  # XXX Why?
+    X = sims
     X = X[dendro["leaves"], :]
     X = X[:, dendro["leaves"]]
 
@@ -282,12 +286,12 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
     ax_heat.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
     ax_heat.tick_params(axis="x", rotation=90)
     ax_heat.yaxis.tick_right()
-    ax_heat.imshow(X, aspect="auto", vmin=0, vmax=max(1, X.max()))
+    ax_heat.imshow(sims, aspect="auto", vmin=0, vmax=1)
 
     if annotate:
-        for i1, x1 in enumerate(X):
-            for i2, x2 in enumerate(X):
-                y = X[i1, i2]
+        for i1, x1 in enumerate(sims):
+            for i2, x2 in enumerate(sims):
+                y = sims[i1, i2]
                 if y >= 0.5:
                     color = "black"
                 else:
@@ -295,45 +299,53 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
                 label = f"{y:.2f}"
                 ax_heat.text(i2, i1, label, color=color, ha="center", va="center")
 
-    min_dists = defaultdict(list)
+    # Calcular a soma das distâncias para cada ponto do cluster
+    min_dists = defaultdict(float)
     colors = set(dendro["leaves_color_list"]) - {"C0"}
-    if not colors:
-        colors = {"C0"}
+
     for color in colors:
         for leaf1_idx, leaf_label1, color1 in zip(
             dendro["leaves"], dendro["ivl"], dendro["leaves_color_list"]
         ):
             if color != color1:
                 continue
-            d = 0
-            for leaf2_idx, _, color2 in zip(
+
+            if color == 'C3':
+                pass
+            
+            # Soma das distâncias de leaf1 para todos os outros pontos do mesmo cluster
+            d_sum = 0
+            for leaf2_idx, leaf_label2, color2 in zip(
                 dendro["leaves"], dendro["ivl"], dendro["leaves_color_list"]
             ):
                 if color != color2:
                     continue
-                new_d_X = X[leaf1_idx, leaf2_idx]
-                new_d_Y = Y[leaf1_idx, leaf2_idx]  # XXX Why?
-                d += new_d_Y
-            min_dists[(color, leaf_label1)] = d
+                # Note: X contém distâncias, então valores menores = mais próximos
+                d_sum += X[leaf1_idx, leaf2_idx]
+            
+            min_dists[(color, leaf_label1)] = d_sum
 
+    # Encontrar o medoid (ponto com MENOR soma de distâncias) para cada cluster
     medoids = {}
     for color in colors:
         min_d = float("inf")
-        min_leaves = []
-        started = False
+        min_leaf = None
+        
         for (color1, leaf_label1), d_sum in min_dists.items():
             if color1 != color:
                 continue
-            if not started:
-                started = True
-                for (color2, leaf_label2), d_sum1 in min_dists.items():
-                    if color2 == color1:
-                        if d_sum1 - min_d < 1e-10:
-                            min_d = d_sum1
-            if d_sum - min_d <= 1e-10:
+            
+            # Medoid é o ponto com a MENOR soma de distâncias
+            if d_sum < min_d:
                 min_d = d_sum
-                min_leaves.append(leaf_label1)
-        medoids[color] = min_leaves
+                min_leaf = leaf_label1
+        
+        if min_leaf:
+            for (color1, leaf_label1), d_sum in min_dists.items():
+                if d_sum == min_d:
+                    if color not in medoids:
+                        medoids[color] = set()
+                    medoids[color].add(leaf_label1)
 
     ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
     for color in colors:
@@ -341,14 +353,16 @@ def plot_hca_base(X, labels, linkage_method, color_threshold, annotate, axis):
             if label.get_text() in medoids[color]:
                 label.set_color(color)
                 label.set_fontstyle("italic")
-
+    
+    if hide_below_color_threshold and color_threshold > 0:
+        omitted_labels = list(medoids.values())
+        for label in ticklabels:
+            if label.get_text() not in omitted_labels:
+                label.set_visible(False)
+    
     if not axis:
-        # TODO why this fail?
-        # plt.tight_layout()
         plt.show()
     elif isinstance(axis, (str, Path)):
-        # TODO why this fail?
-        # plt.tight_layout()
         plt.savefig(axis)
     return dendro, medoids
 
