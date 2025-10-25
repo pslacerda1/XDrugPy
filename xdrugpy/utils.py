@@ -255,7 +255,7 @@ def multiple_expression_selector(exprs, type=None):
     return object_list
 
 
-def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis):
+def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold, annotate, axis):
     fig = plt.figure(constrained_layout=True)
     gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
     ax_dend_top = fig.add_subplot(gs[0])
@@ -357,10 +357,10 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_below_col
                 label.set_color(color)
                 label.set_fontstyle("italic")
     
-    if hide_below_color_threshold and color_threshold > 0:
-        omitted_labels = list(medoids.values())
+    if hide_threshold and color_threshold > 0.0:
+        visible_labels = set(itertools.chain.from_iterable(medoids.values()))
         for label in ticklabels:
-            if label.get_text() not in omitted_labels:
+            if label.get_text() not in visible_labels:
                 label.set_visible(False)
     
     if not axis:

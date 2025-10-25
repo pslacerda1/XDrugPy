@@ -617,14 +617,14 @@ class LinkageMethod(StrEnum):
 
 
 @declare_command
-def fp_sim(
+def fpt_sim(
     multi_exprs: Selection,
     site: Selection = "*",
     radius: float = 4.0,
     nbins: int = 5,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = 0.0,
-    hide_below_color_threshold: bool = False,
+    hide_threshold: bool = False,
     annotate: bool = True,
     axis_fingerprint: str = "",
     axis_dendrogram: str = "",
@@ -742,7 +742,7 @@ def fp_sim(
                 labels,
                 linkage_method=linkage_method,
                 color_threshold=color_threshold,
-                hide_below_color_threshold=hide_below_color_threshold,
+                hide_threshold=hide_threshold,
                 annotate=annotate,
                 axis=ax,
             )
@@ -920,15 +920,15 @@ class HeatmapFunction(StrEnum):
 
 
 @declare_command
-def plot_cross_similarity(
+def plot_pairwise_hca(
     exprs: Selection,
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
-    align: bool = True,
+    align: bool = False,
     annotate: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
-    hide_below_color_threshold: bool = False,
+    hide_threshold: bool = False,
     axis: str = "",
 ):
     """
@@ -973,7 +973,7 @@ def plot_cross_similarity(
                         seq_align=align,
                     )
             X.append(1 - ret)
-    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis)
+    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_threshold, annotate, axis)
     return X, objects, dendro, medoids
 
 
@@ -1028,11 +1028,9 @@ def hs_proj(
 @declare_command
 def plot_euclidean_hca(
     exprs: Selection,
-    residue_radius: float = 4.0,
-    residue_align: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
-    hide_below_color_threshold: bool = False,
+    hide_threshold: bool = False,
     annotate: bool = False,
     axis: str = None,
 ):
@@ -1092,7 +1090,7 @@ def plot_euclidean_hca(
             X.append(d)
     X = np.array(X)
     X = (X-X.min())/(X.max()-X.min())
-    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis)
+    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, axis)
 
 
 #
@@ -1414,13 +1412,17 @@ class SimilarityWidget(QWidget):
         self.colorThresholdSpin.setMaximum(10)
         self.colorThresholdSpin.setValue(0)
         self.colorThresholdSpin.setSingleStep(0.1)
-        self.colorThresholdSpin.setDecimals(1)
+        self.colorThresholdSpin.setDecimals(2)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
+
+        self.hideThresholdCheck = QCheckBox()
+        self.hideThresholdCheck.setChecked(False)
+        boxLayout.addRow("Hide threshold:", self.hideThresholdCheck)
 
         layout = QHBoxLayout()
         mainLayout.addLayout(layout)
 
-        groupBox = QGroupBox("Heatmap")
+        groupBox = QGroupBox("Pairwise similarity")
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
@@ -1432,65 +1434,61 @@ class SimilarityWidget(QWidget):
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(4)
         self.radiusSpin.setSingleStep(0.5)
-        self.radiusSpin.setDecimals(1)
+        self.radiusSpin.setDecimals(2)
         self.radiusSpin.setMinimum(1)
         self.radiusSpin.setMaximum(10)
         boxLayout.addRow("Radius:", self.radiusSpin)
 
-        self.heatmapAlignCheck = QCheckBox()
-        self.heatmapAlignCheck.setChecked(False)
-        boxLayout.addRow("Align:", self.heatmapAlignCheck)
+        self.pairwiseSeqAlignCheck = QCheckBox()
+        self.pairwiseSeqAlignCheck.setChecked(False)
+        boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
 
         plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_heatmap)
+        plotButton.clicked.connect(self.plot_pairwise)
         boxLayout.addWidget(plotButton)
 
-        groupBox = QGroupBox("HCA")
+        groupBox = QGroupBox("N-dimensional euclidean")
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.residueRadiusSpin = QDoubleSpinBox()
-        self.residueRadiusSpin.setValue(4.0)
-        self.residueRadiusSpin.setMinimum(0)
-        self.residueRadiusSpin.setMaximum(10)
-        boxLayout.addRow("Residue radius:", self.residueRadiusSpin)
-
-        self.resiudeAlignCheck = QCheckBox()
-        self.resiudeAlignCheck.setChecked(False)
-        boxLayout.addRow("Residue Align:", self.resiudeAlignCheck)
-
         plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_dendrogram)
+        plotButton.clicked.connect(self.plot_euclidean_hca)
         boxLayout.addWidget(plotButton)
 
-    def plot_heatmap(self):
+    def plot_pairwise(self):
         expression = self.hotspotExpressionLine.text()
         method = self.methodCombo.currentText()
         radius = self.radiusSpin.value()
-        align = self.heatmapAlignCheck.isChecked()
+        align = self.pairwiseSeqAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
+        hide_threshold = self.hideThresholdCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
 
-        plot_cross_similarity(
-            expression, method, radius, align, annotate, linkage_method, color_threshold
+        plot_pairwise_hca(
+            expression,
+            method,
+            radius,
+            align,
+            annotate,
+            linkage_method,
+            color_threshold,
+            hide_threshold,
         )
 
-    def plot_dendrogram(self):
+    def plot_euclidean_hca(self):
         expression = self.hotspotExpressionLine.text()
-        residue_radius = self.residueRadiusSpin.value()
-        residue_align = self.resiudeAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
+        hide_threshold = self.hideThresholdCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
 
         return plot_euclidean_hca(
             expression,
-            residue_radius,
-            residue_align,
             linkage_method,
             color_threshold,
+            hide_threshold,
             annotate,
         )
 
@@ -1508,15 +1506,15 @@ class CountWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.hotspotsExpressionLine1 = QLineEdit()
-        boxLayout.addRow("Hotspots:", self.hotspotsExpressionLine1)
+        self.exprsLine = QLineEdit()
+        boxLayout.addRow("Expressions:", self.exprsLine)
 
         self.proteinExpressionLine = QLineEdit()
         boxLayout.addRow("Protein:", self.proteinExpressionLine)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(3)
-        self.radiusSpin.setDecimals(1)
+        self.radiusSpin.setDecimals(2)
         self.radiusSpin.setSingleStep(0.5)
         self.radiusSpin.setMinimum(2)
         self.radiusSpin.setMaximum(10)
@@ -1538,15 +1536,15 @@ class CountWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.hotspotsExpressionLine2 = QLineEdit("")
-        boxLayout.addRow("Hotspots:", self.hotspotsExpressionLine2)
+        self.multiExprsLine = QLineEdit("")
+        boxLayout.addRow("Multi expressions:", self.multiExprsLine)
 
-        self.siteExpressionLine = QLineEdit("*")
-        boxLayout.addRow("Site:", self.siteExpressionLine)
+        self.siteSelectionLine = QLineEdit("*")
+        boxLayout.addRow("Focus site:", self.siteSelectionLine)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(3)
-        self.radiusSpin.setDecimals(1)
+        self.radiusSpin.setDecimals(2)
         self.radiusSpin.setSingleStep(0.5)
         self.radiusSpin.setMinimum(2)
         self.radiusSpin.setMaximum(10)
@@ -1579,7 +1577,7 @@ class CountWidget(QWidget):
         self.colorThresholdSpin.setMaximum(10)
         self.colorThresholdSpin.setValue(0)
         self.colorThresholdSpin.setSingleStep(0.1)
-        self.colorThresholdSpin.setDecimals(1)
+        self.colorThresholdSpin.setDecimals(2)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
         plotButton = QPushButton("Plot")
@@ -1587,7 +1585,7 @@ class CountWidget(QWidget):
         boxLayout.addWidget(plotButton)
 
     def draw_projection(self):
-        hotspots = self.hotspotsExpressionLine1.text()
+        hotspots = self.exprsLine.text()
         protein = self.proteinExpressionLine.text()
         radius = self.radiusSpin.value()
         type = self.typeCombo.currentText()
@@ -1596,8 +1594,8 @@ class CountWidget(QWidget):
         hs_proj(hotspots, protein, radius, type, palette)
 
     def plot_fingerprint(self):
-        hotspots = self.hotspotsExpressionLine2.text()
-        site = self.siteExpressionLine.text()
+        multi_exprs = self.multiExprsLine.text()
+        site = self.siteSelectionLine.text()
         radius = self.radiusSpin.value()
         fingerprints = self.fingerprintsCheck.isChecked()
         dendrogram = self.dendrogramCheck.isChecked()
@@ -1615,8 +1613,8 @@ class CountWidget(QWidget):
         else:
             axis_dendrogram = False
 
-        fp_sim(
-            hotspots,
+        fpt_sim(
+            multi_exprs,
             site,
             radius,
             axis_fingerprint=axis_fingerprints,
@@ -1641,8 +1639,8 @@ class MainDialog(QDialog):
         tab = QTabWidget()
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
-        tab.addTab(SimilarityWidget(), "Hotspot Similarity")
-        tab.addTab(CountWidget(), "Probe Count")
+        tab.addTab(SimilarityWidget(), "HCA")
+        tab.addTab(CountWidget(), "Fingerprinting")
 
         layout.addWidget(tab)
 

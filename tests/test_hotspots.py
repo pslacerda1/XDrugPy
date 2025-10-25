@@ -5,9 +5,9 @@ from xdrugpy.hotspots import (
     eftmap_overlap,
     _eftmap_overlap_get_aromatic,
     plot_euclidean_hca,
-    plot_cross_similarity,
+    plot_pairwise_hca,
     HeatmapFunction,
-    fp_sim,
+    fpt_sim,
     res_sim,
 )
 from xdrugpy.utils import expression_selector, multiple_expression_selector
@@ -121,16 +121,16 @@ def test_euclidean_hca():
     assert images_identical(img_ref, img_gen)
 
 
-def test_cross_similarity():
+def test_pairwise_hca():
     pm.reinitialize()
 
     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "A7YT55_6css")
     expr = "*.K15_*"
 
-    img_ref = f"{pkg_data}/test_cross_similarity_ref.svg"
-    img_gen = f"{pkg_data}/test_cross_similarity_gen.svg"
+    img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
+    img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
 
-    plot_cross_similarity(
+    plot_pairwise_hca(
         expr,
         method=HeatmapFunction.RESIDUE_JACCARD,
         radius=4,
@@ -154,7 +154,7 @@ def test_fpt():
     img_ref1 = f"{pkg_data}/test_fpt1_ref.svg"
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
-    fp_sim(
+    fpt_sim(
         "1dq8.K15_* S>=13 ; 1dq9.K15_D_00 ; 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
         nbins=50,
