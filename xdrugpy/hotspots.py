@@ -661,14 +661,20 @@ def fp_sim(
     polymers = {p: True for p in polymers}  # ordered set
 
     # Do the alignmnet
-    mappings = np.empty((0, 9))
+    ref_sele = f"{ref_polymer} within {radius} from ({site})"
+    mappings = np.empty((0, 8))
+    for at in pm.get_model(ref_sele + ' & name CA').atom:
+        res = get_residue_from_object(at.model, at.index)
+        mappings = np.vstack([mappings, res])
     for polymer in polymers:
+        if polymer == ref_polymer:
+            continue
         try:
             aln_obj = pm.get_unused_name()
-            pm.cealign(
-                f"{ref_polymer} within {radius} from {site}",
+            pm.super(
                 polymer,
-                transform=False,
+                ref_sele,
+                transform=0,
                 object=aln_obj,
             )
             aln = pm.get_raw_alignment(aln_obj)
@@ -685,8 +691,7 @@ def fp_sim(
         @mappings.groupby(["chain", "resi"], as_index=False).apply
         def apply(group):
             for idx, row in group.iterrows():
-                resn = row.oneletter
-                lbl = (resn, row.resi, row.chain)
+                lbl = (row.oneletter, row.resi, row.chain)
                 cnt = pm.count_atoms(
                     f"({hs}) within {radius} of (byres %{row.model} & index {row['index']})"
                 )

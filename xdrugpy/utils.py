@@ -46,7 +46,7 @@ def clear_temp():
 atexit.register(clear_temp)
 
 
-Residue = namedtuple("Reisude", "model index resn resi chain x y z oneletter")
+Residue = namedtuple("Residue", "model index resi chain x y z oneletter")
 
 
 def run(command, log=True, cwd=None, env=os.environ):
@@ -249,9 +249,9 @@ def expression_selector(expr, type=None):
 
 def multiple_expression_selector(exprs, type=None):
     object_list = []
-    for expr in exprs.split(":"):
+    for expr in exprs.split(";"):
         obj = expression_selector(expr, type=type)
-        object_list.append((obj, expr))
+        object_list.append((obj, expr.strip()))
     return object_list
 
 
@@ -376,7 +376,7 @@ def get_residue_from_object(obj, idx):
     pm.iterate_state(
         -1,
         f"%{obj} & index {idx}",
-        "res.append(Residue(model, int(index), resn, int(resi), chain, float(x), float(y), float(z), oneletter))",
+        "res.append(Residue(model, int(index), int(resi), chain, float(x), float(y), float(z), oneletter))",
         space={"res": res, "Residue": Residue},
     )
     return res[0]
