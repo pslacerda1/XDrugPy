@@ -148,10 +148,8 @@ def mpl_axis(ax, **kwargs):
         new_ax = ax
     yield new_ax
     if not ax:
-        # plt.tight_layout()
         plt.show()
     elif isinstance(ax, (str, Path)):
-        # plt.tight_layout()
         plt.savefig(output_file)
 
 
@@ -242,13 +240,18 @@ def expression_selector(expr, type=None):
         return objects2
     else:
         objects = objects1.intersection(objects2)
+    def sort(obj):
+        klass = pm.get_property("Class", obj)
+        return str(klass), obj
+    objects = list(sorted(objects, key=sort))
     return objects
 
 
 def multiple_expression_selector(exprs, type=None):
     object_list = []
     for expr in exprs.split(":"):
-        object_list.append(expression_selector(expr, type=type))
+        obj = expression_selector(expr, type=type)
+        object_list.append((obj, expr))
     return object_list
 
 
@@ -378,31 +381,3 @@ def get_residue_from_object(obj, idx):
     )
     return res[0]
 
-
-def get_mapping(
-    polymers: Selection,
-    site: str = "*",
-    radius: float = 2,
-):
-    # Get polymers to be mapped to reference site
-    ref_polymer = polymers[0]
-    polymers = {p: True for p in polymers}  # ordered set
-
-    # Do the alignmnet
-    mappings = np.empty((0, 9))
-    for polymer in polymers:
-        try:
-            aln_obj = pm.get_unused_name()
-            pm.cealign(
-                f"{ref_polymer} within {radius} from {site}",
-                polymer,
-                transform=False,
-                object=aln_obj,
-            )
-            aln = pm.get_raw_alignment(aln_obj)
-        finally:
-            pm.delete(aln_obj)
-        for (obj1, idx1), (obj2, idx2) in aln:
-            res = get_residue_from_object(obj2, idx2)
-            mappings = np.vstack([mappings, res])
-    return pd.DataFrame(mappings, columns=Residue._fields)

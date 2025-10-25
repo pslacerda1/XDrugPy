@@ -24,7 +24,8 @@ from .utils import (
     mpl_axis,
     expression_selector,
     plot_hca_base,
-    get_mapping,
+    get_residue_from_object,
+    Residue
 )
 
 from pymol import cmd as pm
@@ -503,8 +504,6 @@ def count_molecules(sel):
 def fo(
     sel1: Selection,
     sel2: Selection,
-    state1: int = 1,
-    state2: int = 1,
     radius: float = 2,
     quiet: int = True,
 ):
@@ -521,30 +520,28 @@ def fo(
         state1  ligand state.
         state2  hotspot state.
         radius  the radius so sel1 and sel2 are in contact (default: 2).
-
-    EXAMPLE
-        fo REF_LIG, ftmap1234.D_003_*_*
     """
-    atoms1 = pm.get_coordset(sel1, state=state1)
-    atoms2 = pm.get_coordset(sel2, state=state2)
-    if atoms1 is None or atoms2 is None:
-        fo_ = 0
-    else:
-        dist = distance_matrix(atoms1, atoms2) - radius <= 0
-        num_contacts = np.sum(np.any(dist, axis=1))
-        total_atoms = len(atoms1)
-        fo_ = num_contacts / total_atoms
+    atoms1 = np.concatenate(
+        pm.get_coordset(obj)
+        for obj in expression_selector(sel1)
+    )
+    atoms2 = np.concatenate(
+        pm.get_coordset(obj)
+        for obj in expression_selector(sel2)
+    )
+    dist = distance_matrix(atoms1, atoms2) - radius <= 0
+    nc = np.sum(np.any(dist, axis=1))
+    nt = len(atoms1)
+    fo = nc / nt
     if not quiet:
-        print(f"FO: {fo_:.2f}")
-    return fo_
+        print(f"FO: {fo:.2f}")
+    return fo
 
 
 @declare_command
 def dc(
     sel1: Selection,
     sel2: Selection,
-    state1: int = 1,
-    state2: int = 1,
     radius: float = 1.25,
     quiet: int = True,
 ):
@@ -561,30 +558,30 @@ def dc(
         state1  ligand state
         state2  hotspot state
         radius  the radius so two atoms are in contact (default: 1.25)
-        quiet   define verbosity
 
     EXAMPLES
         dc REF_LIG, ftmap1234.D_003_*_*
         dc ftmap1234.D.003, REF_LIG, radius=1.5
 
     """
-    xyz1 = pm.get_coordset(sel1, state=state1)
-    xyz2 = pm.get_coordset(sel2, state=state2)
-    if xyz1 is None or xyz2 is None:
-        dc_ = 0
-    else:
-        dc_ = (distance_matrix(xyz1, xyz2) < radius).sum()
+    atoms1 = np.concatenate(
+        pm.get_coordset(obj)
+        for obj in expression_selector(sel1)
+    )
+    atoms2 = np.concatenate(
+        pm.get_coordset(obj)
+        for obj in expression_selector(sel2)
+    )
+    dc = (distance_matrix(atoms1, atoms2) < radius).sum()
     if not quiet:
-        print(f"DC: {dc_:.2f}")
-    return dc_
+        print(f"DC: {dc:.2f}")
+    return dc
 
 
 @declare_command
 def dce(
     sel1: Selection,
     sel2: Selection,
-    state1: int = 1,
-    state2: int = 1,
     radius: float = 1.25,
     quiet: int = True,
 ):
@@ -606,11 +603,10 @@ def dce(
     EXAMPLE
         dce REF_LIG, ftmap1234.D_003_*_*
     """
-    dc_ = dc(sel1, sel2, radius=radius, state1=state1, state2=state2)
-    dce_ = dc_ / pm.count_atoms(f"({sel1}) and not elem H")
+    dce = dc(sel1, sel2, radius=radius) / pm.count_atoms(sel1)
     if not quiet:
-        print(f"DCE: {dce_:.2f}")
-    return dce_
+        print(f"DCE: {dce:.2f}")
+    return dce
 
 
 class LinkageMethod(StrEnum):
@@ -622,8 +618,8 @@ class LinkageMethod(StrEnum):
 
 @declare_command
 def fp_sim(
-    exprs: Selection,
-    site: str = "*",
+    multi_exprs: Selection,
+    site: Selection = "*",
     radius: float = 4.0,
     nbins: int = 5,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
@@ -652,22 +648,41 @@ def fp_sim(
         fs_sim 8DSU.K15_D_01* 6XHM.K15_D_01*
         fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
     """
-
-    # Identify objects/hotspots to probe count
     hotspots = []
-    groups = set()
-    for object_set in multiple_expression_selector(exprs):
-        for object in object_set:
-            if group := pm.get_property("Group", object):
-                hotspots.append(object)
-                groups.add(group)
+    exprs = []
+    groups = []
+    for object_set, expr in multiple_expression_selector(multi_exprs):
+        hotspots.append(' '.join(object_set))
+        exprs.append(expr)
+        groups.append(pm.get_property("Group", object_set.pop())) # only one
+    polymers = [f"{g}.protein" for g in groups]
 
-    proteins = [f"{g}.protein" for g in groups]
-    mapping = get_mapping(proteins, site=site, radius=radius)
+    ref_polymer = polymers[0]
+    polymers = {p: True for p in polymers}  # ordered set
+
+    # Do the alignmnet
+    mappings = np.empty((0, 9))
+    for polymer in polymers:
+        try:
+            aln_obj = pm.get_unused_name()
+            pm.cealign(
+                f"{ref_polymer} within {radius} from {site}",
+                polymer,
+                transform=False,
+                object=aln_obj,
+            )
+            aln = pm.get_raw_alignment(aln_obj)
+        finally:
+            pm.delete(aln_obj)
+        for (obj1, idx1), (obj2, idx2) in aln:
+            res = get_residue_from_object(obj2, idx2)
+            mappings = np.vstack([mappings, res])
+    mappings = pd.DataFrame(mappings, columns=Residue._fields)
+
     fpts = []
     for hs in hotspots:
         fpt = {}
-        @mapping.groupby(["chain", "resi"], as_index=False).apply
+        @mappings.groupby(["chain", "resi"], as_index=False).apply
         def apply(group):
             for idx, row in group.iterrows():
                 resn = row.oneletter
@@ -691,11 +706,11 @@ def fp_sim(
                 )
             if not isinstance(axs, (np.ndarray, list)):
                 axs = [axs]
-            for ax, fpt, hs in zip(axs, fpts, hotspots):
+            for ax, fpt, expr in zip(axs, fpts, exprs):
                 labels = ["%s %s:%s" % k for k in fpt]
                 arange = np.arange(len(fpt))
                 ax.bar(arange, fpt.values(), color="C0")
-                ax.set_title(hs)
+                ax.set_title(expr)
                 ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
                 ax.set_xticks(arange, labels=labels, rotation=90)
                 ax.locator_params(axis="x", tight=True, nbins=nbins)
@@ -706,9 +721,9 @@ def fp_sim(
     labels = []
     if axis_dendrogram is not False:
         with mpl_axis(axis_dendrogram, sharex=True, constrained_layout=True) as ax:
-            for i1, (fp1, hs1) in enumerate(zip(fpts, hotspots)):
-                labels.append(hs1)
-                for i2, (fp2, hs2) in enumerate(zip(fpts, hotspots)):
+            for i1, (fp1, expr1) in enumerate(zip(fpts, exprs)):
+                labels.append(expr1)
+                for i2, (fp2, expr2) in enumerate(zip(fpts, exprs)):
                     if i1 >= i2:
                         continue
                     corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
@@ -716,7 +731,7 @@ def fp_sim(
                         corr = 0
                     corrs.append(1 - corr)
                     if not quiet:
-                        print(f"Pearson correlation: {hs1} / {hs2}: {corr:.2f}")
+                        print(f"Pearson correlation: {expr1} / {expr2}: {corr:.2f}")
             plot_hca_base(
                 corrs,
                 labels,
@@ -926,13 +941,8 @@ def plot_cross_similarity(
         plot_pairwise_similarity *.D_000_*_* *.DS_*
     """
 
-    def sort(obj):
-        klass = pm.get_property("Class", obj)
-        return str(klass), obj
-
+    
     objects = expression_selector(exprs)
-    objects = list(sorted(objects, key=sort))
-
     X = []
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
@@ -946,7 +956,7 @@ def plot_cross_similarity(
                         obj1,
                         obj2,
                         radius=radius,
-                        method="jaccard",
+                        method=ResidueSimilarityMethod.JACCARD,
                         seq_align=align,
                     )
                 case HeatmapFunction.RESIDUE_OVERLAP:
@@ -954,13 +964,12 @@ def plot_cross_similarity(
                         obj1,
                         obj2,
                         radius=radius,
-                        method="overlap",
+                        method=ResidueSimilarityMethod.OVERLAP,
                         seq_align=align,
                     )
             X.append(1 - ret)
-
-    plot_hca_base(X, objects, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis)
-    return X, objects
+    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_below_color_threshold, annotate, axis)
+    return X, objects, dendro, medoids
 
 
 class PrioritizationType(StrEnum):

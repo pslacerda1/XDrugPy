@@ -88,12 +88,12 @@ def test_multiple_selector():
     expr = "*K15_D_* S0<22 : S==20"
     result = multiple_expression_selector(expr)
     assert len(result) == 2
-    assert result[0] == {
+    assert result[0] == [
         "group.K15_D_00",
         "group.K15_D_01",
         "group.K15_D_02",
         "group.K15_D_03",
-    }
+    ]
     assert result[1] == {"group.CS_00"}
 
 
@@ -155,7 +155,7 @@ def test_fpt():
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
     fp_sim(
-        "1dq8.K15_D_00 : 1dq9.K15_D_00 : 1dqa.K15_B_00",
+        "1dq8.K15_* S>=13 : 1dq9.K15_D_00 : 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
         nbins=50,
         radius=4.0,
