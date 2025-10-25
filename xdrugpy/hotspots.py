@@ -156,7 +156,7 @@ def get_fpocket(group, protein):
     with tempfile.TemporaryDirectory() as tempdir:
         protein_pdb = f"{tempdir}/{group}.pdb"
         pm.save(protein_pdb, selection=protein)
-        subprocess.check_call(
+        subprocess.check_output(
             [shutil.which("fpocket"), "-f", protein_pdb],
         )
         header_re = re.compile(r"^HEADER\s+\d+\s+-(.*):(.*)$")
@@ -521,15 +521,15 @@ def fo(
         state2  hotspot state.
         radius  the radius so sel1 and sel2 are in contact (default: 2).
     """
-    atoms1 = np.concatenate(
-        pm.get_coordset(obj)
-        for obj in expression_selector(sel1)
-    )
-    atoms2 = np.concatenate(
-        pm.get_coordset(obj)
-        for obj in expression_selector(sel2)
-    )
-    dist = distance_matrix(atoms1, atoms2) - radius <= 0
+    atoms1 = np.empty((0, 3))
+    for obj in expression_selector(sel1):
+        atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
+
+    atoms2 = np.empty((0, 3))
+    for obj in expression_selector(sel2):
+        atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
+
+    dist = distance_matrix(atoms1, atoms2) <= radius
     nc = np.sum(np.any(dist, axis=1))
     nt = len(atoms1)
     fo = nc / nt
@@ -564,14 +564,14 @@ def dc(
         dc ftmap1234.D.003, REF_LIG, radius=1.5
 
     """
-    atoms1 = np.concatenate(
-        pm.get_coordset(obj)
-        for obj in expression_selector(sel1)
-    )
-    atoms2 = np.concatenate(
-        pm.get_coordset(obj)
-        for obj in expression_selector(sel2)
-    )
+    atoms1 = np.empty((0, 3))
+    for obj in expression_selector(sel1):
+        atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
+        
+    atoms2 = np.empty((0, 3))
+    for obj in expression_selector(sel2):
+        atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
+    
     dc = (distance_matrix(atoms1, atoms2) < radius).sum()
     if not quiet:
         print(f"DC: {dc:.2f}")
