@@ -22,7 +22,7 @@ from .utils import (
     Selection,
     multiple_expression_selector,
     mpl_axis,
-    expression_selector,
+    _expression_selector,
     plot_hca_base,
     get_residue_from_object,
     Residue
@@ -127,8 +127,14 @@ def get_kozakov2015(group, clusters, max_length):
     k15 = sorted(k15, key=lambda hs: ["D", "DS", "B", "BS"].index(hs.kozakov_class))
     k15 = list(k15)
 
-    for idx, hs in enumerate(k15):
-        new_name = f"{group}.K15_{hs.kozakov_class}_{idx:02}"
+    idx = 0
+    cur_class = None
+    for hs in k15:
+        if hs.kozakov_class != cur_class:
+            cur_class = hs.kozakov_class
+            idx = -1
+        idx += 1
+        new_name = f"{group}.K15_{cur_class}_{idx:02}"
         pm.create(new_name, hs.selection)
         pm.group(group, new_name)
         hs.selection = new_name
@@ -140,7 +146,7 @@ def get_kozakov2015(group, clusters, max_length):
                 "Group": group,
                 "Selection": new_name,
                 "Class": hs.kozakov_class,
-                "S": hs.strength,
+                "ST": hs.strength,
                 "S0": hs.strength0,
                 "CD": round(hs.center_center, 2),
                 "MD": round(hs.max_dist, 2),
@@ -197,7 +203,7 @@ def process_clusters(group, clusters):
                 "Type": "CS",
                 "Group": group,
                 "Selection": new_name,
-                "S": cs.strength,
+                "ST": cs.strength,
             },
         )
     pm.delete("consensus.*")
@@ -222,7 +228,7 @@ def process_eclusters(group, eclusters):
                 "Group": group,
                 "Selection": new_name,
                 "Class": acs.probe_type,
-                "S": acs.strength,
+                "ST": acs.strength,
                 "MD": round(md, 2),
             },
         )
@@ -235,17 +241,17 @@ def get_egbert2019(group, fpo_list, clusters):
     for pocket in fpo_list:
         sel = f"byobject ({group}.CS_* within 4 of {pocket.selection})"
         objs = pm.get_object_list(sel)
-        if len(objs) > 3 and sum([pm.get_property("S", o) >= 16 for o in objs]) > 2:
+        if len(objs) > 3 and sum([pm.get_property("ST", o) >= 16 for o in objs]) > 2:
             new_name = f"{group}.C_{idx_e19:02}"
             pm.create(new_name, sel)
             pm.group(group, new_name)
 
-            s_list = [pm.get_property("S", o) for o in objs]
+            s_list = [pm.get_property("ST", o) for o in objs]
             pm.set_property("Type", "Egbert2019", new_name)
             pm.set_property("Group", group, new_name)
             pm.set_property("Selection", sel, new_name)
             pm.set_property("Fpocket", pocket.selection, new_name)
-            pm.set_property("S", sum(s_list), new_name)
+            pm.set_property("ST", sum(s_list), new_name)
             pm.set_property("S0", s_list[0])
             pm.set_property("S1", s_list[1])
             pm.set_property("Length", len(objs), new_name)
@@ -306,7 +312,7 @@ def get_kozakov2015_large(group, fpo_list, clusters):
                 "Group": group,
                 "Selection": new_name,
                 "Class": klass,
-                "S": strength,
+                "ST": strength,
                 "S0": s0,
                 "CD": round(cd, 2),
                 "MD": round(md, 2),
@@ -522,11 +528,11 @@ def fo(
         radius  the radius so sel1 and sel2 are in contact (default: 2).
     """
     atoms1 = np.empty((0, 3))
-    for obj in expression_selector(sel1):
+    for obj in _expression_selector(sel1):
         atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
 
     atoms2 = np.empty((0, 3))
-    for obj in expression_selector(sel2):
+    for obj in _expression_selector(sel2):
         atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
 
     dist = distance_matrix(atoms1, atoms2) <= radius
@@ -565,11 +571,11 @@ def dc(
 
     """
     atoms1 = np.empty((0, 3))
-    for obj in expression_selector(sel1):
+    for obj in _expression_selector(sel1):
         atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
         
     atoms2 = np.empty((0, 3))
-    for obj in expression_selector(sel2):
+    for obj in _expression_selector(sel2):
         atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
     
     dc = (distance_matrix(atoms1, atoms2) < radius).sum()
@@ -947,7 +953,7 @@ def plot_pairwise_hca(
     """
 
     
-    objects = expression_selector(exprs)
+    objects = _expression_selector(exprs)
     X = []
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
@@ -1048,7 +1054,7 @@ def plot_euclidean_hca(
         plot_similarity *.K15_D_* *.K15_DS_*, linkage_method=average
     """
 
-    object_list = list(expression_selector(exprs))
+    object_list = list(_expression_selector(exprs))
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, object_list
 
     hs_type = pm.get_property("Type", object_list[0])
@@ -1066,18 +1072,18 @@ def plot_euclidean_hca(
         labels.append(obj)
         x, y, z = np.mean(pm.get_coordset(obj), axis=0)
         if hs_type == "K15":
-            S = pm.get_property("S", obj)
+            ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
             CD = pm.get_property("CD", obj)
             MD = pm.get_property("MD", obj)
-            p[idx, :] = np.array([S, S0, CD, MD, x, y, z])
+            p[idx, :] = np.array([ST, S0, CD, MD, x, y, z])
         elif hs_type == "CS":
-            S = pm.get_property("S", obj)
-            p[idx, :] = np.array([S, x, y, z])
+            ST = pm.get_property("ST", obj)
+            p[idx, :] = np.array([ST, x, y, z])
         elif hs_type == "ACS":
-            S = pm.get_property("S", obj)
+            ST = pm.get_property("ST", obj)
             MD = pm.get_property("MD", obj)
-            p[idx, :] = np.array([S, MD, x, y, z])
+            p[idx, :] = np.array([ST, MD, x, y, z])
         
     X = []
     for idx1, obj1 in enumerate(object_list):
@@ -1166,7 +1172,7 @@ class LoadWidget(QWidget):
 
         self.runFpocketCheck = QCheckBox()
         self.runFpocketCheck.setChecked(False)
-        boxLayout.addRow("Calc Fpocket, large and Egbert (2019):", self.runFpocketCheck)
+        boxLayout.addRow("Calc Fpocket, DL/BL and Egbert (2019):", self.runFpocketCheck)
 
         self.bekarLabel = QLineEdit()
         boxLayout.addWidget(self.bekarLabel)
@@ -1274,7 +1280,7 @@ class TableWidget(QWidget):
 
         @self.filter_line.textEdited.connect
         def textEdited(expr):
-            self.selected_objs = expression_selector(expr, self.current_tab)
+            self.selected_objs = _expression_selector(expr, self.current_tab)
             self.refresh()
 
         tab = QTabWidget()
@@ -1283,17 +1289,17 @@ class TableWidget(QWidget):
         self.hotspotsMap = {
             ("Kozakov2015", "K15"): [
                 "Class",
-                "S",
+                "ST",
                 "S0",
                 "CD",
                 "MD",
                 "Length",
                 "Fpocket",
             ],
-            ("CS", "CS"): ["S"],
-            ("ACS", "ACS"): ["Class", "S", "MD"],
+            ("CS", "CS"): ["ST"],
+            ("ACS", "ACS"): ["Class", "ST", "MD"],
             ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D"],
-            ("Egbert2019", "E19"): ["Fpocket", "S", "S0", "S1", "Length"],
+            ("Egbert2019", "E19"): ["Fpocket", "ST", "S0", "S1", "Length"],
             ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
 
@@ -1307,7 +1313,7 @@ class TableWidget(QWidget):
         def currentChanged(tab_index):
             self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
             expr = self.filter_line.text()
-            self.selected_objs = expression_selector(expr, self.current_tab)
+            self.selected_objs = _expression_selector(expr, self.current_tab)
             self.refresh()
 
         exportButton = QPushButton(QIcon("save"), "Export Tables")

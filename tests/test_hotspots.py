@@ -44,10 +44,11 @@ def test_eftmap_overlap():
 def test_selector():
     pm.reinitialize()
     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group")
+
     expr = "*K15_D_* S0<22"
     assert len(expression_selector(expr, type="K15")) == 4
 
-    expr = "* S>=34"
+    expr = "* ST>=34"
     assert len(expression_selector(expr)) == 2
 
     expr = "MD<14 S0>=16"
@@ -69,23 +70,34 @@ def test_selector():
     expr = "*.K15_D_00"
     assert len(expression_selector(expr)) == 2
 
-    expr = "S==20"
+    expr = "ST==20"
     assert len(expression_selector(expr)) == 2
 
-    expr = "S=20"
+    expr = "ST=20"
     assert len(expression_selector(expr)) == 2
 
-    expr = "S>500"
+    expr = "ST>500"
     assert len(expression_selector(expr, type="CS")) == 0
 
-    expr = "*.CS* S>13"
+    expr = "*.CS* ST>13"
     assert len(expression_selector(expr, type="K15")) == 0
+
+    pm.reinitialize()
+    load_ftmap([
+            f"{pkg_data}/1dq8_atlas.pdb",
+            f"{pkg_data}/1dq9_atlas.pdb",
+            f"{pkg_data}/1dqa_atlas.pdb",
+        ],
+        groups=['1dq8', '1dq9', '1dqa'],
+        run_fpocket=True
+    )
+    assert len(expression_selector("*K15_*_00 CD<8 / *.fpocket_01")) == 8
 
 
 def test_multiple_selector():
     pm.reinitialize()
     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group")
-    expr = "*K15_D_* S0<22 ; S==20"
+    expr = "*K15_D_* S0<22 / ST==20"
     result = multiple_expression_selector(expr)
     assert len(result) == 2
     assert result[0] == ([
@@ -94,7 +106,7 @@ def test_multiple_selector():
         "group.K15_D_02",
         "group.K15_D_03",
     ], "*K15_D_* S0<22")
-    assert result[1] == ({'group.CS_00'}, 'S==20')
+    assert result[1] == ({'group.CS_00'}, 'ST==20')
 
 
 def test_euclidean_hca():
@@ -155,7 +167,7 @@ def test_fpt():
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
     fpt_sim(
-        "1dq8.K15_* S>=13 ; 1dq9.K15_D_00 ; 1dqa.K15_B_00",
+        "1dq8.K15_* ST>=13 / 1dq9.K15_D_00 / 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
         nbins=50,
         radius=4.0,

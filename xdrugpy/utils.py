@@ -166,19 +166,19 @@ def align_groups(
             pm.matrix_copy(f"{mobile}.protein", inner)
 
 
-def expression_selector(expr, type=None):
+def _expression_selector(expr, type=None):
     objects = set()
     objects1 = set()
     objects2 = set()
     eq_true = set()
     eq_false = set()
     for part in expr.split():
-        for obj in pm.get_names("objects"):
+        for obj in pm.get_names():
             if fnmatch(obj, part):
                 objects1.add(obj)
             else:
                 match = re.match(
-                    r"(Class|S|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|=|>|<)(.*)", part
+                    r"(ST|S0|S1|CD|MD|Lenght|Fpocket)(>=|<=|!=|==|=|>|<)(.*)", part, flags=re.IGNORECASE
                 )
                 if match:
                     atom_data = {}
@@ -187,7 +187,7 @@ def expression_selector(expr, type=None):
                         dedent(
                             """
                             atom_data[model] = {
-                                'Type': p.Type, 'Class':p.Class, 'S':p.S, 'S0':p.S0, 'S1':p.S1, 'CD':p.CD, 'MD':p.MD
+                                'Type': p.Type, 'ST':p.ST, 'S0':p.S0, 'S1':p.S1, 'CD':p.CD, 'MD':p.MD
                             }
                         """
                         ),
@@ -249,10 +249,16 @@ def expression_selector(expr, type=None):
 
 def multiple_expression_selector(exprs, type=None):
     object_list = []
-    for expr in exprs.split(";"):
-        obj = expression_selector(expr, type=type)
+    for expr in exprs.split("/"):
+        obj = _expression_selector(expr, type=type)
         object_list.append((obj, expr.strip()))
     return object_list
+
+
+def expression_selector(exprs, type=None):
+    return list(itertools.chain.from_iterable(
+        ol[0] for ol in multiple_expression_selector(exprs, type=type)
+    ))
 
 
 def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold, annotate, axis):
