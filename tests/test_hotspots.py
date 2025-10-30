@@ -9,6 +9,7 @@ from xdrugpy.hotspots import (
     HeatmapFunction,
     fpt_sim,
     res_sim,
+    ho,
 )
 from xdrugpy.utils import expression_selector, multiple_expression_selector
 import numpy as np
@@ -22,13 +23,21 @@ pkg_data = os.path.dirname(__file__) + "/data"
 
 
 def images_identical(img1_path, img2_path):
-    with open(img1_path) as f1, open(img2_path) as f2:
-        f1 = [l for l in f1.readlines() if "<dc:date>" not in l]
-        f2 = [l for l in f2.readlines() if "<dc:date>" not in l]
-        for l1, l2 in zip(f1, f2):
-            if l1 != l2:
-                return False
-    return True
+    from PIL import ImageChops, Image
+    import io
+    import cairosvg
+
+    def rasterize(svg_path):
+        png_data = cairosvg.svg2png(url=svg_path)
+        return Image.open(io.BytesIO(png_data)).convert("RGB")
+
+    def compare_visual(svg1, svg2):
+        img1 = rasterize(svg1)
+        img2 = rasterize(svg2)
+        diff = ImageChops.difference(img1, img2)
+        return diff.getbbox() is None  # True if identical
+
+    return compare_visual(svg1=img1_path, svg2=img2_path)
 
 
 def test_eftmap_overlap():
@@ -127,7 +136,7 @@ def test_euclidean_hca():
     assert medoids["C2"].pop() in ["group.K15_D_02", "group.K15_D_03"]
     assert len(medoids["C2"]) == 0
 
-    assert medoids["C3"].pop() in ["group.K15_B_05"]
+    assert medoids["C3"].pop() in ["group.K15_B_01"]
     assert len(medoids["C3"]) == 0
 
     assert images_identical(img_ref, img_gen)
@@ -135,13 +144,10 @@ def test_euclidean_hca():
 
 def test_pairwise_hca():
     pm.reinitialize()
-
     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "A7YT55_6css")
     expr = "*.K15_*"
-
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
-
     plot_pairwise_hca(
         expr,
         method=HeatmapFunction.RESIDUE_JACCARD,
@@ -151,6 +157,19 @@ def test_pairwise_hca():
         color_threshold=0.5
     )
     assert images_identical(img_ref, img_gen)
+
+
+def test_ho():
+    pm.reinitialize()
+    load_ftmap([
+            f"{pkg_data}/1dq8_atlas.pdb",
+            f"{pkg_data}/1dq9_atlas.pdb",
+        ],
+        groups=['1dq8', '1dq9'],
+        run_fpocket=True
+    )
+    assert ho('1dq9.fpocket_01', '1dq9.K15_D_00') == 0.0
+    assert ho('1dq9.K15_D_00', '1dq8.K15_D_00') == 1.0
 
 
 def test_fpt():

@@ -20,9 +20,9 @@ from strenum import StrEnum
 from .utils import (
     declare_command,
     Selection,
+    expression_selector,
     multiple_expression_selector,
     mpl_axis,
-    _expression_selector,
     plot_hca_base,
     get_residue_from_object,
     Residue
@@ -528,11 +528,11 @@ def fo(
         radius  the radius so sel1 and sel2 are in contact (default: 2).
     """
     atoms1 = np.empty((0, 3))
-    for obj in _expression_selector(sel1):
+    for obj in expression_selector(sel1):
         atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
 
     atoms2 = np.empty((0, 3))
-    for obj in _expression_selector(sel2):
+    for obj in expression_selector(sel2):
         atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
 
     dist = distance_matrix(atoms1, atoms2) <= radius
@@ -571,11 +571,11 @@ def dc(
 
     """
     atoms1 = np.empty((0, 3))
-    for obj in _expression_selector(sel1):
+    for obj in expression_selector(sel1):
         atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
         
     atoms2 = np.empty((0, 3))
-    for obj in _expression_selector(sel2):
+    for obj in expression_selector(sel2):
         atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
     
     dc = (distance_matrix(atoms1, atoms2) < radius).sum()
@@ -953,7 +953,7 @@ def plot_pairwise_hca(
     """
 
     
-    objects = _expression_selector(exprs)
+    objects = expression_selector(exprs)
     X = []
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
@@ -1054,7 +1054,7 @@ def plot_euclidean_hca(
         plot_similarity *.K15_D_* *.K15_DS_*, linkage_method=average
     """
 
-    object_list = list(_expression_selector(exprs))
+    object_list = list(expression_selector(exprs))
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, object_list
 
     hs_type = pm.get_property("Type", object_list[0])
@@ -1280,7 +1280,7 @@ class TableWidget(QWidget):
 
         @self.filter_line.textEdited.connect
         def textEdited(expr):
-            self.selected_objs = _expression_selector(expr, self.current_tab)
+            self.selected_objs = expression_selector(expr, self.current_tab)
             self.refresh()
 
         tab = QTabWidget()
@@ -1313,7 +1313,7 @@ class TableWidget(QWidget):
         def currentChanged(tab_index):
             self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
             expr = self.filter_line.text()
-            self.selected_objs = _expression_selector(expr, self.current_tab)
+            self.selected_objs = expression_selector(expr, self.current_tab)
             self.refresh()
 
         exportButton = QPushButton(QIcon("save"), "Export Tables")
