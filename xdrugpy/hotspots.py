@@ -1328,10 +1328,6 @@ class TableWidget(QWidget):
         super().showEvent(event)
 
     def refresh(self):
-        print(11111111, self.current_tab)
-        print(33333333, self.selected_objs)
-        print(22222222, pm.get_object_list())
-        
         for (title, key), props in self.hotspotsMap.items():
             self.tables[title].setSortingEnabled(False)
 
