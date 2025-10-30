@@ -20,8 +20,6 @@ from strenum import StrEnum
 from .utils import (
     declare_command,
     Selection,
-    expression_selector,
-    multiple_expression_selector,
     mpl_axis,
     plot_hca_base,
     get_residue_from_object,
@@ -75,6 +73,7 @@ def get_clusters():
 def set_properties(obj, obj_name, properties):
     for prop, value in properties.items():
         pm.set_property(prop, value, obj_name)
+        pm.set_atom_property(prop, value, obj_name)
         setattr(obj, prop, value)
 
 
@@ -247,7 +246,7 @@ def get_egbert2019(group, fpo_list, clusters):
             pm.group(group, new_name)
 
             s_list = [pm.get_property("ST", o) for o in objs]
-            pm.set_property("Type", "Egbert2019", new_name)
+            pm.set_property("Type", "E19", new_name)
             pm.set_property("Group", group, new_name)
             pm.set_property("Selection", sel, new_name)
             pm.set_property("Fpocket", pocket.selection, new_name)
@@ -527,17 +526,12 @@ def fo(
         state2  hotspot state.
         radius  the radius so sel1 and sel2 are in contact (default: 2).
     """
-    atoms1 = np.empty((0, 3))
-    for obj in expression_selector(sel1):
-        atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
+    xyz1 = pm.get_coords(sel1)
+    xyz2 = pm.get_coords(sel2)
 
-    atoms2 = np.empty((0, 3))
-    for obj in expression_selector(sel2):
-        atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
-
-    dist = distance_matrix(atoms1, atoms2) <= radius
+    dist = distance_matrix(xyz1, xyz2) <= radius
     nc = np.sum(np.any(dist, axis=1))
-    nt = len(atoms1)
+    nt = len(xyz1)
     fo = nc / nt
     if not quiet:
         print(f"FO: {fo:.2f}")
@@ -570,15 +564,10 @@ def dc(
         dc ftmap1234.D.003, REF_LIG, radius=1.5
 
     """
-    atoms1 = np.empty((0, 3))
-    for obj in expression_selector(sel1):
-        atoms1 = np.vstack([atoms1, pm.get_coordset(obj)])
-        
-    atoms2 = np.empty((0, 3))
-    for obj in expression_selector(sel2):
-        atoms2 = np.vstack([atoms2, pm.get_coordset(obj)])
+    xyz1 = pm.get_coords(sel1)
+    xyz2 = pm.get_coords(sel2)
     
-    dc = (distance_matrix(atoms1, atoms2) < radius).sum()
+    dc = (distance_matrix(xyz1, xyz2) < radius).sum()
     if not quiet:
         print(f"DC: {dc:.2f}")
     return dc
@@ -624,7 +613,7 @@ class LinkageMethod(StrEnum):
 
 @declare_command
 def fpt_sim(
-    multi_exprs: Selection,
+    multi_seles: Selection,
     site: Selection = "*",
     radius: float = 4.0,
     nbins: int = 5,
@@ -641,7 +630,7 @@ def fpt_sim(
     hotspots.
 
     OPTIONS:
-        hotspots          hotspot expressions
+        hotspots          hotspot selection
         site              selection to focus based on first protein
         radius            radius to compute the contacts (default: 4)
         plot_fingerprints plot the fingerprints (default: True)
@@ -654,13 +643,13 @@ def fpt_sim(
         fs_sim 8DSU.K15_D_01* 6XHM.K15_D_01*
         fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
     """
-    hotspots = []
-    exprs = []
+    seles = []
     groups = []
-    for object_set, expr in multiple_expression_selector(multi_exprs):
-        hotspots.append(' '.join(object_set))
-        exprs.append(expr)
-        groups.append(pm.get_property("Group", object_set.pop())) # only one
+
+    for sele in multi_seles.split("/"):
+        sele = sele.strip()
+        seles.append(sele.strip())
+        groups.append(pm.get_property("Group", pm.get_object_list(sele)[0]))
     polymers = [f"{g}.protein" for g in groups]
 
     ref_polymer = polymers[0]
@@ -692,7 +681,7 @@ def fpt_sim(
     mappings = pd.DataFrame(mappings, columns=Residue._fields)
 
     fpts = []
-    for hs in hotspots:
+    for hs in seles:
         fpt = {}
         @mappings.groupby(["chain", "resi"], as_index=False).apply
         def apply(group):
@@ -707,7 +696,7 @@ def fpt_sim(
     
     if axis_fingerprint is not False:
         with mpl_axis(
-            axis_fingerprint, nrows=len(hotspots), sharex=True, constrained_layout=True
+            axis_fingerprint, nrows=len(seles), sharex=True, constrained_layout=True
         ) as axs:
             fpt0 = fpts[0]
             if not all([len(fpt0) == len(fpt) for fpt in fpts]):
@@ -717,11 +706,11 @@ def fpt_sim(
                 )
             if not isinstance(axs, (np.ndarray, list)):
                 axs = [axs]
-            for ax, fpt, expr in zip(axs, fpts, exprs):
+            for ax, fpt, sele in zip(axs, fpts, seles):
                 labels = ["%s %s:%s" % k for k in fpt]
                 arange = np.arange(len(fpt))
                 ax.bar(arange, fpt.values(), color="C0")
-                ax.set_title(expr)
+                ax.set_title(sele)
                 ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
                 ax.set_xticks(arange, labels=labels, rotation=90)
                 ax.locator_params(axis="x", tight=True, nbins=nbins)
@@ -732,9 +721,9 @@ def fpt_sim(
     labels = []
     if axis_dendrogram is not False:
         with mpl_axis(axis_dendrogram, sharex=True, constrained_layout=True) as ax:
-            for i1, (fp1, expr1) in enumerate(zip(fpts, exprs)):
-                labels.append(expr1)
-                for i2, (fp2, expr2) in enumerate(zip(fpts, exprs)):
+            for i1, (fp1, sele1) in enumerate(zip(fpts, seles)):
+                labels.append(sele1)
+                for i2, (fp2, sele2) in enumerate(zip(fpts, seles)):
                     if i1 >= i2:
                         continue
                     corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
@@ -742,7 +731,7 @@ def fpt_sim(
                         corr = 0
                     corrs.append(1 - corr)
                     if not quiet:
-                        print(f"Pearson correlation: {expr1} / {expr2}: {corr:.2f}")
+                        print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
             plot_hca_base(
                 corrs,
                 labels,
@@ -927,7 +916,7 @@ class HeatmapFunction(StrEnum):
 
 @declare_command
 def plot_pairwise_hca(
-    exprs: Selection,
+    sele: Selection,
     method: HeatmapFunction = HeatmapFunction.HO,
     radius: float = 2.0,
     align: bool = False,
@@ -953,7 +942,7 @@ def plot_pairwise_hca(
     """
 
     
-    objects = expression_selector(exprs)
+    objects = pm.get_object_list(sele)
     X = []
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
@@ -1054,7 +1043,7 @@ def plot_euclidean_hca(
         plot_similarity *.K15_D_* *.K15_DS_*, linkage_method=average
     """
 
-    object_list = list(expression_selector(exprs))
+    object_list = pm.get_object_list(exprs) or []
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, object_list
 
     hs_type = pm.get_property("Type", object_list[0])
@@ -1280,8 +1269,14 @@ class TableWidget(QWidget):
 
         @self.filter_line.textEdited.connect
         def textEdited(expr):
-            self.selected_objs = expression_selector(expr, self.current_tab)
+            sele = self.filter_line.text()
+            self.selected_objs = pm.get_object_list(
+                f"({sele}) & (*.{self.current_tab}*)",
+            )
+            if self.selected_objs is None:
+                self.selected_objs = set()
             self.refresh()
+    
 
         tab = QTabWidget()
         layout.addWidget(tab)
@@ -1311,21 +1306,32 @@ class TableWidget(QWidget):
 
         @tab.currentChanged.connect
         def currentChanged(tab_index):
-            self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
-            expr = self.filter_line.text()
-            self.selected_objs = expression_selector(expr, self.current_tab)
-            self.refresh()
+            self.changeItems(tab_index)
 
         exportButton = QPushButton(QIcon("save"), "Export Tables")
         exportButton.clicked.connect(self.export)
         layout.addWidget(exportButton)
 
+    def changeItems(self, tab_index):
+        self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
+        sele = self.filter_line.text()
+        self.selected_objs = pm.get_object_list(
+            f"({sele}) & (*.{self.current_tab}*)",
+        )
+        if self.selected_objs is None:
+            self.selected_objs = set()
+        self.refresh()
+    
     def showEvent(self, event):
         self.filter_line.textEdited.emit(self.filter_line.text())
         self.refresh()
         super().showEvent(event)
 
     def refresh(self):
+        print(11111111, self.current_tab)
+        print(33333333, self.selected_objs)
+        print(22222222, pm.get_object_list())
+        
         for (title, key), props in self.hotspotsMap.items():
             self.tables[title].setSortingEnabled(False)
 
@@ -1339,8 +1345,6 @@ class TableWidget(QWidget):
                     continue
                 obj_type = pm.get_property("Type", obj)
                 if obj_type == key:
-                    # if len(self.selected_objs) == 0:
-                    #     self.appendRow(title, key, obj)
                     if obj in self.selected_objs:
                         self.appendRow(title, key, obj)
 
@@ -1402,8 +1406,8 @@ class SimilarityWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.hotspotExpressionLine = QLineEdit()
-        boxLayout.addRow("Hotspots:", self.hotspotExpressionLine)
+        self.hotspotSeleLine = QLineEdit()
+        boxLayout.addRow("Hotspots:", self.hotspotSeleLine)
 
         self.annotateCheck = QCheckBox()
         self.annotateCheck.setChecked(True)
@@ -1463,7 +1467,7 @@ class SimilarityWidget(QWidget):
         boxLayout.addWidget(plotButton)
 
     def plot_pairwise(self):
-        expression = self.hotspotExpressionLine.text()
+        sele = self.hotspotSeleLine.text()
         method = self.methodCombo.currentText()
         radius = self.radiusSpin.value()
         align = self.pairwiseSeqAlignCheck.isChecked()
@@ -1473,7 +1477,7 @@ class SimilarityWidget(QWidget):
         annotate = self.annotateCheck.isChecked()
 
         plot_pairwise_hca(
-            expression,
+            sele,
             method,
             radius,
             align,
@@ -1484,14 +1488,14 @@ class SimilarityWidget(QWidget):
         )
 
     def plot_euclidean_hca(self):
-        expression = self.hotspotExpressionLine.text()
+        sele = self.hotspotSeleLine.text()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
         hide_threshold = self.hideThresholdCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
 
         return plot_euclidean_hca(
-            expression,
+            sele,
             linkage_method,
             color_threshold,
             hide_threshold,
@@ -1512,8 +1516,8 @@ class CountWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.exprsLine = QLineEdit()
-        boxLayout.addRow("Expressions:", self.exprsLine)
+        self.multiSeleLine = QLineEdit()
+        boxLayout.addRow("Expressions:", self.multiSeleLine)
 
         self.proteinExpressionLine = QLineEdit()
         boxLayout.addRow("Protein:", self.proteinExpressionLine)
@@ -1542,8 +1546,8 @@ class CountWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.multiExprsLine = QLineEdit("")
-        boxLayout.addRow("Multi expressions:", self.multiExprsLine)
+        self.multiSelesLine = QLineEdit("")
+        boxLayout.addRow("Multi sele:", self.multiSelesLine)
 
         self.siteSelectionLine = QLineEdit("*")
         boxLayout.addRow("Focus site:", self.siteSelectionLine)
@@ -1591,7 +1595,7 @@ class CountWidget(QWidget):
         boxLayout.addWidget(plotButton)
 
     def draw_projection(self):
-        hotspots = self.exprsLine.text()
+        hotspots = self.multiSeleLine.text()
         protein = self.proteinExpressionLine.text()
         radius = self.radiusSpin.value()
         type = self.typeCombo.currentText()
@@ -1600,7 +1604,7 @@ class CountWidget(QWidget):
         hs_proj(hotspots, protein, radius, type, palette)
 
     def plot_fingerprint(self):
-        multi_exprs = self.multiExprsLine.text()
+        multi_seles = self.multiSelesLine.text()
         site = self.siteSelectionLine.text()
         radius = self.radiusSpin.value()
         fingerprints = self.fingerprintsCheck.isChecked()
@@ -1620,7 +1624,7 @@ class CountWidget(QWidget):
             axis_dendrogram = False
 
         fpt_sim(
-            multi_exprs,
+            multi_seles,
             site,
             radius,
             axis_fingerprint=axis_fingerprints,

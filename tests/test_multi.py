@@ -13,14 +13,23 @@ np.random.seed(42)
 pkg_data = os.path.dirname(__file__) + "/data"
 
 
+
 def images_identical(img1_path, img2_path):
-    with open(img1_path) as f1, open(img2_path) as f2:
-        f1 = [l for l in f1.readlines() if "<dc:date>" not in l]
-        f2 = [l for l in f2.readlines() if "<dc:date>" not in l]
-        for l1, l2 in zip(f1, f2):
-            if l1 != l2:
-                return False
-    return True
+    from PIL import ImageChops, Image
+    import io
+    import cairosvg
+
+    def rasterize(svg_path):
+        png_data = cairosvg.svg2png(url=svg_path)
+        return Image.open(io.BytesIO(png_data)).convert("RGB")
+
+    def compare_visual(svg1, svg2):
+        img1 = rasterize(svg1)
+        img2 = rasterize(svg2)
+        diff = ImageChops.difference(img1, img2)
+        return diff.getbbox() is None  # True if identical
+
+    return compare_visual(svg1=img1_path, svg2=img2_path)
 
 
 def test_rmsf():

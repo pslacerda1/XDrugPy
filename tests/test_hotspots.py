@@ -1,5 +1,7 @@
 import os.path
 from pymol import cmd as pm
+import numpy as np
+import matplotlib as mpl
 from xdrugpy.hotspots import (
     load_ftmap,
     eftmap_overlap,
@@ -11,10 +13,6 @@ from xdrugpy.hotspots import (
     res_sim,
     ho,
 )
-from xdrugpy.utils import expression_selector, multiple_expression_selector
-import numpy as np
-import matplotlib as mpl
-
 mpl.use('SVG')
 mpl.rcParams['svg.hashsalt'] = 'fixed_salt_123'
 mpl.rcParams['svg.fonttype'] = 'none'
@@ -50,79 +48,11 @@ def test_eftmap_overlap():
     assert deloc_contacts == 12
 
 
-def test_selector():
-    pm.reinitialize()
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group")
-
-    expr = "*K15_D_* S0<22"
-    assert len(expression_selector(expr, type="K15")) == 4
-
-    expr = "* ST>=34"
-    assert len(expression_selector(expr)) == 2
-
-    expr = "MD<14 S0>=16"
-    assert len(expression_selector(expr, type="K15")) == 1
-
-    expr = "MD<14 S0>=16"
-    assert len(expression_selector(expr, type="CS")) == 0
-
-    expr = "*K15* CD<9 S0>=20"
-    assert len(expression_selector(expr)) == 3
-
-    expr = "*K15_[BD]* S0>=15 S0<=16"
-    assert len(expression_selector(expr)) == 4
-
-    expr = "group.K15_D_00"
-    assert len(expression_selector(expr)) == 1
-
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group_B")
-    expr = "*.K15_D_00"
-    assert len(expression_selector(expr)) == 2
-
-    expr = "ST==20"
-    assert len(expression_selector(expr)) == 2
-
-    expr = "ST=20"
-    assert len(expression_selector(expr)) == 2
-
-    expr = "ST>500"
-    assert len(expression_selector(expr, type="CS")) == 0
-
-    expr = "*.CS* ST>13"
-    assert len(expression_selector(expr, type="K15")) == 0
-
-    pm.reinitialize()
-    load_ftmap([
-            f"{pkg_data}/1dq8_atlas.pdb",
-            f"{pkg_data}/1dq9_atlas.pdb",
-            f"{pkg_data}/1dqa_atlas.pdb",
-        ],
-        groups=['1dq8', '1dq9', '1dqa'],
-        run_fpocket=True
-    )
-    assert len(expression_selector("*K15_*_00 CD<8 / *.fpocket_01")) == 8
-
-
-def test_multiple_selector():
-    pm.reinitialize()
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group")
-    expr = "*K15_D_* S0<22 / ST==20"
-    result = multiple_expression_selector(expr)
-    assert len(result) == 2
-    assert result[0] == ([
-        "group.K15_D_00",
-        "group.K15_D_01",
-        "group.K15_D_02",
-        "group.K15_D_03",
-    ], "*K15_D_* S0<22")
-    assert result[1] == ({'group.CS_00'}, 'ST==20')
-
-
 def test_euclidean_hca():
     pm.reinitialize()
     load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group")
 
-    expr = "*.K15_* S0>=5"
+    expr = "*.K15_* & p.S0>5"
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
 
@@ -186,7 +116,7 @@ def test_fpt():
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
     fpt_sim(
-        "1dq8.K15_* ST>=13 / 1dq9.K15_D_00 / 1dqa.K15_B_00",
+        "1dq8.K15_* p.ST>12 / 1dq9.K15_D_00 / 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
         nbins=50,
         radius=4.0,
