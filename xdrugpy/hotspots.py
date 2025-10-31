@@ -384,21 +384,28 @@ def eval_bekar25_limits(label, ftmap_results):
                 cs16_count += 1
                 break
             elif cs.strength <= 15:
-                break
+                continue
         for k15 in res.kozakov2015:
             if k15.kozakov_class in ["D", "DS", "DL"]:
                 k15d_count += 1
                 break
             elif k15.kozakov_class in ["B", "BS", "BL"]:
-                break
+                continue
     bekar = cs16_count / len(ftmap_results) > 0.7 and k15d_count / len(ftmap_results) > 0.5
-    if bekar:
-        obj = f"_bekar25_{label}"
-        pm.pseudoatom(obj)
-        pm.set_property('Type', 'BC25', obj)
-        pm.set_property('Total', len(ftmap_results), obj)
-        pm.set_property('CS16', cs16_count, obj)
-        pm.set_property('K15D', k15d_count, obj)
+    obj = SimpleNamespace()
+    obj_name = f"_bekar25_{label}"
+    pm.pseudoatom(obj_name)
+    set_properties(
+        obj,
+        obj_name,
+        {
+            'Type': 'BC25',
+            'Total': len(ftmap_results),
+            'CS16': cs16_count,
+            'K15D': k15d_count,
+            'IsBekar': bekar,
+        }
+    )
     return bekar, cs16_count, k15d_count
 
 
@@ -1214,13 +1221,8 @@ class TableWidget(QWidget):
 
         @self.filter_line.textEdited.connect
         def textEdited(expr):
-            sele = self.filter_line.text()
-            self.selected_objs = pm.get_object_list(
-                f"({sele}) & (*.{self.current_tab}*)",
-            )
-            if self.selected_objs is None:
-                self.selected_objs = set()
-            self.refresh()
+            self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab.currentIndex()]
+            self.updateCurrentList()
     
 
         tab = QTabWidget()
@@ -1238,7 +1240,7 @@ class TableWidget(QWidget):
             ],
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],
-            ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D"],
+            ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D", "IsBekar"],
             ("Egbert2019", "E19"): ["Fpocket", "ST", "S0", "S1", "Length"],
             ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
@@ -1259,13 +1261,7 @@ class TableWidget(QWidget):
 
     def changeItems(self, tab_index):
         self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
-        sele = self.filter_line.text()
-        self.selected_objs = pm.get_object_list(
-            f"({sele}) & (*.{self.current_tab}*)",
-        )
-        if self.selected_objs is None:
-            self.selected_objs = set()
-        self.refresh()
+        self.updateCurrentList()
     
     def showEvent(self, event):
         self.filter_line.textEdited.emit(self.filter_line.text())
@@ -1301,6 +1297,18 @@ class TableWidget(QWidget):
             prop_value = pm.get_property(prop, obj)
             self.tables[title].setItem(line, idx + 1, SortableItem(prop_value))
 
+    def updateCurrentList(self):
+        sele = self.filter_line.text()
+        if self.current_tab == "BC25":
+            self.selected_objs = pm.get_object_list(sele)
+        else:
+            self.selected_objs = pm.get_object_list(
+                f"({sele}) & (*.{self.current_tab}*)",
+            )
+        if self.selected_objs is None:
+            self.selected_objs = set()
+        self.refresh()
+    
     def export(self):
         fileDialog = QFileDialog()
         fileDialog.setNameFilter("Excel file (*.xlsx)")
@@ -1312,16 +1320,25 @@ class TableWidget(QWidget):
             filename = fileDialog.selectedFiles()[0]
             ext = os.path.splitext(filename)[1]
             with pd.ExcelWriter(filename) as xlsx_writer:
-                for (title, key), props in self.hotspotsMap.items():
-                    data = {"Object": [], **{p: [] for p in props}}
-                    for header in data:
-                        column = list(data.keys()).index(header)
-                        for line in range(self.tables[title].rowCount()):
-                            item = self.tables[title].item(line, column)
-                            data[header].append(self.parse_item(item))
-                    df = pd.DataFrame(data)
-                    df.to_excel(xlsx_writer, sheet_name=title, index=False)
+                prev_filter_text = self.filter_line.text()
+                prev_tab = self.current_tab
+                self.filter_line.setText("*")
+                try:
+                    for (title, key), props in self.hotspotsMap.items():
+                        data = {"Object": [], **{p: [] for p in props}}
+                        for header in data:
+                            self.current_tab = key
+                            self.updateCurrentList()
 
+                            column = list(data.keys()).index(header)
+                            for line in range(self.tables[title].rowCount()):
+                                item = self.tables[title].item(line, column)
+                                data[header].append(self.parse_item(item))
+                        df = pd.DataFrame(data)
+                        df.to_excel(xlsx_writer, sheet_name=title, index=False)
+                finally:
+                    self.filter_line.setText(prev_filter_text)
+                    self.current_tab = prev_tab
     @staticmethod
     def parse_item(item):
         try:
