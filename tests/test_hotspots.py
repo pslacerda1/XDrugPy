@@ -4,14 +4,14 @@ import numpy as np
 import matplotlib as mpl
 from xdrugpy.hotspots import (
     load_ftmap,
-    eftmap_overlap,
-    _eftmap_overlap_get_aromatic,
     plot_euclidean_hca,
     plot_pairwise_hca,
     HeatmapFunction,
     fpt_sim,
     res_sim,
     ho,
+    fo,
+    dce,
 )
 mpl.use('SVG')
 mpl.rcParams['svg.hashsalt'] = 'fixed_salt_123'
@@ -36,16 +36,6 @@ def images_identical(img1_path, img2_path):
         return diff.getbbox() is None  # True if identical
 
     return compare_visual(svg1=img1_path, svg2=img2_path)
-
-
-def test_eftmap_overlap():
-    pm.reinitialize()
-    load_ftmap(f"{pkg_data}/p38_1R39.pdb")
-    deloc_xyz = _eftmap_overlap_get_aromatic("ligand")
-    assert deloc_xyz.shape == (17, 3)
-
-    deloc_contacts = eftmap_overlap("ligand", "p38_1R39.ACS_aromatic_*")
-    assert deloc_contacts == 12
 
 
 def test_euclidean_hca():
@@ -102,6 +92,14 @@ def test_ho():
     assert ho('1dq9.K15_D_00', '1dq8.K15_D_00') == 1.0
 
 
+def test_fo_and_dce():
+    pm.reinitialize()
+    pm.fetch('1OD')
+    pm.fetch('NH2')
+    assert fo("%NH2", "%1OD", radius=3.0) == 1.0
+    assert round(dce("%NH2", "%1OD", radius=3.0), 2) == 7.67
+
+
 def test_fpt():
     pm.reinitialize()
 
@@ -126,6 +124,8 @@ def test_fpt():
 
     assert images_identical(img_ref1, img_gen1)
     assert images_identical(img_ref2, img_gen2)
+
+    
 
 
 def test_res_sim():

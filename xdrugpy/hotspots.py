@@ -853,61 +853,6 @@ def res_sim(
     return ret
 
 
-class EFtmapOverlapType(StrEnum):
-    donor = "donor"
-    acceptor = "acceptor"
-    apolar = "apolar"
-    aromatic = "aromatic"
-
-
-def _eftmap_overlap_get_aromatic(lig):
-    lig_model = pm.get_model(lig)
-    aromatic = set()
-    for bond in lig_model.bond:
-        if bond.order == 4:  # This is how ChemPy detect aromatic bonds
-            aromatic.update(bond.index)
-    xyz = []
-    for idx in aromatic:
-        atom = lig_model.atom[idx]
-        xyz.append(atom.coord)
-    return np.array(xyz)
-
-
-def _eftmap_overlap_get_donor(lig):
-    return pm.get_coords(f"({lig}) and donor")
-
-
-def _eftmap_overlap_get_acceptor(lig):
-    return pm.get_coords(f"({lig}) and acceptor")
-
-
-def _eftmap_overlap_get_apolar(lig):
-    return pm.get_coords(f"({lig}) and elem C")
-
-
-def _eftmap_overlap_get_halogen(lig):
-    return pm.get_coords(f"({lig}) and elem F+Br+Cl+I")
-
-
-def eftmap_overlap(lig, hs, radius=2):
-    if ".ACS_donor_" in hs:
-        lig_xyz = _eftmap_overlap_get_donor(lig)
-    elif ".ACS_acceptor_" in hs:
-        lig_xyz = _eftmap_overlap_get_acceptor(lig)
-    elif ".ACS_apolar_" in hs:
-        lig_xyz = _eftmap_overlap_get_apolar(lig)
-    elif ".ACS_halogen" in hs:
-        lig_xyz = _eftmap_overlap_get_halogen(lig)
-    elif ".ACS_aromatic" in hs:
-        lig_xyz = _eftmap_overlap_get_aromatic(lig)
-    else:
-        raise RuntimeError(f"Unknown hotspot type: {hs}")
-    hs_xyz = pm.get_coords(hs)
-    dist = distance_matrix(lig_xyz, hs_xyz)
-    contacts = np.any(dist - radius <= 0, axis=1)
-    return np.sum(contacts)
-
-
 class HeatmapFunction(StrEnum):
     HO = "ho"
     RESIDUE_JACCARD = "residue_jaccard"
@@ -1507,7 +1452,7 @@ class CountWidget(QWidget):
         layout = QHBoxLayout()
         self.setLayout(layout)
 
-        groupBox = QGroupBox("Residue projection")
+        groupBox = QGroupBox("Color projection")
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
