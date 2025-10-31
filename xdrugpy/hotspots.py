@@ -655,10 +655,9 @@ def fpt_sim(
     ref_polymer = polymers[0]
     polymers = {p: True for p in polymers}  # ordered set
 
-    # Do the alignmnet
-    ref_sele = f"{ref_polymer} within {radius} from ({site})"
+    ref_sele = f"{ref_polymer} and ({ref_polymer} within {radius} of ({site}))"
     mappings = np.empty((0, 8))
-    for at in pm.get_model(ref_sele + ' & name CA').atom:
+    for at in pm.get_model(f"({ref_sele}) & name CA").atom:
         res = get_residue_from_object(at.model, at.index)
         mappings = np.vstack([mappings, res])
     for polymer in polymers:
@@ -675,6 +674,7 @@ def fpt_sim(
             aln = pm.get_raw_alignment(aln_obj)
         finally:
             pm.delete(aln_obj)
+            pass
         for (obj1, idx1), (obj2, idx2) in aln:
             res = get_residue_from_object(obj2, idx2)
             mappings = np.vstack([mappings, res])
