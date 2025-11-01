@@ -119,7 +119,7 @@ def test_fpt():
         nbins=50,
         radius=4.0,
         axis_fingerprint=img_gen1,
-        axis_dendrogram=img_gen2,
+        axis_hca=img_gen2,
     )
 
     assert images_identical(img_ref1, img_gen1)

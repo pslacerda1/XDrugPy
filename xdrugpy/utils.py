@@ -2,25 +2,24 @@ import itertools
 import subprocess
 import os
 import atexit
-import re
-import numpy as np
-import pandas as pd
+import sys
 import scipy.cluster.hierarchy as sch
 from collections import namedtuple, defaultdict
 from shutil import rmtree
 from tempfile import mkdtemp
-from fnmatch import fnmatch
-from textwrap import dedent
 from pymol import Qt, cmd as pm, parsing
-from os.path import exists
 from contextlib import contextmanager
 from pathlib import Path
 from matplotlib.axes import Axes
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, axes
 from scipy.spatial import distance
 from scipy.cluster.hierarchy import linkage
 from collections import namedtuple
 from functools import lru_cache
+from rich.console import Console
+from rich.traceback import Traceback
+from rich import terminal_theme
+
 
 QStandardPaths = Qt.QtCore.QStandardPaths
 
@@ -128,7 +127,10 @@ def declare_command(name, function=None, _self=pm):
                 kwargs[arg] = funcs[arg](kwargs[arg])
             return function(**kwargs)
         else:
-            return function(*args, **kwargs)
+            try:
+                return function(*args, **kwargs)
+            except Exception:
+                display_exception()
 
     name = function.__name__
     _self.keyword[name] = [inner, 0, 0, ",", parsing.STRICT]
@@ -155,8 +157,8 @@ def mpl_axis(ax, **kwargs):
 
 @declare_command
 def align_groups(
-    mobile_groups: Selection,
     target: Selection,
+    mobile_groups: Selection,
 ):
     for mobile in mobile_groups.split():
         pm.cealign(f"{mobile}.protein", f"{target}.protein")
@@ -167,7 +169,13 @@ def align_groups(
 
 
 def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold, annotate, axis):
-    fig = plt.figure(constrained_layout=True)
+    if isinstance(axis, axes.Axes):
+        fig = axis.get_figure()
+        fig.clear()
+    else:
+        fig, ax= plt.subplots(constrained_layout=True)
+        ax.remove()
+    
     gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
     ax_dend_top = fig.add_subplot(gs[0])
     ax_heat = fig.add_subplot(gs[1])
@@ -272,9 +280,9 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
                 label.set_visible(False)
     
     if not axis:
-        plt.show()
+        fig.show()
     elif isinstance(axis, (str, Path)):
-        plt.savefig(axis)
+        fig.savefig(axis)
     return dendro, medoids
 
 
@@ -289,3 +297,62 @@ def get_residue_from_object(obj, idx):
     )
     return res[0]
 
+
+
+from pymol import Qt
+
+QWidget = Qt.QtWidgets.QWidget
+QFileDialog = Qt.QtWidgets.QFileDialog
+QFormLayout = Qt.QtWidgets.QFormLayout
+QPushButton = Qt.QtWidgets.QPushButton
+QSpinBox = Qt.QtWidgets.QSpinBox
+QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
+QLineEdit = Qt.QtWidgets.QLineEdit
+QCheckBox = Qt.QtWidgets.QCheckBox
+QVBoxLayout = Qt.QtWidgets.QVBoxLayout
+QHBoxLayout = Qt.QtWidgets.QHBoxLayout
+QDialog = Qt.QtWidgets.QDialog
+QComboBox = Qt.QtWidgets.QComboBox
+QTabWidget = Qt.QtWidgets.QTabWidget
+QLabel = Qt.QtWidgets.QLabel
+QTableWidget = Qt.QtWidgets.QTableWidget
+QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
+QGroupBox = Qt.QtWidgets.QGroupBox
+QHeaderView = Qt.QtWidgets.QHeaderView
+QTextEdit = Qt.QtWidgets.QTextEdit
+
+QtCore = Qt.QtCore
+QIcon = Qt.QtGui.QIcon
+QTextCursor = Qt.QtGui.QTextCursor
+
+def display_exception():
+    dialog = QDialog()
+    dialog.setWindowTitle("Error Display")
+    dialog.setGeometry(100, 100, 900, 700)
+    dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+
+    layout = QVBoxLayout(dialog)
+    
+    text_edit = QTextEdit()
+    layout.addWidget(text_edit)
+    
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    
+    traceback_obj = Traceback.from_exception(
+        exc_type, exc_value, exc_traceback,
+        show_locals=True  # Shows local variables
+    )
+    console = Console(record=True, width=120, tab_size=4)
+    console.print(traceback_obj)
+    
+    # Export to HTML with inline styles
+    html = console.export_html(
+        inline_styles=True,
+        code_format="<pre>{code}</pre>",
+        theme=terminal_theme.NIGHT_OWLISH
+    )
+    text_edit.setHtml(html)
+    text_edit.setReadOnly(True)
+    text_edit.moveCursor(QTextCursor.End)
+
+    dialog.exec_()

@@ -629,7 +629,7 @@ def fpt_sim(
     hide_threshold: bool = False,
     annotate: bool = True,
     axis_fingerprint: str = "",
-    axis_dendrogram: str = "",
+    axis_hca: str = "",
     quiet: int = True,
 ):
     """
@@ -681,7 +681,6 @@ def fpt_sim(
             aln = pm.get_raw_alignment(aln_obj)
         finally:
             pm.delete(aln_obj)
-            pass
         for (obj1, idx1), (obj2, idx2) in aln:
             res = get_residue_from_object(obj2, idx2)
             mappings = np.vstack([mappings, res])
@@ -690,7 +689,8 @@ def fpt_sim(
     fpts = []
     for hs in seles:
         fpt = {}
-        @mappings.groupby(["chain", "resi"], as_index=False).apply
+        columns = ["chain", "resi", "model", "index", "oneletter"]
+        @(mappings.groupby(["chain", "resi"], as_index=False)[columns]).apply
         def apply(group):
             for idx, row in group.iterrows():
                 lbl = (row.oneletter, row.resi, row.chain)
@@ -701,33 +701,33 @@ def fpt_sim(
                 break
         fpts.append(fpt)
     
-    if axis_fingerprint is not False:
-        with mpl_axis(
-            axis_fingerprint, nrows=len(seles), sharex=True, constrained_layout=True
-        ) as axs:
-            fpt0 = fpts[0]
-            if not all([len(fpt0) == len(fpt) for fpt in fpts]):
-                raise ValueError(
-                    "All fingerprints must have the same length. "
-                    "Do you have incomplete structures?"
-                )
-            if not isinstance(axs, (np.ndarray, list)):
-                axs = [axs]
-            for ax, fpt, sele in zip(axs, fpts, seles):
-                labels = ["%s %s:%s" % k for k in fpt]
-                arange = np.arange(len(fpt))
-                ax.bar(arange, fpt.values(), color="C0")
-                ax.set_title(sele)
-                ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-                ax.set_xticks(arange, labels=labels, rotation=90)
-                ax.locator_params(axis="x", tight=True, nbins=nbins)
-                for label in ax.xaxis.get_majorticklabels():
-                    label.set_verticalalignment("top")
+    with mpl_axis(
+        axis_fingerprint, nrows=len(seles), sharex=True, constrained_layout=True
+    ) as axs:
+        fpt0 = fpts[0]
+        if not all([len(fpt0) == len(fpt) for fpt in fpts]):
+            raise ValueError(
+                "All fingerprints must have the same length. "
+                "Do you have incomplete structures?"
+            )
+        if not isinstance(axs, (np.ndarray, list)):
+            axs = [axs]
+        for ax, fpt, sele in zip(axs, fpts, seles):
+            labels = ["%s %s:%s" % k for k in fpt]
+            arange = np.arange(len(fpt))
+            ax.bar(arange, fpt.values(), color="C0")
+            ax.set_title(sele)
+            ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+            ax.set_xticks(arange, labels=labels, rotation=90)
+            ax.locator_params(axis="x", tight=True, nbins=nbins)
+            for label in ax.xaxis.get_majorticklabels():
+                label.set_verticalalignment("top")
 
     corrs = []
     labels = []
-    if axis_dendrogram is not False:
-        with mpl_axis(axis_dendrogram, sharex=True, constrained_layout=True) as ax:
+    if axis_hca is not False:
+        assert len(fpts) > 1, "HCA requires multiple fingerprints, please add more selections."
+        with mpl_axis(axis_hca, sharex=True, constrained_layout=True) as ax:
             for i1, (fp1, sele1) in enumerate(zip(fpts, seles)):
                 labels.append(sele1)
                 for i2, (fp2, sele2) in enumerate(zip(fpts, seles)):
@@ -895,6 +895,8 @@ def plot_pairwise_hca(
 
     
     objects = pm.get_object_list(sele)
+    assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
+
     X = []
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
@@ -995,8 +997,9 @@ def plot_euclidean_hca(
         plot_similarity *.K15_D_* *.K15_DS_*, linkage_method=average
     """
 
-    object_list = pm.get_object_list(exprs) or []
-    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, object_list
+    object_list = pm.get_object_list(exprs)
+    assert object_list is not None and len(object_list) >= 2, "At least two hotspots are required for comparison."
+    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots of the same type are allowed in the euclidean HCA."
 
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "K15":
@@ -1524,21 +1527,36 @@ class CountWidget(QWidget):
         self.nBinsSpin.setMaximum(500)
         boxLayout.addRow("Fingerprint bins:", self.nBinsSpin)
 
+
         self.fingerprintsCheck = QCheckBox()
         self.fingerprintsCheck.setChecked(True)
         boxLayout.addRow("Fingerprints:", self.fingerprintsCheck)
 
-        self.dendrogramCheck = QCheckBox()
-        self.dendrogramCheck.setChecked(False)
-        boxLayout.addRow("Dendrogram:", self.dendrogramCheck)
+        self.hcaCheck = QCheckBox()
+        self.hcaCheck.setChecked(False)
+
+        boxLayout.addRow("HCA:", self.hcaCheck)
+        @self.hcaCheck.stateChanged.connect
+        def stateChanged(checkState):
+            if checkState == QtCore.Qt.Checked:
+                hcaBox.setEnabled(True)
+            else:
+                hcaBox.setEnabled(False)
+
+        hcaBox = QGroupBox()
+        boxLayout.addRow(hcaBox)
+        boxLayout.setWidget(boxLayout.rowCount(), QFormLayout.SpanningRole, hcaBox)
+        hcaLayout = QFormLayout()
+        hcaBox.setLayout(hcaLayout)
+        hcaBox.setEnabled(False)
 
         self.annotateCheck = QCheckBox()
         self.annotateCheck.setChecked(True)
-        boxLayout.addRow("Annotate:", self.annotateCheck)
+        hcaLayout.addRow("Annotate:", self.annotateCheck)
 
         self.linkageMethodCombo = QComboBox()
         self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
-        boxLayout.addRow("Linkage:", self.linkageMethodCombo)
+        hcaLayout.addRow("Linkage:", self.linkageMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
         self.colorThresholdSpin.setMinimum(0)
@@ -1546,8 +1564,12 @@ class CountWidget(QWidget):
         self.colorThresholdSpin.setValue(0)
         self.colorThresholdSpin.setSingleStep(0.1)
         self.colorThresholdSpin.setDecimals(2)
-        boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
+        hcaLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
+        self.hideThresholdCheck = QCheckBox()
+        self.hideThresholdCheck.setChecked(False)
+        hcaLayout.addRow("Hide threshold:", self.hideThresholdCheck)
+        
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_fingerprint)
         boxLayout.addWidget(plotButton)
@@ -1565,32 +1587,28 @@ class CountWidget(QWidget):
         multi_seles = self.multiSelesLine.text()
         site = self.siteSelectionLine.text()
         radius = self.radiusSpin.value()
-        fingerprints = self.fingerprintsCheck.isChecked()
-        dendrogram = self.dendrogramCheck.isChecked()
+        hca = self.hcaCheck.isChecked()
         nbins = self.nBinsSpin.value()
+        annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
-        annotate = self.annotateCheck.isChecked()
-
-        if fingerprints:
-            axis_fingerprints = ""
+        hide_threshold = self.hideThresholdCheck.isChecked()
+        if hca:
+            axis_hca = ""
         else:
-            axis_fingerprints = False
-        if dendrogram:
-            axis_dendrogram = ""
-        else:
-            axis_dendrogram = False
+            axis_hca = False
 
         fpt_sim(
             multi_seles,
             site,
             radius,
-            axis_fingerprint=axis_fingerprints,
-            axis_dendrogram=axis_dendrogram,
+            axis_fingerprint="",
+            axis_hca=axis_hca,
             nbins=nbins,
             annotate=annotate,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
+            hide_threshold=hide_threshold,
         )
 
 
