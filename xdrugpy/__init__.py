@@ -53,12 +53,12 @@ def install_pip_packages():
     # INSTALL MORE REQUIREMENTS
     #
     try:
-        import scrubber, meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel, rcsbapi
+        import scrubber, meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel, rcsbapi, rich
 
     except ImportError:
         run_system(
             "pip install"
-            " lxml pandas openpyxl seaborn scipy matplotlib strenum openbabel-wheel rcsb-api"
+            " lxml pandas openpyxl seaborn scipy matplotlib strenum openbabel-wheel rcsb-api rich"
             " https://github.com/pslacerda/molscrub/archive/refs/heads/windows.exe.zip"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
