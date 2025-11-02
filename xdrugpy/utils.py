@@ -3,6 +3,7 @@ import subprocess
 import os
 import atexit
 import sys
+import io
 import scipy.cluster.hierarchy as sch
 from collections import namedtuple, defaultdict
 from shutil import rmtree
@@ -92,7 +93,7 @@ def declare_command(name, function=None, _self=pm):
         name, function = name.__name__, name
 
     if function.__code__.co_argcount != len(function.__annotations__):
-        raise Exception("Messy annotations")
+        raise Exception("All command options must be annotated.")
     from functools import wraps
     import inspect
     from pathlib import Path
@@ -131,6 +132,7 @@ def declare_command(name, function=None, _self=pm):
                 return function(*args, **kwargs)
             except Exception:
                 display_exception()
+                raise
 
     name = function.__name__
     _self.keyword[name] = [inner, 0, 0, ",", parsing.STRICT]
@@ -173,7 +175,7 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
         fig = axis.get_figure()
         fig.clear()
     else:
-        fig, ax= plt.subplots(constrained_layout=True)
+        fig, ax = plt.subplots(constrained_layout=True)
         ax.remove()
     
     gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
@@ -286,7 +288,7 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
     return dendro, medoids
 
 
-@lru_cache(999999999)
+@lru_cache(25000)
 def get_residue_from_object(obj, idx):
     res = []
     pm.iterate_state(
@@ -325,34 +327,50 @@ QtCore = Qt.QtCore
 QIcon = Qt.QtGui.QIcon
 QTextCursor = Qt.QtGui.QTextCursor
 
+
 def display_exception():
-    dialog = QDialog()
-    dialog.setWindowTitle("Error Display")
-    dialog.setGeometry(100, 100, 900, 700)
-    dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+    """Display exception with Rich formatting on GUI."""
+    
+    if pm.gui.get_qtwindow():
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        traceback = Traceback.from_exception(
+            exc_type,
+            exc_value, 
+            exc_traceback,
+            show_locals=True,
+            width=120,
+            extra_lines=3,
+            word_wrap=True,
+        )
+        console = Console(
+            record=True,
+            file=io.StringIO(),  # null handler
+            width=120,
+            tab_size=4,
+        )
+        console.print(traceback)
 
-    layout = QVBoxLayout(dialog)
     
-    text_edit = QTextEdit()
-    layout.addWidget(text_edit)
-    
-    exc_type, exc_value, exc_traceback = sys.exc_info()
-    
-    traceback_obj = Traceback.from_exception(
-        exc_type, exc_value, exc_traceback,
-        show_locals=True  # Shows local variables
-    )
-    console = Console(record=True, width=120, tab_size=4)
-    console.print(traceback_obj)
-    
-    # Export to HTML with inline styles
-    html = console.export_html(
-        inline_styles=True,
-        code_format="<pre>{code}</pre>",
-        theme=terminal_theme.NIGHT_OWLISH
-    )
-    text_edit.setHtml(html)
-    text_edit.setReadOnly(True)
-    text_edit.moveCursor(QTextCursor.End)
+        dialog = QDialog()
+        dialog.setWindowTitle("Error Display")
+        dialog.setGeometry(100, 100, 900, 700)
+        dialog.setWindowModality(QtCore.Qt.ApplicationModal)
 
-    dialog.exec_()
+        layout = QVBoxLayout(dialog)
+        
+        text_edit = QTextEdit()
+        layout.addWidget(text_edit)
+        
+        # Export to HTML with inline styles
+        html = console.export_html(
+            inline_styles=True,
+            code_format="<pre>{code}</pre>",
+            theme=terminal_theme.NIGHT_OWLISH
+        )
+        text_edit.setHtml(html)
+        text_edit.setReadOnly(True)
+        text_edit.moveCursor(QTextCursor.End)
+
+        dialog.exec_()
+    else:
+        raise
