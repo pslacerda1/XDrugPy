@@ -393,7 +393,7 @@ def eval_bekar25_limits(label, ftmap_results):
                 continue
     bekar = cs16_count / len(ftmap_results) > 0.7 and k15d_count / len(ftmap_results) > 0.5
     obj = SimpleNamespace()
-    obj_name = f"_bekar25_{label}"
+    obj_name = f"_BC25_{label}"
     pm.pseudoatom(obj_name)
     set_properties(
         obj,
