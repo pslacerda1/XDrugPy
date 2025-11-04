@@ -81,12 +81,8 @@ def get_kozakov2015(group, clusters, max_length):
     k15 = []
     for length in range(max_length, 1, -1):
         for combination in combinations(clusters, length):
-            cd = []
-            cluster1 = combination[0]
-            avg1 = np.average(cluster1.coords, axis=0)
-            for cluster2 in combination:
-                avg2 = np.average(cluster2.coords, axis=0)
-                cd.append(distance.euclidean(avg1, avg2))
+            averages = [np.average(c.coords, axis=0) for c in combination]
+            cd = [distance.euclidean(averages[0], avg) for avg in averages]
 
             coords = np.concatenate([c.coords for c in combination])
             max_coord = coords.max(axis=0)
@@ -341,9 +337,9 @@ def load_ftmap(
         if isinstance(filenames, (str, Path)):
             filenames = [filenames]
             groups = [groups]
-            conv = True
+            single = True
         else:
-            conv = False
+            single = False
         rets = []
         if isinstance(groups, (tuple, list)):
             iterable = zip(filenames, groups)
@@ -356,7 +352,7 @@ def load_ftmap(
                 rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
             except:
                 rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
-        if conv:
+        if single:
             return rets[0]
         else:
             ftmap = FtmapResults()

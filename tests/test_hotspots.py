@@ -146,8 +146,8 @@ def test_bekar_cesaretli_2025():
     assert ftmap.bekar25
     assert ftmap.k15d_count == 2
     assert ftmap.cs16_count == 2
-    assert 'BC25' == pm.get_property('Type', '_bekar25_MyObject')
-    assert pm.get_property('IsBekar', '_bekar25_MyObject') == True
+    assert 'BC25' == pm.get_property('Type', '_BC25_MyObject')
+    assert pm.get_property('IsBekar', '_BC25_MyObject') == True
 
     pm.reinitialize()
     ftmap = load_ftmap([
@@ -159,5 +159,5 @@ def test_bekar_cesaretli_2025():
     assert not ftmap.bekar25
     assert ftmap.k15d_count == 1
     assert ftmap.cs16_count == 2
-    assert '_bekar25_MyObject' in pm.get_object_list()
-    assert pm.get_property('IsBekar', '_bekar25_MyObject') == False
+    assert '_BC25_MyObject' in pm.get_object_list()
+    assert pm.get_property('IsBekar', '_BC25_MyObject') == False
