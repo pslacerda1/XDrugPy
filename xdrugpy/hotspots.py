@@ -292,7 +292,7 @@ def get_kozakov2015_large(group, fpo_list, clusters):
         if 13 <= s0 < 16 and cd >= 8 and md >= 10 and sz >= 5:
             new_name = f"{group}.K15_BL_{idx:02}"
             klass = "BL"
-        if s0 >= 16 and cd >= 8 and md >= 10 and sz >= 5:
+        elif s0 >= 16 and cd >= 8 and md >= 10 and sz >= 5:
             new_name = f"{group}.K15_DL_{idx:02}"
             klass = "DL"
         else:
