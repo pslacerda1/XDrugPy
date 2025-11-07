@@ -411,6 +411,10 @@ class VinaThreadDialog(QDialog):
         self.vina.finished.connect(self._finished)
         self.is_finished = False
         
+        self.timeout_timer = QtCore.QTimer()
+        self.timeout_timer.setSingleShot(True)
+        self.timeout_timer.start(5000)
+
         # Setup window
         self.setModal(True)
         self.resize(QDesktopWidget().availableGeometry(self).size() * 0.7)
@@ -427,12 +431,14 @@ class VinaThreadDialog(QDialog):
         @self.vina.numSteps.connect
         def numSteps(x):
             self.progress.setMaximum(x)
-            # Reset timer when progress updates
 
         @self.vina.setStep.connect
         def setStep(x):
             self.progress.setValue(x)
             # Reset timer when progress updates
+            if self.timeout_timer.isActive():
+                self.timeout_timer.stop()
+            self.timeout_timer.start(5 * 1000)
 
         # Rich text output
         self.text = QTextEdit(self)
@@ -462,6 +468,8 @@ class VinaThreadDialog(QDialog):
 
     def _finished(self, status=False):
         self.is_finished = True
+        self.timeout_timer.stop()
+
         ok_button = self.button_box.button(QDialogButtonBox.Ok)
         abort_button = self.button_box.button(QDialogButtonBox.Abort)
         ok_button.setDisabled(False)
@@ -470,11 +478,10 @@ class VinaThreadDialog(QDialog):
     def _ok(self):
         if hasattr(self.vina, 'engine') and self.vina.engine:
             self.vina.engine.stop()
-            self.vina.engine.timer.stop()
+        self.timeout_timer.stop()
         self.accept()
 
     def _abort(self):
-        
         reply = QMessageBox.warning(
             self,
             "Abort",
@@ -487,13 +494,12 @@ class VinaThreadDialog(QDialog):
             # Check if engine exists before trying to stop it
             if hasattr(self.vina, 'engine') and self.vina.engine:
                 self.vina.engine.stop()
-                self.vina.engine.timer.stop()
-                self.reject()
+            self.timeout_timer.stop()
+            self.reject()
         else:
             # User wants to continue, restart timer if it exists
-            if hasattr(self.vina, 'engine') and self.vina.engine:
-                self.vina.engine.timer.stop()
-                self.vina.engine.timer.start(self.vina.engine.timeout * 1000)
+            self.timeout_timer.stop()
+            self.timeout_timer.start(5 * 1000)
         
 
     def keyPressEvent(self, evt):
@@ -780,10 +786,8 @@ class VinaDockingEngine(DockingEngine):
         energy_range: float = 3.0,
         cpu: int = 1,
         seed: int = 42,
-        timeout: float = 5.0,
         continuation: bool = False,
     ) -> bool:
-        self.timeout = timeout
         if continuation:
             self.log_html(
                 f"""
@@ -887,8 +891,6 @@ class VinaDockingEngine(DockingEngine):
                             Path(event.src_path).unlink()
                             self.processed_files.add(ligand_name)
                             self.engine.increment_step(1)
-                            self.engine.timer.stop()
-                            self.engine.timer.start(self.engine.timeout*1000)
                         except Exception as exc:
                             print(f"Error moving file: {exc}")
         
@@ -896,31 +898,6 @@ class VinaDockingEngine(DockingEngine):
         observer = Observer()
         observer.schedule(event_handler, str(self.results_dir))
         observer.start()
-
-        self.timer = QtCore.QTimer()
-        self.timer.setSingleShot(True)
-        self.timer.start(self.timeout * 1000)
-        
-        @self.timer.timeout.connect
-        def _on_timeout(self):
-            """Handle timeout event"""
-            
-            reply = QMessageBox.warning(
-                self,
-                "Timeout",
-                f"The operation has timed out after {self.timeout} seconds of inactivity.\n\nDo you want to stop the process?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-            
-            if reply == QMessageBox.Yes:
-                self.timer.stop()
-                self.stop()
-            else:
-                # User wants to continue, restart timer
-                self.timer.stop()
-                self.timer.start(self.timeout * 1000)
-        
 
         self._current_observer = observer
         self._current_handler = event_handler
@@ -962,7 +939,6 @@ class VinaDockingEngine(DockingEngine):
                 <br/><b>Docking finished.</b>
                 """
             )
-            self.timer.stop()
             if not success:
                 self.log_html(
                     f"""
@@ -1288,10 +1264,6 @@ def new_run_docking_widget():
             tab_ligand.setEnabled(True)
             options_group.setEnabled(True)
 
-    vina_timeout_spin = QSpinBox()
-    vina_timeout_spin.setRange(0, 50)
-    vina_timeout_spin.setValue(5)
-
     project_dir = None
     results_button = QPushButton("Choose folder...", form_widget)
 
@@ -1334,10 +1306,7 @@ def new_run_docking_widget():
             engine = VinaDockingEngine(project_dir, manager)
             manager.engine = engine
             if continuation_check.isChecked():
-                engine.run_docking(
-                    timeout=vina_timeout_spin.value(),
-                    continuation=True
-                )
+                engine.run_docking(continuation=True)
             else:
                 #
                 # Handle receptor
@@ -1384,7 +1353,6 @@ def new_run_docking_widget():
                     energy_range=energy_range_spin.value(),
                     cpu=cpu_spin.value(),
                     seed=seed_spin.value(),
-                    timeout=vina_timeout_spin.value(),
                     continuation=False
                 )
 
@@ -1416,7 +1384,6 @@ def new_run_docking_widget():
     form_layout.setWidget(6, QFormLayout.SpanningRole, horizontal_line3)
 
     form_layout.addRow("Continuation:", continuation_check)
-    form_layout.addRow("Vina timeout:", vina_timeout_spin)
     form_layout.addRow("Output folder:", results_button)
     form_layout.addWidget(button)
     form_widget.setLayout(form_layout)
