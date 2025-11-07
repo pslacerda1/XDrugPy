@@ -4,13 +4,14 @@ from os.path import (
     splitext,
     basename,
 )
-from time import sleep
 from glob import glob
+import subprocess
 import itertools
 from operator import itemgetter
 import shutil
 import textwrap
 import json
+import sys
 from collections import Counter, OrderedDict
 from unittest.mock import MagicMock
 
@@ -21,12 +22,16 @@ from pymol.cgo import CYLINDER, SPHERE, COLOR
 from pymol import Qt
 import numpy as np
 import pandas as pd
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
 
 from .utils import (
     LIGAND_LIBRARIES_DIR,
     run,
     RECEPTOR_LIBRARIES_DIR,
     LIGAND_LIBRARIES_DIR,
+    kill_process,
 )
 
 QObject = Qt.QtCore.QObject
@@ -54,6 +59,7 @@ QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
 QHeaderView = Qt.QtWidgets.QHeaderView
 QFrame = Qt.QtWidgets.QFrame
 QDialogButtonBox = Qt.QtWidgets.QDialogButtonBox
+QMessageBox = Qt.QtWidgets.QMessageBox
 
 LeftDockWidgetArea = Qt.QtCore.Qt.LeftDockWidgetArea
 QtCore = Qt.QtCore
@@ -403,7 +409,8 @@ class VinaThreadDialog(QDialog):
         super().__init__(parent)
         self.vina = VinaThread(run_function)
         self.vina.finished.connect(self._finished)
-
+        self.is_finished = False
+        
         # Setup window
         self.setModal(True)
         self.resize(QDesktopWidget().availableGeometry(self).size() * 0.7)
@@ -420,10 +427,12 @@ class VinaThreadDialog(QDialog):
         @self.vina.numSteps.connect
         def numSteps(x):
             self.progress.setMaximum(x)
+            # Reset timer when progress updates
 
         @self.vina.setStep.connect
         def setStep(x):
             self.progress.setValue(x)
+            # Reset timer when progress updates
 
         # Rich text output
         self.text = QTextEdit(self)
@@ -443,11 +452,6 @@ class VinaThreadDialog(QDialog):
         # Start docking
         self.vina.start()
 
-        @self.vina.vinaStarted.connect
-        def vinaStarted():
-            # TODO start signal
-            pass
-
     def _appendHtml(self, html):
         self.text.moveCursor(QTextCursor.End)
         self.text.insertHtml(self._prepareHtml(html))
@@ -457,21 +461,52 @@ class VinaThreadDialog(QDialog):
         self.text.insertHtml("<pre>" + self._prepareHtml(html) + "</pre>")
 
     def _finished(self, status=False):
+        self.is_finished = True
         ok_button = self.button_box.button(QDialogButtonBox.Ok)
         abort_button = self.button_box.button(QDialogButtonBox.Abort)
-
         ok_button.setDisabled(False)
         abort_button.setDisabled(True)
 
     def _ok(self):
+        if hasattr(self.vina, 'engine') and self.vina.engine:
+            self.vina.engine.stop()
+            self.vina.engine.timer.stop()
         self.accept()
 
     def _abort(self):
-        self.reject()
+        
+        reply = QMessageBox.warning(
+            self,
+            "Abort",
+            f"Are you sure you want to stop the process?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Check if engine exists before trying to stop it
+            if hasattr(self.vina, 'engine') and self.vina.engine:
+                self.vina.engine.stop()
+                self.vina.engine.timer.stop()
+                self.reject()
+        else:
+            # User wants to continue, restart timer if it exists
+            if hasattr(self.vina, 'engine') and self.vina.engine:
+                self.vina.engine.timer.stop()
+                self.vina.engine.timer.start(self.vina.engine.timeout * 1000)
+        
+
+    def keyPressEvent(self, evt):
+        """Handle ESC key press"""
+        if evt.key() == QtCore.Qt.Key_Escape:
+            evt.ignore()
+        else:
+            super().keyPressEvent(evt)
 
     @staticmethod
     def _prepareHtml(html):
         return textwrap.dedent(html)
+
 
 
 #
@@ -500,7 +535,7 @@ class DockingEngine:
                     <font color="red">
                         <b>The docking folder is not empty:</b> '{self.project_dir}'
                     </font>
-                """
+                    """
                 )
         else:
             self.log_html(
@@ -745,8 +780,10 @@ class VinaDockingEngine(DockingEngine):
         energy_range: float = 3.0,
         cpu: int = 1,
         seed: int = 42,
+        timeout: float = 5.0,
         continuation: bool = False,
     ) -> bool:
+        self.timeout = timeout
         if continuation:
             self.log_html(
                 f"""
@@ -784,91 +821,198 @@ class VinaDockingEngine(DockingEngine):
             <br/><b>Command:</b> {vina_command}
         """
         )
-        #
-        # Clean up the queue directory
-        #
-        that = self
 
-        class WorkerJanitor(QObject):
-            finished = pyqtSignal()
-
-            def __init__(self):
+        class DockingProgressHandler(FileSystemEventHandler):
+            def __init__(self, engine, queue_dir, results_dir):
                 super().__init__()
-                self._running = True
+                self.engine = engine
+                self.queue_dir = Path(queue_dir)
+                self.results_dir = Path(results_dir)
+                self.processed_files = set()
+                self._stopped = False
+                self.ensure_integrity()        
 
-            def run(self):
-                try:
-                    while self._running:
-                        sleep(0.5)
-                        if len([*that.queue_dir.iterdir()]) != 0:
-                            for queue_pdbqt in that.queue_dir.iterdir():
-                                result_pdbqt = queue_pdbqt.name[:-6] + "_out.pdbqt"
-                                result_pdbqt = that.results_dir / result_pdbqt
-                                if result_pdbqt.exists():
-                                    queue_pdbqt.unlink()
-                                    that.increment_step(1)
-                        else:
-                            break
-                finally:
-                    self.finished.emit()
+            def stop_monitoring(self):
+                self.ensure_integrity()
+                self._stopped = True
+            
+            def ensure_integrity(self):
+                if self._stopped:
+                    return
+                existing_results1 = {
+                    result_file.stem  # Remove .pdbqt to get ligand name
+                    for result_file in self.results_dir.glob('*.pdbqt')
+                    if not result_file.stem.endswith('_out')
+                }
+                existing_results2 = {
+                    result_file.name[:-10]  # Remove _out.pdbqt to get ligand name
+                    for result_file in self.results_dir.glob('*_out.pdbqt')
+                    if result_file.name[:-10] not in existing_results1
+                }
+                for intersect in existing_results1.intersection(existing_results2):
+                    (self.results_dir / (intersect + "_out.pdbqt")).unlink()
+                    existing_results2.discard(intersect)
+                existing_results = existing_results1.union(existing_results2)
+                for result in existing_results2.difference(existing_results1):
+                    new_name = self.results_dir / (result + ".pdbqt")
+                    (self.results_dir / (result + "_out.pdbqt")).rename(new_name)
+                
+                existing_queued = {
+                    queued_file.stem
+                    for queued_file in self.queue_dir.glob("*.pdbqt")
+                }
+                for intersect in existing_results.intersection(existing_queued).copy():
+                    (self.queue_dir / (intersect + ".pdbqt")).unlink()
+                    existing_queued.discard(intersect)
+                
+                self.engine.set_num_steps(len(existing_results) + len(existing_queued))
+                self.engine.increment_step(len(existing_results))
 
-            def stop(self):
-                self._running = False
+                self.processed_files = existing_results
+            
+            def on_created(self, event):
+                if self._stopped or event.is_directory:
+                    return
+                
+                # Check if a result file was created
+                if event.src_path.endswith('_out.pdbqt'):
+                    result_path = Path(event.src_path)
+                    # Find corresponding queue file
+                    ligand_name = result_path.name[:-10]  # remove _out.pdbqt
+                    queue_file = self.queue_dir / f"{ligand_name}.pdbqt"
+                    
+                    if queue_file.exists() and ligand_name not in self.processed_files:
+                        try:
+                            shutil.move(queue_file, self.results_dir / (ligand_name + ".pdbqt"))
+                            Path(event.src_path).unlink()
+                            self.processed_files.add(ligand_name)
+                            self.engine.increment_step(1)
+                            self.engine.timer.stop()
+                            self.engine.timer.start(self.engine.timeout*1000)
+                        except Exception as exc:
+                            print(f"Error moving file: {exc}")
+        
+        event_handler = DockingProgressHandler(self, self.queue_dir, self.results_dir)
+        observer = Observer()
+        observer.schedule(event_handler, str(self.results_dir))
+        observer.start()
 
-        thread = QThread()
-        worker = WorkerJanitor()
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(thread.quit)
+        self.timer = QtCore.QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.start(self.timeout * 1000)
+        
+        @self.timer.timeout.connect
+        def _on_timeout(self):
+            """Handle timeout event"""
+            
+            reply = QMessageBox.warning(
+                self,
+                "Timeout",
+                f"The operation has timed out after {self.timeout} seconds of inactivity.\n\nDo you want to stop the process?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                self.timer.stop()
+                self.stop()
+            else:
+                # User wants to continue, restart timer
+                self.timer.stop()
+                self.timer.start(self.timeout * 1000)
+        
 
-        def remove_threads():
-            worker.deleteLater()
-            thread.quit()
-            thread.wait()
+        self._current_observer = observer
+        self._current_handler = event_handler
 
-        worker.finished.connect(remove_threads)
-        thread.start()
         #
         # Run Vina
         #
-        n_results = len(glob(str(self.results_dir / "*_out.pdbqt")))
-        n_queue = len(glob(str(self.queue_dir / "*.pdbqt")))
-        n_ligands = n_results + n_queue
-        self.set_num_steps(n_ligands)
-        self.increment_step(n_results)
-        output, success = run(vina_command)
-        sleep(1)
-        self.log_html(
-            f"""
-            <br/><b>Docking finished.</b>
-        """
-        )
-        if not success:
+        try:
+            if sys.platform == "win32":
+                proc = subprocess.Popen(
+                    vina_command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    shell=True,
+                    text=True,
+                    bufsize=1,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                proc = subprocess.Popen(
+                    vina_command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    shell=True,
+                    text=True,
+                    bufsize=1,
+                    preexec_fn=os.setsid
+                )
+            self._current_process = proc
+
+            buffer = []
+            for line in iter(proc.stdout.readline, ''):
+                buffer.append(line)
+            proc.wait()
+            output = '\n'.join(buffer)[:4096]
+            success = proc.returncode == 0
             self.log_html(
                 f"""
-                <font color="red">
-                    <br/><b>Failure on docking. Outputing last bytes.</b>
-                    <br/><pre>{output[-2048:]}</pre>
-                </font> 
-                </br>
+                <br/><b>Docking finished.</b>
+                """
+            )
+            self.timer.stop()
+            if not success:
+                self.log_html(
+                    f"""
+                    <font color="red">
+                        <br/><b>Failure on docking. Outputing lastest bytes.</b>
+                        <br/><pre>{output[-2048:]}</pre>
+                    </font> 
+                    </br>
+                    """
+                )
+            event_handler.ensure_integrity()
+
+            n_results = len([*self.results_dir.glob("*.pdbqt")])
+            n_queue = len([*self.queue_dir.glob("*.pdbqt")])
+            n_ligands = n_results + n_queue
+            self.log_html(
+                f"""
+                <hr/>
+                <br/><b>Summary totals</b>
+                <br/><b>Expected:</b> {n_ligands}
+                <br/><b>Results:</b> {n_results}
+                <br/><b>Queued:</b> {n_queue}
             """
             )
-        n_results = len(glob(str(self.results_dir / "*_out.pdbqt")))
-        n_queue = len(glob(str(self.queue_dir / "*.pdbqt")))
-        n_ligands = n_results + n_queue
-        self.log_html(
-            f"""
-            <hr/>
-            <br/><b>Summary totals</b>
-            <br/><b>Expected:</b> {n_ligands}
-            <br/><b>Results:</b> {n_results}
-            <br/><b>Queued:</b> {n_queue}
-        """
-        )
-        remove_threads()
-        self.manager.finished.emit()
-
-
+        except Exception as exc:
+            self.log_html(f"<font color='red'><br/><b>Error:</b> {exc}</font>")
+        finally:
+            # SEMPRE(?) pare o observer ANTES de emitir finished
+            event_handler.stop_monitoring()
+            try:
+                observer.stop()
+                observer.join(timeout=5)
+                if observer.is_alive():
+                    self.log_html("<br/><font color='orange'>Warning: Observer did not stop cleanly</font>")
+            except Exception as e:
+                self.log_html(f"<br/><font color='orange'>Warning: Error stopping observer: {e}</font>")
+            # Limpar referências
+            self._current_observer = None
+            self._current_handler = None
+            # Agora sim, emita o sinal de finished
+            self.manager.finished.emit()
+    
+    def stop(self):
+        try:
+            kill_process(self._current_process)
+            self._current_handler.stop_monitoring()
+            self._current_observer.stop()
+        except Exception:
+            pass
+        
 class PyMOLComboObjectBox(QComboBox):
 
     def __init__(self, sele):
@@ -1144,6 +1288,10 @@ def new_run_docking_widget():
             tab_ligand.setEnabled(True)
             options_group.setEnabled(True)
 
+    vina_timeout_spin = QSpinBox()
+    vina_timeout_spin.setRange(0, 50)
+    vina_timeout_spin.setValue(5)
+
     project_dir = None
     results_button = QPushButton("Choose folder...", form_widget)
 
@@ -1159,7 +1307,21 @@ def new_run_docking_widget():
             )
         )
         if not project_dir:
+            project_dir = None
             return
+        if len(os.listdir(project_dir)) > 0:
+            reply = QMessageBox.warning(
+                button,
+                "Warning",
+                f"Your project folder is not empty.\n\nDo you want to continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                project_dir = None
+                results_button.setText("Choose folder...")
+                return
+            
         results_button.setText(basename(project_dir))
 
     button = QPushButton("Run", form_widget)
@@ -1167,12 +1329,16 @@ def new_run_docking_widget():
     @button.clicked.connect
     def run():
         def run_implementation(manager):
+            if not project_dir:
+                return
             engine = VinaDockingEngine(project_dir, manager)
+            manager.engine = engine
             if continuation_check.isChecked():
-                engine.run_docking(continuation=True)
+                engine.run_docking(
+                    timeout=vina_timeout_spin.value(),
+                    continuation=True
+                )
             else:
-                if not project_dir:
-                    return
                 #
                 # Handle receptor
                 #
@@ -1218,10 +1384,12 @@ def new_run_docking_widget():
                     energy_range=energy_range_spin.value(),
                     cpu=cpu_spin.value(),
                     seed=seed_spin.value(),
+                    timeout=vina_timeout_spin.value(),
+                    continuation=False
                 )
 
         dialog = VinaThreadDialog(run_implementation)
-        dialog.exec()
+        dialog.exec_()
 
     horizontal_line1 = QFrame()
     horizontal_line1.setFrameShape(QFrame.HLine)
@@ -1248,6 +1416,7 @@ def new_run_docking_widget():
     form_layout.setWidget(6, QFormLayout.SpanningRole, horizontal_line3)
 
     form_layout.addRow("Continuation:", continuation_check)
+    form_layout.addRow("Vina timeout:", vina_timeout_spin)
     form_layout.addRow("Output folder:", results_button)
     form_layout.addWidget(button)
     form_widget.setLayout(form_layout)

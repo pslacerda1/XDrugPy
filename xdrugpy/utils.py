@@ -4,6 +4,7 @@ import os
 import atexit
 import sys
 import io
+import signal
 import scipy.cluster.hierarchy as sch
 from collections import namedtuple, defaultdict
 from shutil import rmtree
@@ -374,3 +375,41 @@ def display_exception():
         dialog.exec_()
     else:
         raise
+
+
+
+def kill_process(proc):
+    """
+    Mata processo corretamente, incluindo subprocessos
+    """
+    if proc.poll() is not None:
+        return  # Já terminou
+    
+    try:
+        if sys.platform == 'win32':
+            # Windows - usar taskkill para matar árvore
+            subprocess.call(
+                ['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        else:
+            # Unix - matar grupo de processos
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Se não terminou, força
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait()
+    
+    except ProcessLookupError:
+        pass  # Processo já morreu
+    except Exception as e:
+        print(f"Error killing process: {e}")
+        # Último recurso
+        try:
+            proc.kill()
+            proc.wait()
+        except:
+            pass
