@@ -12,7 +12,6 @@ import shutil
 import textwrap
 import json
 import sys
-from collections import Counter, OrderedDict
 from unittest.mock import MagicMock
 
 import pymol
@@ -144,19 +143,6 @@ def display_box(name, max_coords, min_coords):
     pm.set_view(view)
 
 
-class OrderedCounter(Counter, OrderedDict):
-    """
-    Counter that remembers the order elements are first encountered
-    https://stackoverflow.com/a/23747652/199332
-    """
-
-    def __repr__(self):
-        return "%s(%r)" % (self.__class__.__name__, OrderedDict(self))
-
-    def __reduce__(self):
-        return self.__class__, (OrderedDict(self),)
-
-
 ###############################################
 #          Load Result Pannel                 #
 ###############################################
@@ -167,7 +153,7 @@ class OrderedCounter(Counter, OrderedDict):
 
 
 def parse_out_pdbqt(ligand_pdbqt):
-    name = basename(ligand_pdbqt)[:-10]  # remove _out.pdbqt
+    name = basename(ligand_pdbqt)[:-6]
     poses = []
     with open(ligand_pdbqt) as file:
         for line in file:
@@ -185,6 +171,7 @@ def parse_out_pdbqt(ligand_pdbqt):
                         "mode": mode,
                     }
                 )
+    
     return poses
 
 
@@ -217,16 +204,14 @@ class ResultsTableWidget(QTableWidget):
         for item in self.selectedItems():
             name = self.item(item.row(), 0).text()
             mode = self.item(item.row(), 1).text()
-            pdbqt = f"{self.project_dir}/results/{name}_out.pdbqt"
-            obj = f"{name}-{mode}"
-            pm.load(pdbqt, obj, multiplex=1, zoom=0)
-            if pm.get_object_list(f"%{obj}") and pm.count_states(f"%{obj}") == 1:
-                pass
-            else:
-                pm.set_name(f"{obj}_{str(mode).zfill(4)}", obj)
-            pm.delete(f"{obj}_*")
-            pm.alter(obj, f'chain="Z"; resn="{obj}"; resi=1')
-            pm.set_name(obj, f"LIG_{obj}")
+            pdbqt = f"{self.project_dir}/results/{name}.pdbqt"
+            obj = f"LIG_{name}_{mode}"
+            temp_obj = f"temp_{name}"
+            pm.load(pdbqt, temp_obj, zoom=0)
+            pm.create(obj, temp_obj, source_state=mode, target_state=1, zoom=0)
+            pm.delete(temp_obj)
+            pm.alter(obj, f'chain="Z"; resn="{name}"; resi=1;')
+            pm.delete(temp_obj)
 
 
 class SortableItem(QTableWidgetItem):
@@ -340,7 +325,7 @@ def new_load_results_widget():
     # Only the best poses of each ligand
     #
     max_mode_spin = QSpinBox(widget)
-    max_mode_spin.setRange(1, 50)
+    max_mode_spin.setRange(1, 200)
     max_mode_spin.setValue(9)
     max_mode_spin.setGroupSeparatorShown(True)
     layout.addRow("Max mode:", max_mode_spin)
@@ -887,8 +872,8 @@ class VinaDockingEngine(DockingEngine):
                     
                     if queue_file.exists() and ligand_name not in self.processed_files:
                         try:
-                            shutil.move(queue_file, self.results_dir / (ligand_name + ".pdbqt"))
-                            Path(event.src_path).unlink()
+                            shutil.move(result_path, self.results_dir / (ligand_name + ".pdbqt"))
+                            queue_file.unlink()
                             self.processed_files.add(ligand_name)
                             self.engine.increment_step(1)
                         except Exception as exc:
@@ -1214,7 +1199,7 @@ def new_run_docking_widget():
     options_group.setLayout(options_group_layout)
 
     function = QComboBox(form_widget)
-    function.addItems(["vina", "vinardo", "ad4"])
+    function.addItems(["vina", "vinardo"])
     options_group_layout.addRow("Function:", function)
 
     exhaustiveness_spin = QSpinBox(form_widget)
