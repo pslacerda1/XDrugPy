@@ -1,3 +1,4 @@
+import re
 import os
 from os.path import (
     expanduser,
@@ -34,47 +35,20 @@ from .utils import (
     kill_process,
 )
 
-QObject = Qt.QtCore.QObject
-QWidget = Qt.QtWidgets.QWidget
-QScrollArea = Qt.QtWidgets.QScrollArea
-QFileDialog = Qt.QtWidgets.QFileDialog
-QFormLayout = Qt.QtWidgets.QFormLayout
-QPushButton = Qt.QtWidgets.QPushButton
-QSpinBox = Qt.QtWidgets.QSpinBox
-QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
-QDockWidget = Qt.QtWidgets.QDockWidget
-QLineEdit = Qt.QtWidgets.QLineEdit
-QCheckBox = Qt.QtWidgets.QCheckBox
-QApplication = Qt.QtWidgets.QApplication
-QVBoxLayout = Qt.QtWidgets.QVBoxLayout
-QTextEdit = Qt.QtWidgets.QTextEdit
-QDialog = Qt.QtWidgets.QDialog
-QDialogButtonBox = Qt.QtWidgets.QDialogButtonBox
-QDesktopWidget = Qt.QtWidgets.QDesktopWidget
-QProgressBar = Qt.QtWidgets.QProgressBar
-QComboBox = Qt.QtWidgets.QComboBox
-QTabWidget = Qt.QtWidgets.QTabWidget
-QTableWidget = Qt.QtWidgets.QTableWidget
-QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
-QHeaderView = Qt.QtWidgets.QHeaderView
-QFrame = Qt.QtWidgets.QFrame
-QDialogButtonBox = Qt.QtWidgets.QDialogButtonBox
-QMessageBox = Qt.QtWidgets.QMessageBox
-
-LeftDockWidgetArea = Qt.QtCore.Qt.LeftDockWidgetArea
-QtCore = Qt.QtCore
-QThread = Qt.QtCore.QThread
-pyqtSignal = Qt.QtCore.Signal
-
-QPalette = Qt.QtGui.QPalette
-QTextCursor = Qt.QtGui.QTextCursor
-QIcon = Qt.QtGui.QIcon
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtWidgets import (
+    QWidget, QScrollArea, QFileDialog, QFormLayout, QPushButton,
+    QSpinBox, QDoubleSpinBox, QDockWidget, QLineEdit, QCheckBox,
+    QApplication, QVBoxLayout, QTextEdit, QDialog, QDialogButtonBox,
+    QDesktopWidget, QProgressBar, QComboBox, QTabWidget, QTableWidget,
+    QTableWidgetItem, QHeaderView, QFrame, QMessageBox
+)
+from PyQt5.QtGui import QPalette, QTextCursor, QIcon
 
 
 #
 # General utilities
 #
-
 
 def display_box_sel(name, sel, margin):
     coords = pm.get_coords(sel)
@@ -199,9 +173,13 @@ class ResultsTableWidget(QTableWidget):
 
     def itemsChanged(self):
         pm.delete("LIG_*")
-        if "receptor" not in pm.get_object_list():
+        objects = pm.get_object_list()
+        if "receptor" not in objects:
             receptor_pdbqt = "%s/receptor.pdbqt" % self.project_dir
             pm.load(receptor_pdbqt, "receptor")
+        if "box" not in objects:
+            self.display_box()
+
         for item in self.selectedItems():
             name = self.item(item.row(), 0).text()
             mode = self.item(item.row(), 1).text()
@@ -214,11 +192,24 @@ class ResultsTableWidget(QTableWidget):
             pm.alter(obj, f'chain="Z"; resn="{name}"; resi=1;')
             pm.delete(temp_obj)
 
+    def display_box(self):
+        def parse_vina_args(filename):
+            with open(filename) as f:
+                text = f.read()
+            params = dict(re.findall(r'--(\S+)\s+(-?[\d.]+)', text))
+            center = [float(params['center_x']), float(params['center_y']), float(params['center_z'])]
+            size = [float(params['size_x']), float(params['size_y']), float(params['size_z'])]
+            max_coords = [c + s/2 for c, s in zip(center, size)]
+            min_coords = [c - s/2 for c, s in zip(center, size)]
+            return max_coords, min_coords
+        
+        max_coords, min_coords = parse_vina_args(self.project_dir / 'vina_args.txt')
+        display_box("box", max_coords, min_coords)
 
 class SortableItem(QTableWidgetItem):
     def __init__(self, obj):
         super().__init__(str(obj))
-        self.setFlags(self.flags() & ~QtCore.Qt.ItemIsEditable)
+        self.setFlags(self.flags() & ~Qt.ItemIsEditable)
 
     def __lt__(self, other):
         try:
@@ -305,13 +296,9 @@ class ResultsWidget(QWidget):
 
 
 def new_load_results_widget():
-    dockWidget = QDockWidget()
-    dockWidget.setWindowTitle("Analyze Vina")
-
     widget = QWidget()
     layout = QFormLayout(widget)
     widget.setLayout(layout)
-    dockWidget.setWidget(widget)
 
     #
     # Max number of total loaded poses
@@ -366,7 +353,7 @@ def new_load_results_widget():
     layout.setWidget(4, QFormLayout.SpanningRole, show_table_button)
     widget.setLayout(layout)
 
-    return dockWidget
+    return widget
 
 
 ###############################################
@@ -397,15 +384,15 @@ class VinaThreadDialog(QDialog):
         self.vina.finished.connect(self._finished)
         self.is_finished = False
         
-        self.timeout_timer = QtCore.QTimer()
+        self.timeout_timer = QTimer()
         self.timeout_timer.setSingleShot(True)
         self.timeout_timer.start(5000)
 
         # Setup window
         self.setModal(True)
         self.resize(QDesktopWidget().availableGeometry(self).size() * 0.7)
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.CustomizeWindowHint)
-        self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowCloseButtonHint)
+        self.setWindowFlags(self.windowFlags() | Qt.CustomizeWindowHint)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint)
 
         self.layout = QVBoxLayout(self)
 
@@ -434,7 +421,7 @@ class VinaThreadDialog(QDialog):
 
         # Ok / Cancel buttons
         self.button_box = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Abort, QtCore.Qt.Horizontal, self
+            QDialogButtonBox.Ok | QDialogButtonBox.Abort, Qt.Horizontal, self
         )
         self.layout.addWidget(self.button_box)
         self.button_box.accepted.connect(self._ok)
@@ -490,7 +477,7 @@ class VinaThreadDialog(QDialog):
 
     def keyPressEvent(self, evt):
         """Handle ESC key press"""
-        if evt.key() == QtCore.Qt.Key_Escape:
+        if evt.key() == Qt.Key_Escape:
             evt.ignore()
         else:
             super().keyPressEvent(evt)
@@ -1027,14 +1014,10 @@ def new_run_docking_widget():
     dock_widget = QDockWidget()
     dock_widget.setWindowTitle("Run Vina")
 
-    form_widget = QWidget()
-    form_layout = QFormLayout(form_widget)
+    tabWidget = QTabWidget()
+    tabWidget.setTabPosition(QTabWidget.TabPosition.West)
 
-    scroll = QScrollArea()
-    scroll.setWidgetResizable(True)
-    scroll.setWidget(form_widget)
-
-    dock_widget.setWidget(scroll)
+    dock_widget.setWidget(tabWidget)
 
     ##########################################
     # RECEPTOR OPTIONS
@@ -1061,13 +1044,13 @@ def new_run_docking_widget():
     def validate_receptor_sel():
         text = receptor_sel.currentText()
         palette = QApplication.palette(receptor_sel)
-        palette.setColor(QPalette.Base, QtCore.Qt.white)
+        palette.setColor(QPalette.Base, Qt.white)
         valid = True
         try:
             if pm.count_atoms(f"({text}) and polymer") == 0:
                 raise
         except:
-            palette.setColor(QPalette.Base, QtCore.Qt.red)
+            palette.setColor(QPalette.Base, Qt.red)
             valid = False
         receptor_sel.setPalette(palette)
         return valid
@@ -1085,12 +1068,12 @@ def new_run_docking_widget():
     def validate_box_sel():
         text = box_sel.currentText()
         palette = QApplication.palette(box_sel)
-        palette.setColor(QPalette.Base, QtCore.Qt.white)
+        palette.setColor(QPalette.Base, Qt.white)
         try:
             if pm.count_atoms(text) == 0:
                 raise
         except:
-            palette.setColor(QPalette.Base, QtCore.Qt.red)
+            palette.setColor(QPalette.Base, Qt.red)
             box_sel.setPalette(palette)
             pm.delete("box")
             return False
@@ -1098,7 +1081,7 @@ def new_run_docking_widget():
         box_sel.setPalette(palette)
         return True
 
-    box_margin_spin = QDoubleSpinBox(form_widget)
+    box_margin_spin = QDoubleSpinBox()
     box_margin_spin.setRange(0.0, 10.0)
     box_margin_spin.setValue(3.0)
     box_margin_spin.setSingleStep(0.1)
@@ -1114,7 +1097,7 @@ def new_run_docking_widget():
         pm.delete("box")
         display_box_sel("box", box_sel.currentText(), margin)
 
-    recptor_ph_spin = QDoubleSpinBox(form_widget)
+    recptor_ph_spin = QDoubleSpinBox()
     recptor_ph_spin.setRange(0.0, 14.0)
     recptor_ph_spin.setValue(7.0)
     recptor_ph_spin.setSingleStep(0.1)
@@ -1164,23 +1147,28 @@ def new_run_docking_widget():
     tab_ligand.addTab(tab1_widget, "New library")
 
     ligands_file = None
-    ligands_button = QPushButton("Choose file...", form_widget)
+    ligands_button = QPushButton("Choose file...")
     tab1_layout.addRow("Ligands file:", ligands_button)
 
-    ligand_ph_spin = QDoubleSpinBox(form_widget)
+    ligand_ph_spin = QDoubleSpinBox()
     ligand_ph_spin.setRange(0.0, 14.0)
     ligand_ph_spin.setValue(7.0)
     ligand_ph_spin.setSingleStep(0.1)
     ligand_ph_spin.setDecimals(1)
-    tab1_layout.addRow("pH:", ligand_ph_spin)
+    tab1_layout.addRow("Ligand pH:", ligand_ph_spin)
 
-    enumerate_protomers = QCheckBox()
-    enumerate_protomers.setChecked(False)
-    tab1_layout.addRow("Enumerate protomers:", enumerate_protomers)
+    enumerate_protomers_check = QCheckBox()
+    enumerate_protomers_check.setChecked(False)
+    tab1_layout.addRow("Enumerate protomers:", enumerate_protomers_check)
 
-    enumerate_tautomers = QCheckBox()
-    enumerate_tautomers.setChecked(False)
-    tab1_layout.addRow("Enumerate tautomers:", enumerate_tautomers)
+    enumerate_tautomers_check = QCheckBox()
+    enumerate_tautomers_check.setChecked(False)
+    tab1_layout.addRow("Enumerate tautomers:", enumerate_tautomers_check)
+
+    molscrub_seed_spin = QSpinBox()
+    molscrub_seed_spin.setRange(0, 10000)
+    molscrub_seed_spin.setValue(1)
+    tab1_layout.addRow("Random seed:", molscrub_seed_spin)
 
     @ligands_button.clicked.connect
     def choose_ligands():
@@ -1233,39 +1221,40 @@ def new_run_docking_widget():
     options_group_layout = QFormLayout(options_group)
     options_group.setLayout(options_group_layout)
 
-    function = QComboBox(form_widget)
+    function = QComboBox()
     function.addItems(["vina", "vinardo"])
     options_group_layout.addRow("Function:", function)
 
-    exhaustiveness_spin = QSpinBox(form_widget)
+    exhaustiveness_spin = QSpinBox()
     exhaustiveness_spin.setRange(1, 50)
     exhaustiveness_spin.setValue(8)
     options_group_layout.addRow("Exhaustiveness:", exhaustiveness_spin)
 
-    num_modes_spin = QSpinBox(form_widget)
+    num_modes_spin = QSpinBox()
     num_modes_spin.setRange(1, 100)
     num_modes_spin.setValue(3)
     options_group_layout.addRow("Number of modes", num_modes_spin)
 
-    min_rmsd_spin = QDoubleSpinBox(form_widget)
+    min_rmsd_spin = QDoubleSpinBox()
     min_rmsd_spin.setRange(0.0, 3.0)
     min_rmsd_spin.setValue(1.0)
     options_group_layout.addRow("Minimum RMSD:", min_rmsd_spin)
 
-    energy_range_spin = QDoubleSpinBox(form_widget)
+    energy_range_spin = QDoubleSpinBox()
     energy_range_spin.setRange(0, 10.0)
     energy_range_spin.setValue(3.0)
     options_group_layout.addRow("Energy range:", energy_range_spin)
 
     cpu_count = QThread.idealThreadCount()
-    cpu_spin = QSpinBox(form_widget)
+    cpu_spin = QSpinBox()
     cpu_spin.setRange(1, cpu_count)
     cpu_spin.setValue(cpu_count)
     options_group_layout.addRow("Number of CPUs:", cpu_spin)
 
-    seed_spin = QSpinBox(form_widget)
-    seed_spin.setRange(0, 10000)
-    seed_spin.setValue(1)
+    vina_seed_spin = QSpinBox()
+    vina_seed_spin.setRange(0, 10000)
+    vina_seed_spin.setValue(1)
+    options_group_layout.addRow("Random seed:", vina_seed_spin)
 
     #
     # Choose  output folder
@@ -1275,18 +1264,16 @@ def new_run_docking_widget():
     @continuation_check.stateChanged.connect
     def stateChanged(state):
         if state == 2:
-            seed_spin.setEnabled(False)
             tab_receptor.setEnabled(False)
             tab_ligand.setEnabled(False)
             options_group.setEnabled(False)
         else:
-            seed_spin.setEnabled(True)
             tab_receptor.setEnabled(True)
             tab_ligand.setEnabled(True)
             options_group.setEnabled(True)
 
     project_dir = None
-    results_button = QPushButton("Choose folder...", form_widget)
+    results_button = QPushButton("Choose folder...", )
 
     @results_button.clicked.connect
     def choose_project_dir():
@@ -1304,7 +1291,7 @@ def new_run_docking_widget():
             return
         if len(os.listdir(project_dir)) > 0:
             reply = QMessageBox.warning(
-                button,
+                run_button,
                 "Warning",
                 f"Your project folder is not empty.\n\nDo you want to continue?",
                 QMessageBox.Yes | QMessageBox.No,
@@ -1317,9 +1304,9 @@ def new_run_docking_widget():
             
         results_button.setText(basename(project_dir))
 
-    button = QPushButton("Run", form_widget)
+    run_button = QPushButton("Run", )
 
-    @button.clicked.connect
+    @run_button.clicked.connect
     def run():
         def run_implementation(manager):
             if not project_dir:
@@ -1358,9 +1345,9 @@ def new_run_docking_widget():
                         ligands_path=ligands_file,
                         ph=ligand_ph_spin.value(),
                         cpu=cpu_spin.value(),
-                        seed=seed_spin.value(),
-                        skip_protomers=not enumerate_protomers.isChecked(),
-                        skip_tautomers=not enumerate_tautomers.isChecked(),
+                        seed=molscrub_seed_spin.value(),
+                        skip_protomers=not enumerate_protomers_check.isChecked(),
+                        skip_tautomers=not enumerate_tautomers_check.isChecked(),
                         save_lib=compound_library_line.text().strip(),
                     )
                 elif tab_lig_idx == 1:
@@ -1376,65 +1363,40 @@ def new_run_docking_widget():
                     min_rmsd=min_rmsd_spin.value(),
                     energy_range=energy_range_spin.value(),
                     cpu=cpu_spin.value(),
-                    seed=seed_spin.value(),
+                    seed=vina_seed_spin.value(),
                     continuation=False
                 )
 
         dialog = VinaThreadDialog(run_implementation)
         dialog.exec_()
-
-    horizontal_line1 = QFrame()
-    horizontal_line1.setFrameShape(QFrame.HLine)
-    horizontal_line1.setFrameShadow(QFrame.Sunken)
-
-    horizontal_line2 = QFrame()
-    horizontal_line2.setFrameShape(QFrame.HLine)
-    horizontal_line2.setFrameShadow(QFrame.Sunken)
-
-    horizontal_line3 = QFrame()
-    horizontal_line3.setFrameShape(QFrame.HLine)
-    horizontal_line3.setFrameShadow(QFrame.Sunken)
-
-    #
-    # setup layout
-    #
-    form_layout.setWidget(1, QFormLayout.SpanningRole, tab_receptor)
-    form_layout.setWidget(2, QFormLayout.SpanningRole, horizontal_line1)
-
-    form_layout.setWidget(3, QFormLayout.SpanningRole, tab_ligand)
-    form_layout.setWidget(4, QFormLayout.SpanningRole, horizontal_line2)
-
-    form_layout.setWidget(5, QFormLayout.SpanningRole, options_group)
-    form_layout.setWidget(6, QFormLayout.SpanningRole, horizontal_line3)
     
-    form_layout.addRow("Seed number:", seed_spin)
-    form_layout.addRow("Continuation:", continuation_check)
-    form_layout.addRow("Output folder:", results_button)
-    form_layout.addWidget(button)
-    form_widget.setLayout(form_layout)
+    run_widget = QWidget()
+    run_layout = QFormLayout()
+    run_widget.setLayout(run_layout)
 
+    run_layout.addRow("Continuation:", continuation_check)
+    run_layout.addRow("Output folder:", results_button)
+    run_layout.addWidget(run_button)
+    
+    tabWidget.addTab(tab_receptor, "Receptor")
+    tabWidget.addTab(tab_ligand, "Ligands")
+    tabWidget.addTab(options_group, "Vina")
+    tabWidget.addTab(run_widget, "Run")
+
+    tabWidget.addTab(new_load_results_widget(), "Analysis")
     return dock_widget
 
 
 def __init_plugin__(app=None):
 
-    run_widget = new_run_docking_widget()
-    load_widget = new_load_results_widget()
-
-    run_widget.hide()
-    load_widget.hide()
+    top_widget = new_run_docking_widget()
+    top_widget.hide()
 
     window = pymol.gui.get_qtwindow()
-    window.addDockWidget(LeftDockWidgetArea, run_widget)
-    window.addDockWidget(LeftDockWidgetArea, load_widget)
+    window.addDockWidget(Qt.LeftDockWidgetArea, top_widget)
 
     def show_run_widget():
-        run_widget.show()
-
-    def show_load_widget():
-        load_widget.show()
+        top_widget.show()
 
     from pymol.plugins import addmenuitemqt
-
-    addmenuitemqt("(XDrugPy) Docking Run", show_run_widget)
-    addmenuitemqt("(XDrugPy) Docking Analyze", show_load_widget)
+    addmenuitemqt("(XDrugPy) Docking", show_run_widget)
