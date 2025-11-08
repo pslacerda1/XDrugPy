@@ -172,25 +172,41 @@ class ResultsTableWidget(QTableWidget):
         self.itemSelectionChanged.connect(self.itemsChanged)
 
     def itemsChanged(self):
-        pm.delete("LIG_*")
+        # Get current objects in PyMOL
         objects = pm.get_object_list()
+        
+        # Load receptor once (if not present)
         if "receptor" not in objects:
             receptor_pdbqt = "%s/receptor.pdbqt" % self.project_dir
             pm.load(receptor_pdbqt, "receptor")
+        
+        # Display box once (if not present)
         if "box" not in objects:
             self.display_box()
-
+        
+        # Collect which LIG_* objects should exist based on selection
+        selected_objects = set()
         for item in self.selectedItems():
             name = self.item(item.row(), 0).text()
             mode = self.item(item.row(), 1).text()
-            pdbqt = f"{self.project_dir}/results/{name}.pdbqt"
             obj = f"LIG_{name}_{mode}"
-            temp_obj = f"temp_{name}"
-            pm.load(pdbqt, temp_obj, zoom=0)
-            pm.create(obj, temp_obj, source_state=mode, target_state=1, zoom=0)
-            pm.delete(temp_obj)
-            pm.alter(obj, f'chain="Z"; resn="{name}"; resi=1;')
-            pm.delete(temp_obj)
+            selected_objects.add(obj)
+            
+            # Only load if object doesn't exist yet
+            if obj not in objects:
+                pdbqt = f"{self.project_dir}/results/{name}.pdbqt"
+                temp_obj = f"temp_{name}"
+                
+                pm.load(pdbqt, temp_obj, zoom=0)
+                pm.create(obj, temp_obj, source_state=mode, target_state=1, zoom=0)
+                pm.delete(temp_obj)
+                pm.alter(obj, f'chain="Z"; resn="{name}"; resi=1;')
+        
+        # Delete only LIG_* objects that are NO LONGER selected
+        existing_lig_objects = [o for o in objects if o.startswith("LIG_")]
+        for obj in existing_lig_objects:
+            if obj not in selected_objects:
+                pm.delete(obj)
 
     def display_box(self):
         def parse_vina_args(filename):
@@ -960,7 +976,7 @@ class VinaDockingEngine(DockingEngine):
                 <br/><b>Summary totals</b>
                 <br/><b>Expected:</b> {n_ligands}
                 <br/><b>Results:</b> {n_results}
-                <br/><b>Queued:</b> {n_queue}
+                <br/><b>Failed:</b> {n_queue}
             """
             )
         except Exception as exc:
