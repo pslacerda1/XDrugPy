@@ -53,27 +53,17 @@ def install_pip_packages():
     # INSTALL MORE REQUIREMENTS
     #
     try:
-        import scrubber, meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel, rcsbapi, rich, watchdog
-
+        import meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel, rcsbapi, rich, watchdog, molscrub, rdkit
     except ImportError:
         run_system(
             "pip install"
-            " lxml pandas openpyxl seaborn scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog"
-            " https://github.com/pslacerda/molscrub/archive/refs/heads/windows.exe.zip"
+            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
-
-def install_conda_packages():
-    try:
-        import plip, rdkit
-    except ImportError:
-        run_system("conda install -y plip 'rdkit<2024'")
-
 
 @pm.extend
 def install_xdrugpy_requirements():
     install_executables()
-    install_conda_packages()
     install_pip_packages()
 
 
@@ -102,9 +92,8 @@ def __init_plugin__(app=None):
     __init_hotspots__()
     __init_docking__()
     __init_multi__()
-    from pymol import cmd
 
-    cmd.undo_disable()
+    pm.undo_disable()
 
 
 if __name__ in ["pymol", "pmg_tk.startup.XDrugPy"]:

@@ -7,6 +7,7 @@ from os.path import (
 from glob import glob
 import subprocess
 import itertools
+import sysconfig
 from operator import itemgetter
 import shutil
 import textwrap
@@ -556,9 +557,10 @@ class DockingEngine:
     def prepare_ligands(
         self,
         ligands_path: str = "",
-        ph: float = 7.4,
+        ph: float = 7.0,
         cpu: int = 1,
-        skip_acidbase=True,
+        seed: int = 1,
+        skip_protomers=True,
         skip_tautomers=True,
         from_lib: str = "",
         save_lib: str = "",
@@ -587,6 +589,7 @@ class VinaDockingEngine(DockingEngine):
         receptor_sele: str = "",
         box_sele: str = "",
         box_margin: float = 0.0,
+        ph: float = 7.0,
         allow_bad_res: bool = False,
         from_lib: str = "",
         save_lib: str = "",
@@ -624,16 +627,33 @@ class VinaDockingEngine(DockingEngine):
             self.box_size = np.array((size_x, size_y, size_z)).tolist()
             self.box_center = np.array((center_x, center_y, center_z)).tolist()
             receptor_pdb = self.project_dir / "receptor.pdb"
+            #
+            # Protonate receptor
+            #
+            pm.save(receptor_pdb, receptor_sele)
+            command = (
+                f"pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output {receptor_pdb} --with-ph {ph}"
+                f" {receptor_pdb} {receptor_pdb.stem[:-3] + 'pqr'}"
+            )
             self.log_html(
                 f"""
-                <br/><b>Adding receptor hydrogens:</b>
+                    <br/><b>Adding receptor hydrogens.</b>
+                    <br/><b>Command:</b> {command}
+                    <br/>
+                """
+            )
+            output, success = run(command)
+            self.log_html(
+                f"""
+                <pre>{output}</pre>
             """
             )
+            if not success:
+                return False
+            
             #
             # Run Meeko to prepare the receptor
             #
-            pm.h_add(receptor_sele)
-            pm.save(receptor_pdb, receptor_sele)
             if allow_bad_res:
                 allow_bad_res = "--allow_bad_res"
             else:
@@ -677,9 +697,10 @@ class VinaDockingEngine(DockingEngine):
     def prepare_ligands(
         self,
         ligands_path: str = "",
-        ph: float = 7.4,
+        ph: float = 7.0,
         cpu: int = 1,
-        skip_acidbase=True,
+        seed: int = 0,
+        skip_protomers=True,
         skip_tautomers=True,
         from_lib: str = "",
         save_lib: str = "",
@@ -702,17 +723,19 @@ class VinaDockingEngine(DockingEngine):
             #
             ligands_file = Path(ligands_path)
             ligands_sdf = self.project_dir / "ligands.sdf"
-            if skip_acidbase:
-                skip_acidbase = "--skip_acidbase"
+            if skip_protomers:
+                skip_protomers = "--skip_acidbase"
             else:
-                skip_acidbase = ""
+                skip_protomers = ""
             if skip_tautomers:
                 skip_tautomers = "--skip_tautomers"
             else:
                 skip_tautomers = ""
+            scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.py'
             command = (
-                f'python -m scrubber.main -o "{ligands_sdf}" --ph {ph} --cpu {cpu}'
-                f' {skip_acidbase} {skip_tautomers} "{ligands_file}"'
+                f'python {scrub_path} -o "{ligands_sdf}" --cpu={cpu} --etkdg_rng_seed={seed} --ph={ph}'
+                f''
+                f' {skip_protomers} {skip_tautomers} "{ligands_file}"'
             )
             self.log_html(
                 f"""
@@ -803,6 +826,11 @@ class VinaDockingEngine(DockingEngine):
             )
             with open(self.project_dir / "vina_args.txt", "w") as f:
                 f.write(vina_command + "\n")
+        if not continuation:
+            self.log_html(
+                "<br/><b>State checkpointed.</b>"
+                "<br/>Now is safe to do continuation runs."
+            )
         self.log_html(
             f"""
             <br/>
@@ -877,7 +905,7 @@ class VinaDockingEngine(DockingEngine):
                             self.processed_files.add(ligand_name)
                             self.engine.increment_step(1)
                         except Exception as exc:
-                            print(f"Error moving file: {exc}")
+                            print(f"Error moving or removing files: {exc}")
         
         event_handler = DockingProgressHandler(self, self.queue_dir, self.results_dir)
         observer = Observer()
@@ -1086,6 +1114,13 @@ def new_run_docking_widget():
         pm.delete("box")
         display_box_sel("box", box_sel.currentText(), margin)
 
+    recptor_ph_spin = QDoubleSpinBox(form_widget)
+    recptor_ph_spin.setRange(0.0, 14.0)
+    recptor_ph_spin.setValue(7.0)
+    recptor_ph_spin.setSingleStep(0.1)
+    recptor_ph_spin.setDecimals(1)
+    tab1_layout.addRow("Receptor pH:", recptor_ph_spin)
+
     saved_receptor_line = QLineEdit()
     saved_receptor_line.setPlaceholderText("set a title to save")
     tab1_layout.addRow("Store receptor:", saved_receptor_line)
@@ -1093,15 +1128,15 @@ def new_run_docking_widget():
     #
     # TAB 2
     #
-    rec_tab2_widget = QWidget()
-    rec_tab2_layout = QFormLayout(rec_tab2_widget)
-    rec_tab2_widget.setLayout(rec_tab2_layout)
-    tab_receptor.addTab(rec_tab2_widget, "Stored receptor")
+    receptor_tab2_widget = QWidget()
+    receptor_tab2_layout = QFormLayout(receptor_tab2_widget)
+    receptor_tab2_widget.setLayout(receptor_tab2_layout)
+    tab_receptor.addTab(receptor_tab2_widget, "Stored receptor")
 
     tab_rec_idx = 0
     rec_library_combo = QComboBox()
     rec_library_combo.addItems(os.listdir(RECEPTOR_LIBRARIES_DIR))
-    rec_tab2_layout.addRow("Library:", rec_library_combo)
+    receptor_tab2_layout.addRow("Library:", rec_library_combo)
 
     @tab_receptor.currentChanged.connect
     def tab_changed(idx):
@@ -1132,16 +1167,16 @@ def new_run_docking_widget():
     ligands_button = QPushButton("Choose file...", form_widget)
     tab1_layout.addRow("Ligands file:", ligands_button)
 
-    ph_spin = QDoubleSpinBox(form_widget)
-    ph_spin.setRange(0.0, 14.0)
-    ph_spin.setValue(7.0)
-    ph_spin.setSingleStep(0.1)
-    ph_spin.setDecimals(1)
-    tab1_layout.addRow("Ligands pH:", ph_spin)
+    ligand_ph_spin = QDoubleSpinBox(form_widget)
+    ligand_ph_spin.setRange(0.0, 14.0)
+    ligand_ph_spin.setValue(7.0)
+    ligand_ph_spin.setSingleStep(0.1)
+    ligand_ph_spin.setDecimals(1)
+    tab1_layout.addRow("pH:", ligand_ph_spin)
 
-    enumerate_acidbase = QCheckBox()
-    enumerate_acidbase.setChecked(False)
-    tab1_layout.addRow("Enumerate acid-base:", enumerate_acidbase)
+    enumerate_protomers = QCheckBox()
+    enumerate_protomers.setChecked(False)
+    tab1_layout.addRow("Enumerate protomers:", enumerate_protomers)
 
     enumerate_tautomers = QCheckBox()
     enumerate_tautomers.setChecked(False)
@@ -1229,9 +1264,8 @@ def new_run_docking_widget():
     options_group_layout.addRow("Number of CPUs:", cpu_spin)
 
     seed_spin = QSpinBox(form_widget)
-    seed_spin.setRange(1, 10000)
+    seed_spin.setRange(0, 10000)
     seed_spin.setValue(1)
-    options_group_layout.addRow("Seed number:", seed_spin)
 
     #
     # Choose  output folder
@@ -1241,10 +1275,12 @@ def new_run_docking_widget():
     @continuation_check.stateChanged.connect
     def stateChanged(state):
         if state == 2:
+            seed_spin.setEnabled(False)
             tab_receptor.setEnabled(False)
             tab_ligand.setEnabled(False)
             options_group.setEnabled(False)
         else:
+            seed_spin.setEnabled(True)
             tab_receptor.setEnabled(True)
             tab_ligand.setEnabled(True)
             options_group.setEnabled(True)
@@ -1304,6 +1340,7 @@ def new_run_docking_widget():
                         receptor_sel.currentText(),
                         box_sel.currentText(),
                         box_margin=box_margin_spin.value(),
+                        ph=recptor_ph_spin.value(),
                         allow_bad_res=allow_bad_res_check.isChecked(),
                         save_lib=receptor_lib,
                     )
@@ -1316,11 +1353,13 @@ def new_run_docking_widget():
                 if tab_lig_idx == 0:
                     if not ligands_file:
                         return
+                        
                     engine.prepare_ligands(
                         ligands_path=ligands_file,
-                        ph=ph_spin.value(),
+                        ph=ligand_ph_spin.value(),
                         cpu=cpu_spin.value(),
-                        skip_acidbase=not enumerate_acidbase.isChecked(),
+                        seed=seed_spin.value(),
+                        skip_protomers=not enumerate_protomers.isChecked(),
                         skip_tautomers=not enumerate_tautomers.isChecked(),
                         save_lib=compound_library_line.text().strip(),
                     )
@@ -1367,7 +1406,8 @@ def new_run_docking_widget():
 
     form_layout.setWidget(5, QFormLayout.SpanningRole, options_group)
     form_layout.setWidget(6, QFormLayout.SpanningRole, horizontal_line3)
-
+    
+    form_layout.addRow("Seed number:", seed_spin)
     form_layout.addRow("Continuation:", continuation_check)
     form_layout.addRow("Output folder:", results_button)
     form_layout.addWidget(button)
