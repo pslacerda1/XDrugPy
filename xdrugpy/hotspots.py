@@ -38,7 +38,7 @@ def get_clusters():
     for obj in pm.get_object_list():
         if obj.startswith(f"crosscluster."):
             _, _, s, _ = obj.split(".", maxsplit=4)
-            coords = pm.get_coords(obj)
+            coords = pm.get_coords(f"%{obj} & !elem H")
             clusters.append(
                 SimpleNamespace(
                     selection=obj,
@@ -48,7 +48,7 @@ def get_clusters():
             )
         elif obj.startswith("consensus."):
             _, _, s = obj.split(".", maxsplit=3)
-            coords = pm.get_coordset(obj)
+            coords = pm.get_coords(f"%{obj} & !elem H")
             clusters.append(
                 SimpleNamespace(
                     selection=obj,
