@@ -321,7 +321,7 @@ def new_load_results_widget():
     #
     max_load_spin = QSpinBox(widget)
     max_load_spin.setRange(1, 99999999)
-    max_load_spin.setValue(15)
+    max_load_spin.setValue(100)
     max_load_spin.setGroupSeparatorShown(True)
     layout.addRow("Max load:", max_load_spin)
 
@@ -1025,15 +1025,27 @@ class PyMOLComboObjectBox(QComboBox):
             self.setCurrentText(currentText)
         super().showPopup()
 
+dialog = None
 
-def new_run_docking_widget():
-    dock_widget = QDockWidget()
-    dock_widget.setWindowTitle("Run Vina")
+def docking_gui():
+    global dialog
+    if dialog is not None:
+        dialog.show()
+        return
+    
+    dialog = QDialog()
+    dialog.resize(400, 700)
+    dialog.setWindowTitle("(XDrugPy) Docking")
+    layout = QVBoxLayout()
+    dialog.setLayout(layout)
+    
+    dialog.show()
 
     tabWidget = QTabWidget()
     tabWidget.setTabPosition(QTabWidget.TabPosition.West)
-
-    dock_widget.setWidget(tabWidget)
+    
+    
+    dialog.layout().addWidget(tabWidget)
 
     ##########################################
     # RECEPTOR OPTIONS
@@ -1400,19 +1412,10 @@ def new_run_docking_widget():
     tabWidget.addTab(run_widget, "Run")
 
     tabWidget.addTab(new_load_results_widget(), "Analysis")
-    return dock_widget
+
 
 
 def __init_plugin__(app=None):
-
-    top_widget = new_run_docking_widget()
-    top_widget.hide()
-
-    window = pymol.gui.get_qtwindow()
-    window.addDockWidget(Qt.LeftDockWidgetArea, top_widget)
-
-    def show_run_widget():
-        top_widget.show()
-
     from pymol.plugins import addmenuitemqt
-    addmenuitemqt("(XDrugPy) Docking", show_run_widget)
+
+    addmenuitemqt("(XDrugPy) Docking", docking_gui)

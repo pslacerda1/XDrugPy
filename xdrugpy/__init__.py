@@ -53,7 +53,7 @@ def install_pip_packages():
     # INSTALL MORE REQUIREMENTS
     #
     try:
-        import meeko, lxml, pandas, openpyxl, seaborn, scipy, matplotlib, strenum, openbabel, rcsbapi, rich, watchdog, molscrub, rdkit
+        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rcsbapi, rich, watchdog, molscrub, rdkit
     except ImportError:
         run_system(
             "pip install"
