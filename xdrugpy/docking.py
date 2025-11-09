@@ -73,7 +73,7 @@ def display_box(name, max_coords, min_coords):
     view = pm.get_view()
     obj = []
 
-    pm.delete("_box")
+    pm.delete(name)
 
     # box_color
     for i in range(2):
@@ -1007,17 +1007,16 @@ class VinaDockingEngine(DockingEngine):
         
 class PyMOLComboObjectBox(QComboBox):
 
-    def __init__(self, sele):
+    def __init__(self):
         super().__init__()
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.NoInsert)
-        self.sele = sele
         self.setEditText("")
 
     def showPopup(self):
         currentText = self.currentText().strip()
-        selections = pm.get_names("selections", enabled_only=True)
-        objects = pm.get_names("objects", enabled_only=True)
+        selections = pm.get_names("selections", enabled_only=False)
+        objects = pm.get_names("objects", enabled_only=False)
         self.clear()
         self.addItems("(%s)" % s for s in selections)
         self.addItems(objects)
@@ -1062,7 +1061,7 @@ def docking_gui():
     tab1_widget.setLayout(tab1_layout)
     tab_receptor.addTab(tab1_widget, "New receptor")
 
-    receptor_sel = PyMOLComboObjectBox("polymer")
+    receptor_sel = PyMOLComboObjectBox()
     tab1_layout.addRow("Receptor:", receptor_sel)
 
     @receptor_sel.currentTextChanged.connect
@@ -1086,7 +1085,7 @@ def docking_gui():
     #
     # Box selection
     #
-    box_sel = PyMOLComboObjectBox("polymer")
+    box_sel = PyMOLComboObjectBox()
     tab1_layout.addRow("Box:", box_sel)
 
     @box_sel.currentTextChanged.connect
@@ -1099,11 +1098,10 @@ def docking_gui():
         palette.setColor(QPalette.Base, Qt.white)
         try:
             if pm.count_atoms(text) == 0:
-                raise
+                raise Exception
         except:
             palette.setColor(QPalette.Base, Qt.red)
             box_sel.setPalette(palette)
-            pm.delete("box")
             return False
         display_box_sel("box", text, box_margin_spin.value())
         box_sel.setPalette(palette)
