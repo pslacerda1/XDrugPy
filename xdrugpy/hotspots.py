@@ -667,6 +667,7 @@ def fpt_sim(
     mappings = np.empty((0, 8))
     for at in pm.get_model(f"({ref_sele}) & name CA").atom:
         res = get_residue_from_object(at.model, at.index)
+        print(at.model, at.index, res)
         mappings = np.vstack([mappings, res])
     for polymer in polymers:
         if polymer == ref_polymer:
