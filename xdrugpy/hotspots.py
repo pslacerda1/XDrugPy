@@ -652,9 +652,14 @@ def fpt_sim(
     for sele in multi_seles.split("/"):
         sele = sele.strip()
         seles.append(sele.strip())
-        groups.append(pm.get_property("Group", pm.get_object_list(sele)[0]))
+        obj = pm.get_object_list(sele)
+        if obj is not None and len(obj) >= 1:
+            obj = obj[0]
+        if group := pm.get_property("Group", obj):
+            groups.append(group)
     polymers = [f"{g}.protein" for g in groups]
-
+    assert len(polymers) > 0, "Please review your selections"
+        
     ref_polymer = polymers[0]
     polymers = {p: True for p in polymers}  # ordered set
 
@@ -767,8 +772,8 @@ def ho(
         radius  the distance to consider two atoms in contact (default: 2.5)
         quiet   define verbosity
     """
-    atoms1 = pm.get_coordset(hs1)
-    atoms2 = pm.get_coordset(hs2)
+    atoms1 = pm.get_coords(hs1)
+    atoms2 = pm.get_coords(hs2)
     dist = distance_matrix(atoms1, atoms2) - radius <= 0
     num_contacts1 = np.sum(np.any(dist, axis=1))
     num_contacts2 = np.sum(np.any(dist, axis=0))
