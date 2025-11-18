@@ -11,6 +11,7 @@ from .utils import run_system, RESOURCES_DIR
 SYSTEM = platform.system().lower()
 
 
+@pm.extend
 def install_executables():
     #
     # INSTALL VINA
@@ -48,6 +49,7 @@ def install_executables():
         os.chmod(fpocket_exe, stat.S_IEXEC)
 
 
+@pm.extend
 def install_pip_packages():
     #
     # INSTALL MORE REQUIREMENTS
