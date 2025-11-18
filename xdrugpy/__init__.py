@@ -53,11 +53,11 @@ def install_pip_packages():
     # INSTALL MORE REQUIREMENTS
     #
     try:
-        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rcsbapi, rich, watchdog, molscrub, rdkit
+        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rcsbapi, rich, watchdog, molscrub, rdkit, pdb2pqr, propka
     except ImportError:
         run_system(
             "pip install"
-            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub"
+            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub pdb2pqr propka"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
 
