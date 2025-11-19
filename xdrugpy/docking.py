@@ -630,13 +630,15 @@ class VinaDockingEngine(DockingEngine):
             self.box_size = np.array((size_x, size_y, size_z)).tolist()
             self.box_center = np.array((center_x, center_y, center_z)).tolist()
             receptor_pdb = self.project_dir / "receptor.pdb"
+            receptor_pqr = self.project_dir / "receptor.pqr"
+            
             #
             # Protonate receptor
             #
             pm.save(receptor_pdb, receptor_sele)
             command = (
                 f"pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output {receptor_pdb} --with-ph {ph}"
-                f' "{receptor_pdb}" "{receptor_pdb.stem[:-3] + 'pqr'}"'
+                f' "{receptor_pdb}" "{receptor_pqr}"'
             )
             self.log_html(
                 f"""
