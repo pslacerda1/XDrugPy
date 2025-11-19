@@ -636,7 +636,7 @@ class VinaDockingEngine(DockingEngine):
             pm.save(receptor_pdb, receptor_sele)
             command = (
                 f"pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output {receptor_pdb} --with-ph {ph}"
-                f" {receptor_pdb} {receptor_pdb.stem[:-3] + 'pqr'}"
+                f' "{receptor_pdb}" "{receptor_pdb.stem[:-3] + 'pqr'}"'
             )
             self.log_html(
                 f"""
@@ -737,7 +737,6 @@ class VinaDockingEngine(DockingEngine):
             scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.py'
             command = (
                 f'python "{scrub_path}" -o "{ligands_sdf}" --cpu={cpu} --etkdg_rng_seed={seed} --ph={ph}'
-                f''
                 f' {skip_protomers} {skip_tautomers} "{ligands_file}"'
             )
             self.log_html(
@@ -809,8 +808,8 @@ class VinaDockingEngine(DockingEngine):
                 vina_command = f.readline().strip()
         else:
             vina_command = (
-                "vina"
-                f" --receptor '{self.receptor_pdbqt}'"
+                f"vina"
+                f' --receptor "{self.receptor_pdbqt}"'
                 f" --scoring {scoring}"
                 f" --cpu {cpu}"
                 f" --seed {seed}"
@@ -824,8 +823,8 @@ class VinaDockingEngine(DockingEngine):
                 f" --num_modes {num_modes}"
                 f" --min_rmsd {min_rmsd}"
                 f" --energy_range {energy_range}"
-                f" --dir '{self.results_dir}'"
-                f" --batch '{self.queue_dir}'"
+                f' --dir "{self.results_dir}"'
+                f' --batch "{self.queue_dir}"'
             )
             with open(self.project_dir / "vina_args.txt", "w") as f:
                 f.write(vina_command + "\n")

@@ -66,11 +66,6 @@ def run(command, log=True, cwd=None, env=os.environ):
     return output, success
 
 
-def run_system(command):
-    print("RUNNING SYSTEM PROCESS:", command)
-    os.system(command)
-
-
 class Selection(str):
     pass
 

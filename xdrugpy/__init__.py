@@ -3,19 +3,22 @@ import os
 import stat
 from urllib.request import urlretrieve
 import platform
-
 from pymol import cmd as pm
-from .utils import run_system, RESOURCES_DIR
-
+from .utils import RESOURCES_DIR
 
 SYSTEM = platform.system().lower()
 
 
 @pm.extend
-def install_executables():
-    #
-    # INSTALL VINA
-    #
+def install_xdrugpy_requirements():
+    try:
+        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rich, watchdog, molscrub, rdkit, pdb2pqr, propka
+    except ImportError:
+        os.system(
+            "pip install"
+            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub pdb2pqr propka"
+            " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
+        )
 
     match SYSTEM:
         case "windows":
@@ -33,9 +36,6 @@ def install_executables():
         urlretrieve(vina_url, vina_exe)
         os.chmod(vina_exe, stat.S_IEXEC)
 
-    #
-    # INSTALL FPOCKET
-    #
     match SYSTEM:
         case "windows":
             bin_fname = "fpocket.exe"
@@ -49,53 +49,22 @@ def install_executables():
         os.chmod(fpocket_exe, stat.S_IEXEC)
 
 
-@pm.extend
-def install_pip_packages():
-    #
-    # INSTALL MORE REQUIREMENTS
-    #
-    try:
-        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rcsbapi, rich, watchdog, molscrub, rdkit, pdb2pqr, propka
-    except ImportError:
-        run_system(
-            "pip install"
-            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub pdb2pqr propka"
-            " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
-        )
-
-@pm.extend
-def install_xdrugpy_requirements():
-    install_executables()
-    install_pip_packages()
-
-
-
-#
-# INITIALIZE THE PLUGIN
-#
-if SYSTEM == "windows":
-    os.environ["PATH"] = "%s;%s" % (RESOURCES_DIR, os.environ["PATH"])
-    if not exists("{RESOURCES_DIR}/vina.exe"):
-        install_xdrugpy_requirements()
-else:
-    os.environ["PATH"] = "%s:%s" % (RESOURCES_DIR, os.environ["PATH"])
-    if not exists("{RESOURCES_DIR}/vina"):
-        install_xdrugpy_requirements()
-
-
 def __init_plugin__(app=None):
-    print(
-        "This version of XDrugPy is intended for non-comercial and academic purposes only."
-    )
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
-    from .multi import __init_plugin__ as __init_multi__
+    # from .multi import __init_plugin__ as __init_multi__
 
     __init_hotspots__()
     __init_docking__()
-    __init_multi__()
+    # __init_multi__()
 
     pm.undo_disable()
+
+
+if SYSTEM == "windows":
+    os.environ["PATH"] = "%s;%s" % (RESOURCES_DIR, os.environ["PATH"])
+else:
+    os.environ["PATH"] = "%s:%s" % (RESOURCES_DIR, os.environ["PATH"])
 
 
 if __name__ in ["pymol", "pmg_tk.startup.XDrugPy"]:
