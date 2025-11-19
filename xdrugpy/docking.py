@@ -737,6 +737,8 @@ class VinaDockingEngine(DockingEngine):
             else:
                 skip_tautomers = ""
             scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.py'
+            if not scrub_path.exists():
+                scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.exe'
             command = (
                 f'python "{scrub_path}" -o "{ligands_sdf}" --cpu={cpu} --etkdg_rng_seed={seed} --ph={ph}'
                 f' {skip_protomers} {skip_tautomers} "{ligands_file}"'
