@@ -1,124 +1,130 @@
+import time
 from pymol import cmd as pm
-from collections import namedtuple, defaultdict, Counter
 from functools import lru_cache
-import requests
+import pandas as pd
 import numpy as np
 from fnmatch import fnmatch
-from rcsbapi.search import SeqSimilarityQuery
-from functools import cache
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.cluster import OPTICS
+from matplotlib import pyplot as plt
+from matplotlib.colors import ListedColormap
+from collections import Counter
+from rich import print as rprint
+from rich.console import Console
+from rich.table import Table
+from strenum import StrEnum
 
-from .utils import declare_command, mpl_axis
+from .utils import declare_command, mpl_axis, PyMOLComboObjectBox
 
 
 PROSTHETIC_GROUPS = "HEM FAD NAP NDP ADP FMN EDO"
 RMSF_DEFAULT_QUALIFIER = "name CA"
 
-Uniprot = namedtuple(
-    'Uniprot',
-    'pdb_id uniprot_id chain_id uniprot_name length'
-)
-
-
-@cache
-def get_uniprot_from_pdbe(pdb_id: str):
-    """
-    Retrieves UniProt ID(s) for a given PDB ID using the PDBe API.
-    """
-
-    session = requests.Session()
-
-    pdb_id = pdb_id.lower()
-    url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{pdb_id}"
-    
-    response = session.get(url)
-    data = response.json()
-
-    ret = []
-    if pdb_id in data and "UniProt" in data[pdb_id]:
-        done = set()
-        for uniprot_id, mappings in data[pdb_id]['UniProt'].items():
-            uniprot_name = mappings['name']
-            for mapping in mappings['mappings']:
-                start = mapping['unp_start']
-                end = mapping['unp_end']
-                length = end - start + 1
-                chain_id = mapping['chain_id']
-                entry =  Uniprot(pdb_id, uniprot_id, chain_id, uniprot_name, length)
-                if entry in done:
-                    continue
-                done.add(entry)
-                ret.append(entry)
-    return ret
-
+class FetchSequenceType(StrEnum):
+    DNA = "dna"
+    RNA = "rna"
+    PROTEIN = "protein"
 
 @declare_command
 def fetch_similar(
-    pdb_id: str,
-    asm_id: int,
-    identity_cutoff: float,
-    unbound_site: str = None,
+    sequence_sele: str,
+    sequence_type: FetchSequenceType = FetchSequenceType.PROTEIN,
+    identity_cutoff: float = 0.8,
+    require_free_site: str = None,
     site_margin: float = 4.0,
-    prosthetic_groups: str = PROSTHETIC_GROUPS,
-    max_entries: int = 50,
+    ignore_ligands: str = PROSTHETIC_GROUPS,
+    max_results: int = 50,
 ):
-    pdb_id = pdb_id.upper()
-    obj0 = "%s_%s" % (pdb_id, asm_id)
-    pm.fetch(pdb_id, obj0, type="pdb%s" % asm_id)
     seq = []
     pm.iterate(
-        f"%{obj0} & guide & alt +A", "seq.append((chain, oneletter))", space=locals()
+        f"{sequence_sele} & polymer & name CA",
+        "seq.append((chain, oneletter))",
+        space=locals()
     )
-    chain_id = None
+    chain = None
     sequences = []
     for new_chain, oneletter in seq:
-        if new_chain != chain_id:
-            chain_id = new_chain
+        if new_chain != chain:
+            chain = new_chain
             sequences.append("")
         sequences[-1] += oneletter
-    results = {}
+    results = set()
     for seq in sequences:
         if len(seq) < 25:
             continue
-        query = SeqSimilarityQuery(
-            seq, identity_cutoff=identity_cutoff, sequence_type="protein"
-        )
-        for asm in list(query("assembly"))[:max_entries]:
-            asm = asm.split("-")
-            pdb_id, asm_id = asm[0], asm[1]
-            obj = "%s_%s" % (pdb_id, asm_id)
-            pm.fetch(pdb_id, obj, type="pdb%s" % asm_id)
-            pm.cealign(obj0, obj)
-            found = set()
-            items = set()
-            if not unbound_site:
+        try:
+            from rcsbapi.search import SeqSimilarityQuery
+            query = SeqSimilarityQuery(
+                seq,
+                identity_cutoff=identity_cutoff,
+                sequence_type=str(sequence_type)
+            )
+            assembly_ids = list(query(return_type="assembly"))[:max_results]
+            time.sleep(0.1)  # rate limit
+        except Exception as exc:
+            print(f"Error querying sequence: {exc}")
+            raise exc
+
+        object_list = [
+            o.upper()
+            for o in pm.get_object_list(sequence_sele)
+        ]
+        cnt_asm_ids = Counter([
+            asm.split('-')[0]
+            for asm in assembly_ids
+        ])
+        for asm in assembly_ids:
+            pdb_id, asm_id = asm.split('-')
+            if cnt_asm_ids[pdb_id] == 1:
+                obj = pdb_id
+            else:
+                obj = '%s_%s' % (pdb_id, asm_id)
+            if obj.upper() in object_list:
+                    continue
+
+            # pm.order(assembly_ids, True)  # XXX segfaults
+            try:
+                pm.fetch(pdb_id, obj, type="pdb%s" % asm_id)
+            except Exception as exc:
+                print(f'Failed to download PDB entry {pdb_id} with Assembly {asm_id}: {exc}')
                 continue
+            pm.super(obj, sequence_sele)
+            if not require_free_site:
+                results.add((pdb_id, asm_id))
+                continue
+            ligands = set()
             pm.iterate(
-                f"(%{obj} & not (polymer | resn HOH)) within {site_margin} of (%{obj0} and {unbound_site})",
-                "items.add((resn, resi, chain))",
+                f"(%{obj} & !(polymer | resn HOH)) within {site_margin} of ({require_free_site})",
+                "ligands.add((chain, resn, resi))",
                 space=locals(),
             )
-            for resn, resi, chain_id in items:
-                if resn not in prosthetic_groups:
-                    found.add((pdb_id, asm_id, resn, resi, chain_id))
+            is_free_site = True
+            for chain, resn, resi in ligands:
+                if resn not in ignore_ligands:
+                    pm.delete(obj)
+                    is_free_site = False
+                    break
+            if not is_free_site:
+                results.add((pdb_id, int(asm_id), chain, resn, int(resi)))
+                continue
+
             peptides = set()
             pm.iterate(
-                f"(%{obj} & polymer) within {site_margin} of ({unbound_site})",
+                f"(%{obj} & polymer) within {site_margin} of ({require_free_site})",
                 "peptides.add(chain)",
                 space=locals(),
             )
-            for chain_id in peptides:
-                if pm.count_atoms(f"%{obj} & name CA & chain {chain_id}") < 25:
-                    found.add((pdb_id, asm_id, None, None, chain_id))
-            for pdb_id, asm_id, resn, resi, chain_id in found:
-                if pdb_id not in results:
-                    results[pdb_id] = {}
-                if asm_id not in results[pdb_id]:
-                    results[pdb_id][asm_id] = {}
-                results[pdb_id][asm_id][chain_id] = dict(pdb_id=pdb_id, asm_id=asm_id, resn=resn, resi=resi, chain_id=chain_id)
-                obj = "%s_%s" % (pdb_id, asm_id)
-                if obj0 == obj:
-                    continue
-                pm.delete(obj)
+            is_free_site = True
+            for chain in peptides:
+                if pm.count_atoms(f"name CA & (bymolecule (%{obj} & chain {chain}))") < 25:
+                    pm.delete(obj)
+                    is_free_site = False
+                    break
+            if not is_free_site:
+                results.add((pdb_id, int(asm_id), chain, None, None))
+                continue
     return results
 
 
@@ -215,7 +221,7 @@ def rmsf(
     # Sort residues
     X = {k: X[k] for k in sorted(X, key=lambda z: (z[2], z[1]))}
 
-    # Find mean positions for each reisude
+    # Find mean positions for each residue
     means = {}
     for resi in X:
         means[resi] = np.mean(X[resi], axis=0)
@@ -244,6 +250,192 @@ def rmsf(
         ax.tick_params(axis="x", rotation=90)
 
     return RMSF, LABELS
+
+
+class AlignmentMethod(StrEnum):
+    ALIGN = "align"
+    
+@declare_command
+def pca(
+    prots_sele: str,
+    site_sele: str = '*',
+    site_radius: float = 4.0,
+    min_explained_variance: float = 0.9,
+    axis: str = '',
+):
+    objects = []
+    for obj in pm.get_object_list(f'({prots_sele}) & polymer'):
+        objects.append(obj)
+    assert len(objects) > 0, "Please review your selections"
+    
+    mappings = np.empty((0, 7))
+    site = []
+    
+    # Take first object as reference
+    for at in pm.get_model(f'{objects[0]} & ({site_sele}) & name CA').atom:
+        site.append(at.index)
+        mappings = np.vstack([
+            mappings,
+            (at.index, at.model, at.chain, at.resi, *at.coord)
+        ])
+    # Iter objects
+    for obj in objects[1:]:
+        try:
+            # Align (without fit transform) objects into reference
+            aln_obj = pm.get_unused_name()
+            pm.extra_fit(
+                f"({obj}) & polymer & name CA",
+                f"({objects[0]}) & polymer & name CA",
+                method="cealign",
+                transform=0,
+                object=aln_obj,
+            )
+            aln = pm.get_raw_alignment(aln_obj)
+        finally:
+            pm.delete(aln_obj)
+        
+        # Map bijections from object to reference
+        for (obj1, idx1), (obj2, idx2) in aln:
+            if idx1 not in site:
+                continue
+            for at in pm.get_model(f"%{obj2} & index {idx2} & name CA").atom:
+                mappings = np.vstack([
+                    mappings,
+                    (idx1, at.model, at.chain, at.resi, *at.coord)
+                ])
+    
+    dtypes = {
+        "index": int,
+        "model": str,
+        "chain": str,
+        "resi": int,
+        "x": float,
+        "y": float,
+        "z": float
+    }
+    mappings = pd.DataFrame(mappings, columns=list(dtypes)).astype(dtypes)
+    
+    rprint("\n**Principal Component Analisys**\n")
+
+    rprint(f"Num of models: {len(mappings['model'].unique())}")
+    rprint(f"Total mapped residues: {len(site)}")
+    rprint()
+
+    table = Table(title="Num of Cα per model")
+    table.add_column("Model", justify="right")
+    table.add_column("Num of Cα", justify="center")
+    index_counts = mappings.groupby('model')['index'].nunique()
+    for model, num_ca in index_counts.items():
+        table.add_row(model, str(num_ca))
+
+    console = Console()
+    console.print(table)
+    
+    # Extract C-alpha XYZ vector of full mapped sequences
+    vectors = []
+    for model, group in mappings.sort_values('index').groupby('model'):
+        vectors.append(
+            group
+            .set_index("index")
+            .reindex(site)
+            [['x', 'y', 'z']]
+            .to_numpy()
+            .ravel()
+        )
+    
+    # Preprocessing
+    X = np.array(vectors)
+    print(X)
+    missing_ca = np.isnan(X[:,1]).sum() / len(X[:,1])
+    rprint(f"\nPercent of unmatched Cα: {missing_ca:.2f}%")
+
+    X = SimpleImputer(strategy="mean").fit_transform(X)
+    X = StandardScaler().fit_transform(X)
+    
+    pca = PCA().fit(X)
+    evr = pca.explained_variance_ratio_
+    cum = np.cumsum(evr)
+    
+    n_pc = np.argmax(cum >= min_explained_variance)+1
+    rprint(f"Num of PCs to explain {min_explained_variance*100:.2f}% of variance: {n_pc}")
+    rprint()
+
+    pca = PCA(n_components=n_pc)
+    X_pca = pca.fit_transform(X)
+    
+    opt = OPTICS(cluster_method='xi')
+    labels = opt.fit_predict(X_pca)
+    rprint(labels)
+    
+    fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2, constrained_layout=True)
+    ax0.scatter(X_pca[:, 0], X_pca[:, 1], c=labels, cmap="nipy_spectral")
+    ax0.set_xlabel("PC1")
+    ax0.set_ylabel("PC2")
+
+    ax1.scatter(X_pca[:, 0], X_pca[:, 2], c=labels, cmap="nipy_spectral")
+    ax1.set_xlabel("PC1")
+    ax1.set_ylabel("PC3")
+
+    uniq_labels = list(sorted(set(labels)))
+    cmap = plt.cm.nipy_spectral
+    colors = cmap(np.linspace(0, 1, len(uniq_labels)))
+    cmap = ListedColormap(colors)
+
+    ax2.scatter(X_pca[:, 1], X_pca[:, 2], c=labels, cmap=cmap)
+    ax2.set_xlabel("PC2")
+    ax2.set_ylabel("PC3")
+
+    handles = []
+    for value, color in zip(uniq_labels, cmap.colors):
+        handles.append(plt.Line2D(
+            [], [], marker="o", linestyle="", color=color,
+            label=str(value)
+        ))
+
+    plt.legend(handles=handles, title="Cluster")
+    
+    ax3.plot(range(1, len(evr)+1), cum)
+    ax3.axhline(y=0.9, c='red', ls='--')
+    ax3.set_xlabel("Number of PCs")
+    ax3.set_ylabel("Cumulative Explained Variance")
+
+
+    if axis and isinstance(axis, (str)):
+        fig.savefig(axis)
+    else:
+        fig.show()
+
+
+# Uniprot = namedtuple(
+#     'Uniprot',
+#     'pdb_id uniprot_id chain_id uniprot_name length'
+# )
+# @cache
+# def get_uniprot_from_pdbe(pdb_id: str):
+#     """
+#     Retrieves UniProt ID(s) for a given PDB ID using the PDBe API.
+#     """
+#     session = requests.Session()
+#     pdb_id = pdb_id.lower()
+#     url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{pdb_id}"
+#     response = session.get(url)
+#     data = response.json()
+#     ret = []
+#     if pdb_id in data and "UniProt" in data[pdb_id]:
+#         done = set()
+#         for uniprot_id, mappings in data[pdb_id]['UniProt'].items():
+#             uniprot_name = mappings['name']
+#             for mapping in mappings['mappings']:
+#                 start = mapping['unp_start']
+#                 end = mapping['unp_end']
+#                 length = end - start + 1
+#                 chain_id = mapping['chain_id']
+#                 entry =  Uniprot(pdb_id, uniprot_id, chain_id, uniprot_name, length)
+#                 if entry in done:
+#                     continue
+#                 done.add(entry)
+#                 ret.append(entry)
+#     return ret
 
 
 # @declare_command
@@ -332,14 +524,13 @@ class FinderWidget(QWidget):
         layout = self.layout = QFormLayout()
         self.setLayout(layout)
         
-        self.pdbLine = QLineEdit()
-        layout.addRow("Query PDB:", self.pdbLine)
+        self.sequenceCombo = PyMOLComboObjectBox()
+        layout.addRow("Query sequence:", self.sequenceCombo)
 
-        self.assemblySpin = QSpinBox()
-        self.assemblySpin.setValue(1)
-        self.assemblySpin.setMinimum(1)
-        self.assemblySpin.setMaximum(9)
-        layout.addRow("Assembly:", self.assemblySpin)
+        self.sequenceTypeCombo = QComboBox()
+        self.sequenceTypeCombo.addItems(list(map(str, FetchSequenceType)))
+        self.sequenceTypeCombo.setCurrentText(FetchSequenceType.PROTEIN)
+        layout.addRow("Sequence type:", self.sequenceTypeCombo)
 
         self.identityCutoffSpin = QDoubleSpinBox()
         self.identityCutoffSpin.setMinimum(0.300)
@@ -349,8 +540,8 @@ class FinderWidget(QWidget):
         self.identityCutoffSpin.setDecimals(3)
         layout.addRow("Identity cutoff:", self.identityCutoffSpin)
 
-        self.siteLine = QLineEdit()
-        layout.addRow("Site:", self.siteLine)
+        self.freeSiteLine = QLineEdit()
+        layout.addRow("Free Site:", self.freeSiteLine)
 
         self.siteMarginSpin = QDoubleSpinBox()
         self.siteMarginSpin.setMinimum(1.0)
@@ -360,18 +551,18 @@ class FinderWidget(QWidget):
         self.siteMarginSpin.setDecimals(1)
         layout.addRow("Site margin:", self.siteMarginSpin)
 
-        self.prostheticLine = QLineEdit(PROSTHETIC_GROUPS)
-        layout.addRow("Prosthetic groups:", self.prostheticLine)
+        self.ignoreLigandsLine = QLineEdit(PROSTHETIC_GROUPS)
+        layout.addRow("Ignore ligands:", self.ignoreLigandsLine)
 
-        self.maxEntriesSpin = QSpinBox()
-        self.maxEntriesSpin.setValue(50)
-        self.maxEntriesSpin.setMinimum(2)
-        self.maxEntriesSpin.setMaximum(9999)
-        layout.addRow("Max entries:", self.maxEntriesSpin)
+        self.maxResultsSpin = QSpinBox()
+        self.maxResultsSpin.setValue(50)
+        self.maxResultsSpin.setMinimum(2)
+        self.maxResultsSpin.setMaximum(9999)
+        layout.addRow("Max entries:", self.maxResultsSpin)
 
-        fetchButton = QPushButton("Find")
-        fetchButton.clicked.connect(self.find)
-        layout.addWidget(fetchButton)
+        findButton = QPushButton("Find")
+        findButton.clicked.connect(self.find)
+        layout.addWidget(findButton)
 
         self.tree = None
 
@@ -405,13 +596,13 @@ class FinderWidget(QWidget):
 
     def find(self):
         data = fetch_similar(
-            pdb_id=self.pdbLine.text().strip(),
-            asm_id=self.assemblySpin.value(),
+            sequence_sele=self.sequenceCombo.currentText(),
+            sequence_type=self.sequenceTypeCombo.currentText(),
             identity_cutoff=self.identityCutoffSpin.value(),
-            unbound_site=self.siteLine.text().strip(),
+            require_free_site=self.freeSiteLine.text().strip(),
             site_margin=self.siteMarginSpin.value(),
-            prosthetic_groups=self.prostheticLine.text().strip().split(),
-            max_entries=self.maxEntriesSpin.value(),
+            ignore_ligands=self.ignoreLigandsLine.text().strip().split(),
+            max_results=self.maxResultsSpin.value(),
         )
         # self.refresh(data)
 

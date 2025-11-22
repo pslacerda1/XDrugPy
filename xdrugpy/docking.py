@@ -33,6 +33,7 @@ from .utils import (
     RECEPTOR_LIBRARIES_DIR,
     LIGAND_LIBRARIES_DIR,
     kill_process,
+    PyMOLComboObjectBox,
 )
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
@@ -1007,25 +1008,6 @@ class VinaDockingEngine(DockingEngine):
             self._current_observer.stop()
         except Exception:
             pass
-        
-class PyMOLComboObjectBox(QComboBox):
-
-    def __init__(self):
-        super().__init__()
-        self.setEditable(True)
-        self.setInsertPolicy(QComboBox.NoInsert)
-        self.setEditText("")
-
-    def showPopup(self):
-        currentText = self.currentText().strip()
-        selections = pm.get_names("selections", enabled_only=False)
-        objects = pm.get_names("objects", enabled_only=False)
-        self.clear()
-        self.addItems("(%s)" % s for s in selections)
-        self.addItems(objects)
-        if currentText != "":
-            self.setCurrentText(currentText)
-        super().showPopup()
 
 dialog = None
 

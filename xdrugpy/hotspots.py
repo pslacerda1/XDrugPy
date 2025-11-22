@@ -664,7 +664,7 @@ def fpt_sim(
     polymers = {p: True for p in polymers}  # ordered set
 
     ref_sele = f"{ref_polymer} and ({ref_polymer} within {radius} of ({site}))"
-    mappings = np.empty((0, 8))
+    mappings = np.empty((0, 9))
     for at in pm.get_model(f"({ref_sele}) & name CA").atom:
         res = get_residue_from_object(at.model, at.index)
         print(at.model, at.index, res)

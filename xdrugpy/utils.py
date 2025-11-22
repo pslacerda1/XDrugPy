@@ -47,7 +47,7 @@ def clear_temp():
 atexit.register(clear_temp)
 
 
-Residue = namedtuple("Residue", "model index resi chain x y z oneletter")
+Residue = namedtuple("Residue", "model index resi chain name x y z oneletter")
 
 
 def run(command, log=True, cwd=None, env=os.environ):
@@ -290,7 +290,7 @@ def get_residue_from_object(obj, idx):
     pm.iterate_state(
         -1,
         f"%{obj} & index {idx}",
-        "res.append(Residue(model, int(index), int(resi), chain, float(x), float(y), float(z), oneletter))",
+        "res.append(Residue(model, int(index), int(resi), chain, name, float(x), float(y), float(z), oneletter))",
         space={"res": res, "Residue": Residue},
     )
     return res[0]
@@ -408,3 +408,22 @@ def kill_process(proc):
             proc.wait()
         except:
             pass
+
+class PyMOLComboObjectBox(QComboBox):
+
+    def __init__(self):
+        super().__init__()
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self.setEditText("")
+
+    def showPopup(self):
+        currentText = self.currentText().strip()
+        selections = pm.get_names("selections", enabled_only=False)
+        objects = pm.get_names("objects", enabled_only=False)
+        self.clear()
+        self.addItems("(%s)" % s for s in selections)
+        self.addItems(objects)
+        if currentText != "":
+            self.setCurrentText(currentText)
+        super().showPopup()

@@ -47,29 +47,15 @@ LIST_ITEM2 = {'pdb_id': '1B0H', 'asm_id': '1', 'resn': None, 'resi': None, 'chai
 
 def test_fetch_similar_0():
     pm.reinitialize()
-    data = fetch_similar('1e92', 1, 0.9, 'resn HBI and chain A', max_entries=3)
+    pm.fetch('1E92')
+    data = fetch_similar(f'1E92', "protein", 0.9, 'resn HBI and chain A', max_results=3)
     assert len(pm.get_object_list()) == 1
-    assert  '1E7W' in data and all(data['1E7W']['1']['A'][k] == LIST_ITEM1[k] for k in ['pdb_id', 'asm_id', 'resn', 'resi', 'chain_id'])
+    assert ('1W0C', 1, 'A', 'TAQ', 301) in data
+    assert ('1E7W', 1, 'B', 'MTX', 301) in data
 
 def test_fetch_similar_1():
     pm.reinitialize()
-    data = fetch_similar("1e92", 1, 0.9, max_entries=20)
-    assert len(pm.get_object_list()) == 16
-    assert not data
-
-def test_fetch_similar_2():
-    pm.reinitialize()
-    data = fetch_similar("1e92", 1, 0.9, unbound_site="resn HBI and chain A", max_entries=3)
-    assert len(pm.get_object_list()) == 1
-    assert  '1E7W' in data and all(data['1E7W']['1']['A'][k] == LIST_ITEM1[k] for k in ['pdb_id', 'asm_id', 'resn', 'resi', 'chain_id'])
-
-def test_fetch_similar_3():
-    pm.reinitialize()
-    data = fetch_similar("1bzl", 1, 0.9, max_entries=50)
-    assert len(pm.get_object_list()) == 6
-    assert not data
-
-def test_fetch_similar_4():
-    pm.reinitialize()
-    data = fetch_similar("1b5h", 1, 0.9, unbound_site="chain B", max_entries=3)
-    assert  '1B0H' in data and all(data['1B0H']['1']['B'][k] == LIST_ITEM2[k] for k in ['pdb_id', 'asm_id', 'resn', 'resi', 'chain_id'])
+    pm.fetch("1e92")
+    data = fetch_similar("1E92", "protein", 0.9, max_results=20)
+    assert len(pm.get_object_list()) >= 17
+    assert len(data) >= 16

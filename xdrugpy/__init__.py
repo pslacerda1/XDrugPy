@@ -12,11 +12,11 @@ SYSTEM = platform.system().lower()
 @pm.extend
 def install_xdrugpy_requirements():
     try:
-        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rich, watchdog, molscrub, rdkit, pdb2pqr, propka
-    except ImportError:
+        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rich, watchdog, molscrub, rdkit, pdb2pqr, propka, sklearn
+    except:
         os.system(
-            "pip install"
-            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub pdb2pqr propka"
+            "pip install --upgrade"
+            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub pdb2pqr propka scikit-learn"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
 
@@ -52,11 +52,11 @@ def install_xdrugpy_requirements():
 def __init_plugin__(app=None):
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
-    # from .multi import __init_plugin__ as __init_multi__
+    from .multi import __init_plugin__ as __init_multi__
 
     __init_hotspots__()
     __init_docking__()
-    # __init_multi__()
+    __init_multi__()
 
     pm.undo_disable()
 
