@@ -3,7 +3,7 @@ import matplotlib as mpl
 import numpy as np
 from pymol import cmd as pm
 from xdrugpy.hotspots import load_ftmap
-from xdrugpy.multi import rmsf, fetch_similar
+from xdrugpy.multi import rmsf, fetch_similar, SequenceType, PROSTHETIC_GROUPS
 
 
 mpl.rcParams["svg.hashsalt"] = "42"
@@ -42,20 +42,44 @@ def test_rmsf():
     rmsf("*.protein", "*.K15_D_00", site_margin=5, axis=img_gen)
     assert images_identical(img_ref, img_gen)
 
-LIST_ITEM1 = {'pdb_id': '1E7W', 'asm_id': '1', 'resn': 'MTX', 'resi': '301', 'chain_id': 'A'}
-LIST_ITEM2 = {'pdb_id': '1B0H', 'asm_id': '1', 'resn': None, 'resi': None, 'chain_id': 'B'}
 
 def test_fetch_similar_0():
     pm.reinitialize()
     pm.fetch('1E92')
-    data = fetch_similar(f'1E92', "protein", 0.9, 'resn HBI and chain A', max_results=3)
-    assert len(pm.get_object_list()) == 1
-    assert ('1W0C', 1, 'A', 'TAQ', 301) in data
-    assert ('1E7W', 1, 'B', 'MTX', 301) in data
+    data = fetch_similar(
+        sequence_sele=f'1E92',
+        sequence_type=SequenceType.PROTEIN,
+        identity_cutoff=0.9,
+        check_ligands=True,
+        site_sele='1E92 and resn HBI',
+        site_margin=4.0,
+        ignore_ligands=PROSTHETIC_GROUPS,
+        max_results=50,
+    )
+    assert len(pm.get_object_list()) == 17
+    assert len(data) == 16
+    assert ('1W0C', 1) in data
+    assert ('1E7W', 1) in data
+    assert len(data[('1W0C', 1)]['ligands']) == 4
+    assert ('TAQ', 'A', 301) in data[('1W0C', 1)]['ligands']
+
 
 def test_fetch_similar_1():
     pm.reinitialize()
     pm.fetch("1e92")
-    data = fetch_similar("1E92", "protein", 0.9, max_results=20)
+    structs, _, _ = fetch_similar("1E92", "protein", 0.9, max_results=20)
     assert len(pm.get_object_list()) >= 17
-    assert len(data) >= 16
+    assert len(structs) >= 16
+
+def test_fetch_similar_organisms():
+    pm.reinitialize()
+    pm.fetch("1e92")
+    data = fetch_similar(
+        sequence_sele=f'1E92',
+        identity_cutoff=0.9,
+        check_ligands=True,
+        site_sele='1E92 and resn HBI',
+        max_results=100,
+        fetch_extra=True,
+    )
+    assert data == False

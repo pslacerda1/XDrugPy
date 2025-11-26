@@ -1,4 +1,4 @@
-**Early drug discovery with a pythonic streamlined zen powerful simplicity. Check it out!**
+**Early drug discovery with a pythonic simplicity. Check it out!**
 
 ***Website:** https://tiny.cc/XDrugPy*
 

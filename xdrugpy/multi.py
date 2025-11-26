@@ -1,4 +1,5 @@
 import time
+import logging
 from pymol import cmd as pm
 from functools import lru_cache
 import pandas as pd
@@ -19,23 +20,45 @@ from strenum import StrEnum
 from .utils import declare_command, mpl_axis, PyMOLComboObjectBox
 
 
-PROSTHETIC_GROUPS = "HEM FAD NAP NDP ADP FMN EDO"
+logging.getLogger("rcsbapi").setLevel(logging.CRITICAL)
+logging.getLogger("rcsbapi.search").setLevel(logging.CRITICAL)
+logging.getLogger("rcsbapi.graphql").setLevel(logging.CRITICAL)
+
+
+PROSTHETIC_GROUPS = "HEM FAD NAP NDP ADP FMN"
+PROSTHETIC_GROUPS += " EDO PGE PEG GOL ACT"
+PROSTHETIC_GROUPS += " HOH SO4"
+
 RMSF_DEFAULT_QUALIFIER = "name CA"
 
-class FetchSequenceType(StrEnum):
+
+class AligMethod(StrEnum):
+    ALIGN = "align"
+    SUPER = "super"
+    CEALIGN = "cealign"
+    FIT = "fit"
+    
+
+class SequenceType(StrEnum):
     DNA = "dna"
     RNA = "rna"
     PROTEIN = "protein"
 
+
 @declare_command
 def fetch_similar(
     sequence_sele: str,
-    sequence_type: FetchSequenceType = FetchSequenceType.PROTEIN,
+    sequence_type: SequenceType = SequenceType.PROTEIN,
     identity_cutoff: float = 0.8,
-    require_free_site: str = None,
+    check_ligands: bool = False,
+    check_peptides: bool = False,
+    site_sele: str = None,
     site_margin: float = 4.0,
+    max_peptide_length: int = 25,
+    align_method: AligMethod = AligMethod.CEALIGN,
     ignore_ligands: str = PROSTHETIC_GROUPS,
     max_results: int = 50,
+    fetch_extra: bool = False,
 ):
     seq = []
     pm.iterate(
@@ -50,8 +73,9 @@ def fetch_similar(
             chain = new_chain
             sequences.append("")
         sequences[-1] += oneletter
-    results = set()
-    for seq in sequences:
+    
+    results = {}
+    for seq in set(sequences):
         if len(seq) < 25:
             continue
         try:
@@ -77,54 +101,87 @@ def fetch_similar(
         ])
         for asm in assembly_ids:
             pdb_id, asm_id = asm.split('-')
+            asm_id = int(asm_id)
             if cnt_asm_ids[pdb_id] == 1:
                 obj = pdb_id
             else:
                 obj = '%s_%s' % (pdb_id, asm_id)
+            
             if obj.upper() in object_list:
-                    continue
-
-            # pm.order(assembly_ids, True)  # XXX segfaults
+                continue
+            
             try:
                 pm.fetch(pdb_id, obj, type="pdb%s" % asm_id)
             except Exception as exc:
                 print(f'Failed to download PDB entry {pdb_id} with Assembly {asm_id}: {exc}')
                 continue
-            pm.super(obj, sequence_sele)
-            if not require_free_site:
-                results.add((pdb_id, asm_id))
-                continue
+
             ligands = set()
-            pm.iterate(
-                f"(%{obj} & !(polymer | resn HOH)) within {site_margin} of ({require_free_site})",
-                "ligands.add((chain, resn, resi))",
-                space=locals(),
-            )
-            is_free_site = True
-            for chain, resn, resi in ligands:
-                if resn not in ignore_ligands:
-                    pm.delete(obj)
-                    is_free_site = False
-                    break
-            if not is_free_site:
-                results.add((pdb_id, int(asm_id), chain, resn, int(resi)))
+            peptides = set()
+            organisms = set()
+            results[(pdb_id, int(asm_id))] = {
+                'organisms': organisms,
+                'ligands': ligands,
+                'peptides': peptides
+            }
+
+            # Start structural analysis
+            try:
+                pm.extra_fit(
+                    selection=obj,
+                    reference=sequence_sele,
+                    method=str(align_method),
+                    quiet=False
+                )
+            except Exception as exc:
+                print(f'Failed to align an object entry: {obj}')
                 continue
 
-            peptides = set()
-            pm.iterate(
-                f"(%{obj} & polymer) within {site_margin} of ({require_free_site})",
-                "peptides.add(chain)",
-                space=locals(),
-            )
-            is_free_site = True
-            for chain in peptides:
-                if pm.count_atoms(f"name CA & (bymolecule (%{obj} & chain {chain}))") < 25:
-                    pm.delete(obj)
-                    is_free_site = False
-                    break
-            if not is_free_site:
-                results.add((pdb_id, int(asm_id), chain, None, None))
-                continue
+            if check_ligands:
+                # Ligands were required to be explicitly checked
+                mols = '+'.join(ignore_ligands.split())
+                sele = f"(%{obj} AND NOT (polymer OR resn {mols})) NEAR_TO {site_margin} OF ({site_sele})"
+                for at in pm.get_model(sele).atom:
+                    ligands.add((at.resn, at.chain, int(at.resi)))
+            
+            if check_peptides:
+                # Peptides of length <=25 are deemed ligands
+                this_peptides = set()
+                pm.iterate(
+                    f"(%{obj} & polymer) NEAR_TO {site_margin} OF ({site_sele})",
+                    "this_peptides.add(chain)",
+                    space=locals(),
+                )
+                for chain in this_peptides:
+                    if length := pm.count_atoms(f"name CA & (bymolecule (%{obj} & chain {chain}))") < max_peptide_length:
+                        peptides.add((chain, length))
+    pm.order(assembly_ids, True)  # XXX segfaults
+    # Fetch extra data
+    if fetch_extra:
+        from rcsbapi.data import DataQuery
+        from collections import defaultdict
+        pdb_id_list = list(set(pdb for pdb, _ in results))
+        query = DataQuery(
+            input_type="entries",
+            input_ids=pdb_id_list,
+            return_data_list=[
+                "rcsb_entry_container_identifiers.entry_id",
+                "polymer_entities.rcsb_polymer_entity.pdbx_description",
+                "polymer_entities.rcsb_entity_source_organism.ncbi_scientific_name",
+            ]
+        )
+        organisms = defaultdict(set)
+        for pdb_id, asm_id in results.keys():
+            res = query.exec()
+            for entry in res['data']['entries']:
+                if entry['rcsb_id'].upper() == pdb_id.upper():
+                    for entity in entry['polymer_entities']:
+                        desc = entity['rcsb_polymer_entity']['pdbx_description']
+                        for org in entity['rcsb_entity_source_organism']:
+                            org = org['ncbi_scientific_name']
+                            organisms[(pdb_id, asm_id)].add((desc, org))
+        for (pdb_id, asm_id), retval in results.items():
+            retval['organisms'] = organisms[(pdb_id, asm_id)]
     return results
 
 
@@ -251,9 +308,6 @@ def rmsf(
 
     return RMSF, LABELS
 
-
-class AlignmentMethod(StrEnum):
-    ALIGN = "align"
     
 @declare_command
 def pca(
@@ -365,26 +419,35 @@ def pca(
     
     opt = OPTICS(cluster_method='xi')
     labels = opt.fit_predict(X_pca)
-    rprint(labels)
-    
-    fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2, constrained_layout=True)
-    ax0.scatter(X_pca[:, 0], X_pca[:, 1], c=labels, cmap="nipy_spectral")
-    ax0.set_xlabel("PC1")
-    ax0.set_ylabel("PC2")
-
-    ax1.scatter(X_pca[:, 0], X_pca[:, 2], c=labels, cmap="nipy_spectral")
-    ax1.set_xlabel("PC1")
-    ax1.set_ylabel("PC3")
 
     uniq_labels = list(sorted(set(labels)))
     cmap = plt.cm.nipy_spectral
     colors = cmap(np.linspace(0, 1, len(uniq_labels)))
     cmap = ListedColormap(colors)
+    
+    fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2, constrained_layout=True)
 
-    ax2.scatter(X_pca[:, 1], X_pca[:, 2], c=labels, cmap=cmap)
-    ax2.set_xlabel("PC2")
-    ax2.set_ylabel("PC3")
+    if X_pca.shape[1] >= 2:
+        ax0.scatter(X_pca[:, 0], X_pca[:, 1], c=labels, cmap=cmap)
+        ax0.set_xlabel("PC1")
+        ax0.set_ylabel("PC2")
+    else:
+        ax0.text(s="Not enought PCs.", ha="center")
 
+    if X_pca.shape[1] >= 3:
+        ax1.scatter(X_pca[:, 0], X_pca[:, 2], c=labels, cmap=cmap)
+        ax1.set_xlabel("PC1")
+        ax1.set_ylabel("PC3")
+    else:
+        ax1.text(s="Not enought PCs.", ha="center")
+
+    if X_pca.shape[1] >= 3:
+        ax2.scatter(X_pca[:, 1], X_pca[:, 2], c=labels, cmap=cmap)
+        ax2.set_xlabel("PC2")
+        ax2.set_ylabel("PC3")
+    else:
+        ax2.text(s="Not enought PCs.", ha="center")
+    
     handles = []
     for value, color in zip(uniq_labels, cmap.colors):
         handles.append(plt.Line2D(
@@ -516,7 +579,7 @@ QtCore = Qt.QtCore
 QIcon = Qt.QtGui.QIcon
 
 
-class FinderWidget(QWidget):
+class FechSimilarWidget(QWidget):
 
     def __init__(self):
         super().__init__()
@@ -528,8 +591,8 @@ class FinderWidget(QWidget):
         layout.addRow("Query sequence:", self.sequenceCombo)
 
         self.sequenceTypeCombo = QComboBox()
-        self.sequenceTypeCombo.addItems(list(map(str, FetchSequenceType)))
-        self.sequenceTypeCombo.setCurrentText(FetchSequenceType.PROTEIN)
+        self.sequenceTypeCombo.addItems(list(map(str, SequenceType)))
+        self.sequenceTypeCombo.setCurrentText(SequenceType.PROTEIN)
         layout.addRow("Sequence type:", self.sequenceTypeCombo)
 
         self.identityCutoffSpin = QDoubleSpinBox()
@@ -540,19 +603,32 @@ class FinderWidget(QWidget):
         self.identityCutoffSpin.setDecimals(3)
         layout.addRow("Identity cutoff:", self.identityCutoffSpin)
 
-        self.freeSiteLine = QLineEdit()
-        layout.addRow("Free Site:", self.freeSiteLine)
+        self.checkLigandsCheck = QCheckBox()
+        self.checkLigandsCheck.setChecked(False)
+        layout.addRow("Check ligands", self.checkLigandsCheck)
+
+        self.checkPeptidesCheck = QCheckBox()
+        self.checkPeptidesCheck.setChecked(False)
+        layout.addRow("Check peptides", self.checkPeptidesCheck)
+
+        self.siteLine = QLineEdit("")
+        layout.addRow("Ligands site:", self.siteLine)
 
         self.siteMarginSpin = QDoubleSpinBox()
         self.siteMarginSpin.setMinimum(1.0)
         self.siteMarginSpin.setMaximum(10.0)
-        self.siteMarginSpin.setValue(3.0)
+        self.siteMarginSpin.setValue(4.0)
         self.siteMarginSpin.setSingleStep(0.5)
         self.siteMarginSpin.setDecimals(1)
         layout.addRow("Site margin:", self.siteMarginSpin)
 
         self.ignoreLigandsLine = QLineEdit(PROSTHETIC_GROUPS)
         layout.addRow("Ignore ligands:", self.ignoreLigandsLine)
+        
+        self.alignMethodCombo = QComboBox()
+        self.alignMethodCombo.addItems(list(map(str, AligMethod)))
+        self.alignMethodCombo.setCurrentText(AligMethod.CEALIGN)
+        layout.addRow("Align method:", self.alignMethodCombo)
 
         self.maxResultsSpin = QSpinBox()
         self.maxResultsSpin.setValue(50)
@@ -560,53 +636,68 @@ class FinderWidget(QWidget):
         self.maxResultsSpin.setMaximum(9999)
         layout.addRow("Max entries:", self.maxResultsSpin)
 
+        self.extraCheck = QCheckBox()
+        layout.addRow("Fetch extra: ", self.extraCheck)
+
         findButton = QPushButton("Find")
         findButton.clicked.connect(self.find)
         layout.addWidget(findButton)
-
-        self.tree = None
-
-    # def refresh(self, data):
-    #     if self.tree:
-    #         self.layout.removeWidget(self.tree)
-    #         self.tree.setParent(None)
-
-    #     self.tree = QTreeWidget()
-    #     self.tree.setColumnCount(2)
-    #     self.tree.setHeaderLabels(["Structure", "UniProt"])
-    #     self.tree.header().setSectionResizeMode(QHeaderView.Stretch)
-
-    #     for pdb, assemblies in data.items():
-    #         pdb_item = QTreeWidgetItem([pdb])
-    #         self.tree.addTopLevelItem(pdb_item)
-
-    #         for asm, chains in assemblies.items():
-    #             asm_item = QTreeWidgetItem([f"Assembly {asm}"])
-    #             pdb_item.addChild(asm_item)
-
-    #             for chain, uniprot in chains.items():
-    #                 chain_item = QTreeWidgetItem([
-    #                     f"Chain {chain}",
-    #                     "(%s) %s" %(uniprot.uniprot_id, uniprot.uniprot_name)]
-    #                 )
-    #                 asm_item.addChild(chain_item)
-
-    #     self.tree.expandAll()
-    #     self.layout.addWidget(self.tree)
-
+    
     def find(self):
         data = fetch_similar(
             sequence_sele=self.sequenceCombo.currentText(),
-            sequence_type=self.sequenceTypeCombo.currentText(),
+            sequence_type=SequenceType(self.sequenceTypeCombo.currentText()),
             identity_cutoff=self.identityCutoffSpin.value(),
-            require_free_site=self.freeSiteLine.text().strip(),
+            check_ligands=self.checkLigandsCheck.isChecked(),
+            check_peptides=self.checkPeptidesCheck.isChecked(),
+            site_sele=self.siteLine.text().strip(),
             site_margin=self.siteMarginSpin.value(),
-            ignore_ligands=self.ignoreLigandsLine.text().strip().split(),
+            ignore_ligands=self.ignoreLigandsLine.text().strip(),
+            align_method=AligMethod(self.alignMethodCombo.currentText()),
             max_results=self.maxResultsSpin.value(),
+            fetch_extra=self.extraCheck.isChecked(),
         )
-        # self.refresh(data)
+        self.dialog = FechSimilarResultsDialog(data)
+        self.dialog.show()
 
 
+class FechSimilarResultsDialog(QDialog):
+
+    def __init__(self, data):
+        super().__init__()
+        self.setWindowTitle("Fetch Similar Results")
+
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(2)
+        self.tree.header().hide()
+        self.tree.header().setSectionResizeMode(QHeaderView.Stretch)
+        self.layout.addWidget(self.tree)
+        
+        for pdb_id, asm_id in data.keys():
+            pdb_item = QTreeWidgetItem([f"PDB {pdb_id} Assembly {asm_id}", "", ""])
+            self.tree.addTopLevelItem(pdb_item)
+
+            for org, macromol in data[(pdb_id, asm_id)]['organisms']:
+                orgItem = QTreeWidgetItem([org, macromol, ""])
+                pdb_item.addChild(orgItem)
+            
+            ligands = list(data[(pdb_id, asm_id)]['ligands'])
+            visited = set()
+            for resn, _, _, in ligands:
+                    if resn in visited:
+                        continue
+                    visited.add(resn)
+                    lig_item = QTreeWidgetItem([f"Residue {resn}", '', ''])
+                    pdb_item.addChild(lig_item)
+            if not visited:
+                lig_item = QTreeWidgetItem(["No ligand found at site.", '', ''])
+                pdb_item.addChild(lig_item)
+        self.tree.expandAll()
+
+    
 class RmsfWidget(QWidget):
 
     def __init__(self):
@@ -660,7 +751,7 @@ class MainDialog(QDialog):
         self.setWindowTitle("(XDrugPy) Multi")
 
         tab = QTabWidget()
-        tab.addTab(FinderWidget(), "Finder")
+        tab.addTab(FechSimilarWidget(), "Finder")
         tab.addTab(RmsfWidget(), "RMSF")
 
         layout.addWidget(tab)
