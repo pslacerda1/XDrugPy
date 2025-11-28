@@ -1,8 +1,10 @@
 ##############################################
 # HCA of a large number of hotspots
+#
 # Runs like:
 #    $ pymol -c hca.py
 #
+#############################################
 
 from os.path import expanduser, expandvars
 from glob import glob
@@ -11,31 +13,33 @@ from pymol import cmd as pm
 from matplotlib import pyplot as plt
 
 
-# OPTIONAL: Optimization that disables a unuseful feature if we'll not
+# OPTIONAL: Optimization that disables an unuseful feature if we'll not
 # launch the graphical interface after script execution.
 pm.undo_disable()
 
-# Reads the FTMap structures but limits arbitrarily to the first 25 entries.
-files = expandvars(expanduser("~/Desktop/PEPTI/atlas/????_atlas.pdb"))
-for file in glob(files)[:25]:
+# List the FTMap PDB files but limits arbitrarily to the first 25 entries.
+# This glob ???? match four chars (like a PDB id), but could be replaced by:
+#                                   ~/Desktop/PEPTI/atlas/*_atlas.pdb
+files = glob(expandvars(expanduser("~/Desktop/PEPTI/atlas/????_atlas.pdb")))
+for file in files[:25]:
     
-    # Read files and analysis hotspots modulability.
+    # Load structures and does hotspots ligability analysis.
     ftmap = load_ftmap(file)
 
-    # OPTIONAL: At each read, exclude hotspots that doesn't satisfy the plotting
-    # criteria. It also preserves the *.protein structures from exclusion. It is
-    # an optimization that reduce the number of PyMOL objects irrelevant to our
-    # pretentions and improving performance at high loads.
-    for obj in pm.get_object_list("NOT (*.K15_* AND p.S0>25 OR *.protein)"):
+    # OPTIONAL: After each read, exclude hotspots that doesn't satisfy the
+    # plotting criteria. It also preserves the *.protein structures from
+    # exclusion. This optimization reduces the number of PyMOL objects
+    # irrelevant to our analysis and improves the performance at high loads.
+    for obj in pm.get_object_list("NOT ((*.K15_* AND p.S0>25) OR *.protein)"):
         pm.delete(obj)
 
 # Does the actual hierarchical cluster analysis (HCA) with hotspot overlap (HO)
-# data between remaining hotspots after loads and deletions of hotspot objects.
+# function between remaining hotspots after loads and deletions of objects.
 plot_pairwise_hca(
-    '*.K15_*',          # all groups, only Kozakov2015, any class
-    align=False,        # suposes previously aligned structures (FTMove?)
+    '*.K15_* AND p.S0>25',  # all groups, only Kozakov2015, any class
+    align=False,            # suposes previously aligned structures (FTMove?)
     radius=4,
-    color_threshold=0.7, # probably you'll need to adjust this variable
+    color_threshold=0.7,    # probably you'll need to adjust this variable
     hide_threshold=True,
     annotate=False
 )
