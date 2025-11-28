@@ -8,7 +8,8 @@
 
 from os.path import expanduser, expandvars
 from glob import glob
-from xdrugpy.hotspots import load_ftmap, plot_pairwise_hca
+from xdrugpy.hotspots import load_ftmap, plot_pairwise_hca, SimilarityFunc
+
 from pymol import cmd as pm
 from matplotlib import pyplot as plt
 
@@ -34,12 +35,13 @@ for file in files[:25]:
         pm.delete(obj)
 
 # Does the actual hierarchical cluster analysis (HCA) with hotspot overlap (HO)
-# function between remaining hotspots after loads and deletions of objects.
+# function between remaining hotspots objects.
 plot_pairwise_hca(
-    '*.K15_* AND p.S0>25',  # all groups, only Kozakov2015, any class
-    align=False,            # suposes previously aligned structures (FTMove?)
+    '*.K15_* AND p.S0>25',      # all groups, Kozakov2015 S0>25, any class
+    function=SimilarityFunc.HO, # superposition based hotspot similarity method
+    align=False,                # suposes previously aligned structures (FTMove?)
     radius=4,
-    color_threshold=0.7,    # probably you'll need to adjust this variable
+    color_threshold=0.7,        # probably you'll need to adjust this variable
     hide_threshold=True,
     annotate=False
 )

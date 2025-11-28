@@ -862,7 +862,7 @@ def res_sim(
     return ret
 
 
-class HeatmapFunction(StrEnum):
+class SimilarityFunc(StrEnum):
     HO = "ho"
     RESIDUE_JACCARD = "residue_jaccard"
     RESIDUE_OVERLAP = "residue_overlap"
@@ -871,7 +871,7 @@ class HeatmapFunction(StrEnum):
 @declare_command
 def plot_pairwise_hca(
     sele: Selection,
-    method: HeatmapFunction = HeatmapFunction.HO,
+    function: SimilarityFunc = SimilarityFunc.HO,
     radius: float = 2.0,
     align: bool = False,
     annotate: bool = False,
@@ -904,10 +904,10 @@ def plot_pairwise_hca(
         for idx2, obj2 in enumerate(objects):
             if idx1 >= idx2:
                 continue
-            match method:
-                case HeatmapFunction.HO:
+            match function:
+                case SimilarityFunc.HO:
                     ret = ho(obj1, obj2, radius=radius)
-                case HeatmapFunction.RESIDUE_JACCARD:
+                case SimilarityFunc.RESIDUE_JACCARD:
                     ret = res_sim(
                         obj1,
                         obj2,
@@ -915,7 +915,7 @@ def plot_pairwise_hca(
                         method=ResidueSimilarityMethod.JACCARD,
                         seq_align=align,
                     )
-                case HeatmapFunction.RESIDUE_OVERLAP:
+                case SimilarityFunc.RESIDUE_OVERLAP:
                     ret = res_sim(
                         obj1,
                         obj2,
@@ -1400,9 +1400,9 @@ class SimilarityWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.methodCombo = QComboBox()
-        self.methodCombo.addItems([e.value for e in HeatmapFunction])
-        boxLayout.addRow("Function:", self.methodCombo)
+        self.functionCombo = QComboBox()
+        self.functionCombo.addItems([e.value for e in SimilarityFunc])
+        boxLayout.addRow("Function:", self.functionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(4)
@@ -1431,7 +1431,7 @@ class SimilarityWidget(QWidget):
 
     def plot_pairwise(self):
         sele = self.hotspotSeleLine.text()
-        method = self.methodCombo.currentText()
+        function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
         align = self.pairwiseSeqAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
@@ -1441,7 +1441,7 @@ class SimilarityWidget(QWidget):
 
         plot_pairwise_hca(
             sele,
-            method,
+            function,
             radius,
             align,
             annotate,
