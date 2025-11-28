@@ -27,17 +27,18 @@ for file in files[:25]:
     # Load structures and does hotspots ligability analysis.
     ftmap = load_ftmap(file)
 
-    # OPTIONAL: After each read, exclude hotspots that doesn't satisfy the
-    # plotting criteria. It also preserves the *.protein structures from
-    # exclusion. This optimization reduces the number of PyMOL objects
-    # irrelevant to our analysis and improves the performance at high loads.
-    for obj in pm.get_object_list("NOT ((*.K15_* AND p.S0>25) OR *.protein)"):
+    # OPTIONAL: After each load, delete hotspots that doesn't satisfy the
+    # plotting criteria. It also deletes the *.protein structures. This
+    # optimization reduces the number of PyMOL objects irrelevant to our
+    # analysis improving the performance at high loads.
+    for obj in pm.get_object_list("NOT (*.K15_* AND p.S0>25)"):
         pm.delete(obj)
 
 # Does the actual hierarchical cluster analysis (HCA) with hotspot overlap (HO)
-# function between remaining hotspots objects.
+# function. Only very strong Kozakov2015 hotspots with at least p.S0>25 that
+# remained from the previous successive loading and deletions.
 plot_pairwise_hca(
-    '*.K15_* AND p.S0>25',      # all groups, Kozakov2015 S0>25, any class
+    '*.K15_* AND p.S0>25',      # all groups, K15 & S0>25, of any class
     function=SimilarityFunc.HO, # superposition based hotspot similarity method
     align=False,                # suposes previously aligned structures (FTMove?)
     radius=4,
