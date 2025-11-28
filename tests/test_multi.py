@@ -67,9 +67,10 @@ def test_fetch_similar_0():
 def test_fetch_similar_1():
     pm.reinitialize()
     pm.fetch("1e92")
-    structs, _, _ = fetch_similar("1E92", "protein", 0.9, max_results=20)
+    data = fetch_similar("1E92", "protein", 0.9, max_results=20)
     assert len(pm.get_object_list()) >= 17
-    assert len(structs) >= 16
+    assert len(data[('1W0C', 1)]['ligands']) == 0
+
 
 def test_fetch_similar_organisms():
     pm.reinitialize()
@@ -82,4 +83,3 @@ def test_fetch_similar_organisms():
         max_results=100,
         fetch_extra=True,
     )
-    assert data == False

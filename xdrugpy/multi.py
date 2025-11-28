@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.table import Table
 from strenum import StrEnum
 
-from .utils import declare_command, mpl_axis, PyMOLComboObjectBox
+from .utils import declare_command, mpl_axis, PyMOLComboObjectBox, AligMethod
 
 
 logging.getLogger("rcsbapi").setLevel(logging.CRITICAL)
@@ -32,12 +32,6 @@ PROSTHETIC_GROUPS += " HOH SO4"
 RMSF_DEFAULT_QUALIFIER = "name CA"
 
 
-class AligMethod(StrEnum):
-    ALIGN = "align"
-    SUPER = "super"
-    CEALIGN = "cealign"
-    FIT = "fit"
-    
 
 class SequenceType(StrEnum):
     DNA = "dna"

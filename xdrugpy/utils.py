@@ -21,6 +21,7 @@ from functools import lru_cache
 from rich.console import Console
 from rich.traceback import Traceback
 from rich import terminal_theme
+from strenum import StrEnum
 
 
 QStandardPaths = Qt.QtCore.QStandardPaths
@@ -48,6 +49,14 @@ atexit.register(clear_temp)
 
 
 Residue = namedtuple("Residue", "model index resi chain name x y z oneletter")
+
+
+class AligMethod(StrEnum):
+    ALIGN = "align"
+    SUPER = "super"
+    CEALIGN = "cealign"
+    FIT = "fit"
+    
 
 
 def run(command, log=True, cwd=None, env=os.environ):
@@ -155,11 +164,16 @@ def mpl_axis(ax, **kwargs):
 
 @declare_command
 def align_groups(
-    target: Selection,
     mobile_groups: Selection,
+    target: Selection,
+    align_method: AligMethod = AligMethod.CEALIGN,
 ):
     for mobile in mobile_groups.split():
-        pm.cealign(f"{mobile}.protein", f"{target}.protein")
+        pm.extra_fit(
+            f"{mobile}.protein",
+            f"{target}.protein",
+            method=align_method
+        )
         for inner in pm.get_object_list(f"{mobile}.*"):
             if ".protein" in inner:
                 continue
