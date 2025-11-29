@@ -51,8 +51,8 @@ plot_pairwise_hca(
 plt.show()  # displays the HCA
 
 # A more standard type of HCA over the same hotspots of the previous analysis.
-# However this ones uses as distance the aggregation of all hotspot properties,
-# being the spatiality only part of the properties.
+# However this ones calculates the distance over the aggregation of all hotspot
+# properties, including coordinates of center-of-mass.
 plot_euclidean_hca(
     '*.K15_* AND p.S0>20',
     linkage_method=LinkageMethod.WARD,
