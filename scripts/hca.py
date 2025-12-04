@@ -1,9 +1,15 @@
-##########################################
+#######################################################################
 # HCA of maybe a large number of hotspots
 #
 # Run it like:
 #    $ pymol -c hca.py
-##########################################
+#
+# If you don't have the XDrugPy API installed, try to run the following
+# command after following the installation steps from https://tiny.cc/XDrugPy:
+#    $ pip install -U https://github.com/pslacerda1/XDrugPy/archive/refs/heads/master.zip
+#
+# Be aware to be on the PyMOL environment. **This is an UNSTABLE API**
+########################################################################
 
 from os.path import expanduser, expandvars
 from glob import glob
