@@ -48,22 +48,22 @@ pm.save("~/My Folder/nice_session.pze")
 plot_pairwise_hca(
     '*.K15_* AND p.S0>20',
     function=SimilarityFunc.HO,
-    align=False,                # suposes previously aligned structures (FTMove?)
     radius=1.5,
-    color_threshold=0,          # probably you'll need to adjust this variable
-    hide_threshold=False,
-    annotate=True
+    align=False,             # suposes previously aligned structures (FTMove?)
+    linkage_method=LinkageMethod.WARD,
+    color_threshold=1.5,     # probably you'll need to adjust this variable
+    hide_threshold=True,     # hide every hotspot except the medoid
+    annotate=False,          # is desirable the value at each cell?
 )
-plt.show()  # displays the HCA
 
 # A more standard type of HCA over the same hotspots of the previous analysis.
-# However this ones calculates the distance over the aggregation of all hotspot
+# This ones calculates the distance over the aggregation of all hotspot
 # properties, including coordinates of center-of-mass.
 plot_euclidean_hca(
     '*.K15_* AND p.S0>20',
     linkage_method=LinkageMethod.WARD,
-    color_threshold=0,
-    hide_threshold=False,
-    annotate=True,
+    color_threshold=1.5,
+    hide_threshold=True,
+    annotate=False,
 )
 plt.show()  # displays the HCA
