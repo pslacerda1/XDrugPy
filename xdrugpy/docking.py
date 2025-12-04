@@ -638,7 +638,7 @@ class VinaDockingEngine(DockingEngine):
             #
             pm.save(receptor_pdb, receptor_sele)
             command = (
-                f"pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output {receptor_pdb} --with-ph {ph}"
+                f'pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output "{receptor_pdb}" --with-ph {ph}'
                 f' "{receptor_pdb}" "{receptor_pqr}"'
             )
             self.log_html(
