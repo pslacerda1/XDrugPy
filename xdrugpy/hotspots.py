@@ -7,7 +7,7 @@ from glob import glob
 from itertools import combinations
 from types import SimpleNamespace
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,6 @@ from strenum import StrEnum
 from .utils import (
     declare_command,
     Selection,
-    mpl_axis,
     plot_hca_base,
     get_residue_from_object,
     Residue
@@ -624,8 +623,8 @@ def fpt_sim(
     color_threshold: float = 0.0,
     hide_threshold: bool = False,
     annotate: bool = True,
-    axis_fingerprint: str = "",
-    axis_hca: str = "",
+    plot_fingerprints: str = "",
+    plot_hca: str = "",
     quiet: int = True,
 ):
     """
@@ -701,57 +700,67 @@ def fpt_sim(
                 fpt[lbl] = fpt.get(lbl, 0) + cnt
                 break
         fpts.append(fpt)
-    
-    if axis_fingerprint is not False:
-        with mpl_axis(
-            axis_fingerprint, nrows=len(seles), sharex=True, constrained_layout=True
-        ) as axs:
-            fpt0 = fpts[0]
-            if not all([len(fpt0) == len(fpt) for fpt in fpts]):
-                raise ValueError(
-                    "All fingerprints must have the same length. "
-                    "Do you have incomplete structures?"
-                )
-            if not isinstance(axs, (np.ndarray, list)):
-                axs = [axs]
-            for ax, fpt, sele in zip(axs, fpts, seles):
-                labels = ["%s %s:%s" % k for k in fpt]
-                arange = np.arange(len(fpt))
-                ax.bar(arange, fpt.values(), color="C0")
-                ax.set_title(sele)
-                ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-                ax.set_xticks(arange, labels=labels, rotation=90)
-                ax.locator_params(axis="x", tight=True, nbins=nbins)
-                for label in ax.xaxis.get_majorticklabels():
-                    label.set_verticalalignment("top")
 
+    if plot_fingerprints:
+        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=True, constrained_layout=True)    
+        if not isinstance(axs, (np.ndarray, list)):
+            # if len(seles) == 1
+            axs = [axs]
+        fpt0 = fpts[0]
+        if not all([len(fpt0) == len(fpt) for fpt in fpts]):
+            raise ValueError(
+                "All fingerprints must have the same length. "
+                "Do you have incomplete structures?"
+            )
+        for ax, fpt, sele in zip(axs, fpts, seles):
+            labels = ["%s %s_%s" % k for k in fpt]
+            arange = np.arange(len(fpt))
+            ax.bar(arange, fpt.values(), color="C0")
+            ax.set_title(sele)
+            ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+            ax.set_xticks(arange, labels=labels, rotation=90)
+            ax.locator_params(axis="x", tight=True, nbins=nbins)
+            for label in ax.xaxis.get_majorticklabels():
+                label.set_verticalalignment("top")
+        if isinstance(plot_fingerprints, (str, Path)):
+            fig.savefig(plot_fingerprints, dpi=300)
+            if not quiet:
+                print(f"Fingerprint figure saved to {plot_fingerprints}")
+        
     corrs = []
     labels = []
-    if axis_hca is not False:
+    for i1, (fp1, sele1) in enumerate(zip(fpts, seles)):
+        labels.append(sele1)
+        for i2, (fp2, sele2) in enumerate(zip(fpts, seles)):
+            if i1 >= i2:
+                continue
+            corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
+            if np.isnan(corr):
+                corr = 0
+            corrs.append(1 - corr)
+            if not quiet:
+                print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
+    
+    if plot_hca:
+        fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=True)
         assert len(fpts) > 1, "HCA requires multiple fingerprints, please add more selections."
-        with mpl_axis(axis_hca, sharex=True, constrained_layout=True) as ax:
-            for i1, (fp1, sele1) in enumerate(zip(fpts, seles)):
-                labels.append(sele1)
-                for i2, (fp2, sele2) in enumerate(zip(fpts, seles)):
-                    if i1 >= i2:
-                        continue
-                    corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
-                    if np.isnan(corr):
-                        corr = 0
-                    corrs.append(1 - corr)
-                    if not quiet:
-                        print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
-            plot_hca_base(
-                corrs,
-                labels,
-                linkage_method=linkage_method,
-                color_threshold=color_threshold,
-                hide_threshold=hide_threshold,
-                annotate=annotate,
-                axis=ax,
-            )
-            for label in ax.xaxis.get_majorticklabels():
-                label.set_horizontalalignment("right")
+        
+        plot_hca_base(
+            corrs,
+            labels,
+            linkage_method=linkage_method,
+            color_threshold=color_threshold,
+            hide_threshold=hide_threshold,
+            annotate=annotate,
+            axis=ax,
+        )
+        for label in ax.xaxis.get_majorticklabels():
+            label.set_horizontalalignment("right")
+        if isinstance(plot_hca, (str, Path)):
+            fig.savefig(plot_hca, dpi=300)
+            if not quiet:
+                print(f"HCA figure saved to {plot_hca}")
+    
     return fpts, corrs, labels
 
 
@@ -878,7 +887,7 @@ def plot_pairwise_hca(
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
     hide_threshold: bool = False,
-    axis: str = "",
+    plot: str = "",
 ):
     """
     Compute the similarity between matching objects using a similarity function.
@@ -924,7 +933,7 @@ def plot_pairwise_hca(
                         seq_align=align,
                     )
             X.append(1 - ret)
-    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_threshold, annotate, axis)
+    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_threshold, annotate, plot)
     return X, objects, dendro, medoids
 
 
@@ -983,7 +992,7 @@ def plot_euclidean_hca(
     color_threshold: float = 0.0,
     hide_threshold: bool = False,
     annotate: bool = False,
-    axis: str = None,
+    plot: str = None,
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1042,7 +1051,7 @@ def plot_euclidean_hca(
             X.append(d)
     X = np.array(X)
     X = (X-X.min())/(X.max()-X.min())
-    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, axis)
+    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, plot)
 
 
 #
@@ -1589,29 +1598,27 @@ class CountWidget(QWidget):
         multi_seles = self.multiSelesLine.text()
         site = self.siteSelectionLine.text()
         radius = self.radiusSpin.value()
-        hca = self.hcaCheck.isChecked()
+        plot_fingerprints = self.fingerprintsCheck.isChecked()
+        plot_hca = self.hcaCheck.isChecked()
         nbins = self.nBinsSpin.value()
         annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
         hide_threshold = self.hideThresholdCheck.isChecked()
-        if hca:
-            axis_hca = ""
-        else:
-            axis_hca = False
 
         fpt_sim(
             multi_seles,
             site,
             radius,
-            axis_fingerprint="",
-            axis_hca=axis_hca,
+            plot_fingerprints=plot_fingerprints,
+            plot_hca=plot_hca,
             nbins=nbins,
             annotate=annotate,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
             hide_threshold=hide_threshold,
         )
+        plt.show()
 
 
 class MainDialog(QDialog):

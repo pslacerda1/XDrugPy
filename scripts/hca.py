@@ -1,17 +1,8 @@
-#######################################################################
-# HCA of maybe a large number of hotspots
 #
-# Run it like:
-#    $ pymol -c hca.py
+# Hierarchical Cluster Analysis (HCA) of a large number of hotspots
 #
-# If you don't have the XDrugPy API installed, try to run the following
-# command after following the installation steps from https://tiny.cc/XDrugPy:
-#    $ pip install -U https://github.com/pslacerda1/XDrugPy/archive/refs/heads/master.zip
-#
-# Be aware to be on the PyMOL environment. **This is an UNSTABLE API**
-########################################################################
 
-from os.path import expanduser, expandvars
+from os.path import expanduser
 from glob import glob
 from xdrugpy.hotspots import load_ftmap, plot_pairwise_hca, plot_euclidean_hca, SimilarityFunc, LinkageMethod
 
@@ -31,7 +22,7 @@ pm.undo_disable()
 # List the FTMap PDB files but limits arbitrarily to the first 25 entries.
 # This glob ???? match four chars (like a PDB id), but could be replaced by:
 #                                   ~/Desktop/PEPTI/atlas/*_atlas.pdb
-files = glob(expandvars(expanduser("~/Desktop/PEPTI/atlas/????_atlas.pdb")))
+files = glob(expanduser("~/Desktop/PEPTI/atlas/????_atlas.pdb"))
 for file in files[:25]:
     
     # Load structures and does hotspots ligability analysis.

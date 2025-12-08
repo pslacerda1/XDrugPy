@@ -46,7 +46,12 @@ def test_euclidean_hca():
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
 
-    dendro, medoids = plot_euclidean_hca(expr, color_threshold=0.15, annotate=True, axis=img_gen)
+    dendro, medoids = plot_euclidean_hca(
+        expr,
+        color_threshold=0.15,
+        annotate=True,
+        plot=img_gen
+    )
     
     assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_D_01"]
     assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_D_01"]
@@ -73,7 +78,7 @@ def test_pairwise_hca():
         function=SimilarityFunc.RESIDUE_JACCARD,
         radius=4,
         annotate=True,
-        axis=img_gen,
+        plot=img_gen,
         color_threshold=0.5
     )
     assert images_identical(img_ref, img_gen)
@@ -118,14 +123,12 @@ def test_fpt():
         site="* within 4 of *_D_00",
         nbins=50,
         radius=4.0,
-        axis_fingerprint=img_gen1,
-        axis_hca=img_gen2,
+        plot_fingerprints=img_gen1,
+        plot_hca=img_gen2,
     )
 
     assert images_identical(img_ref1, img_gen1)
     assert images_identical(img_ref2, img_gen2)
-
-    
 
 
 def test_res_sim():
