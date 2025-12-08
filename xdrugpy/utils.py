@@ -241,9 +241,6 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
             if color != color1:
                 continue
 
-            if color == 'C3':
-                pass
-            
             # Soma das distâncias de leaf1 para todos os outros pontos do mesmo cluster
             d_sum = 0
             for leaf2_idx, leaf_label2, color2 in zip(

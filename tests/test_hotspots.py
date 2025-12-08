@@ -9,9 +9,9 @@ from xdrugpy.hotspots import (
     SimilarityFunc,
     fpt_sim,
     res_sim,
-    ho,
-    fo,
-    dce,
+    get_ho,
+    get_fo,
+    get_dce,
 )
 mpl.use('SVG')
 mpl.rcParams['svg.hashsalt'] = 'fixed_salt_123'
@@ -88,16 +88,16 @@ def test_ho():
         groups=['1dq8', '1dq9'],
         run_fpocket=True
     )
-    assert ho('1dq9.fpocket_01', '1dq9.K15_D_00') == 0.0
-    assert ho('1dq9.K15_D_00', '1dq8.K15_D_00') == 1.0
+    assert get_ho('1dq9.fpocket_01', '1dq9.K15_D_00') == 0.0
+    assert get_ho('1dq9.K15_D_00', '1dq8.K15_D_00') == 1.0
 
 
 def test_fo_and_dce():
     pm.reinitialize()
     pm.fetch('1OD')
     pm.fetch('NH2')
-    assert fo("%NH2", "%1OD", radius=3.0) == 1.0
-    assert round(dce("%NH2", "%1OD", radius=3.0), 2) == 7.67
+    assert get_fo("%NH2", "%1OD", radius=3.0) == 1.0
+    assert round(get_dce("%NH2", "%1OD", radius=3.0), 2) == 7.67
 
 
 def test_fpt():

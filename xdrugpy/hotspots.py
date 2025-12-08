@@ -509,7 +509,7 @@ def count_molecules(sel):
 
 
 @declare_command
-def fo(
+def get_fo(
     sel1: Selection,
     sel2: Selection,
     radius: float = 2,
@@ -542,7 +542,7 @@ def fo(
 
 
 @declare_command
-def dc(
+def get_dc(
     sel1: Selection,
     sel2: Selection,
     radius: float = 1.25,
@@ -577,7 +577,7 @@ def dc(
 
 
 @declare_command
-def dce(
+def get_dce(
     sel1: Selection,
     sel2: Selection,
     radius: float = 1.25,
@@ -601,7 +601,7 @@ def dce(
     EXAMPLE
         dce REF_LIG, ftmap1234.D_003_*_*
     """
-    dce = dc(sel1, sel2, radius=radius) / pm.count_atoms(sel1)
+    dce = get_dc(sel1, sel2, radius=radius) / pm.count_atoms(sel1)
     if not quiet:
         print(f"DCE: {dce:.2f}")
     return dce
@@ -702,27 +702,28 @@ def fpt_sim(
                 break
         fpts.append(fpt)
     
-    with mpl_axis(
-        axis_fingerprint, nrows=len(seles), sharex=True, constrained_layout=True
-    ) as axs:
-        fpt0 = fpts[0]
-        if not all([len(fpt0) == len(fpt) for fpt in fpts]):
-            raise ValueError(
-                "All fingerprints must have the same length. "
-                "Do you have incomplete structures?"
-            )
-        if not isinstance(axs, (np.ndarray, list)):
-            axs = [axs]
-        for ax, fpt, sele in zip(axs, fpts, seles):
-            labels = ["%s %s:%s" % k for k in fpt]
-            arange = np.arange(len(fpt))
-            ax.bar(arange, fpt.values(), color="C0")
-            ax.set_title(sele)
-            ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-            ax.set_xticks(arange, labels=labels, rotation=90)
-            ax.locator_params(axis="x", tight=True, nbins=nbins)
-            for label in ax.xaxis.get_majorticklabels():
-                label.set_verticalalignment("top")
+    if axis_fingerprint is not False:
+        with mpl_axis(
+            axis_fingerprint, nrows=len(seles), sharex=True, constrained_layout=True
+        ) as axs:
+            fpt0 = fpts[0]
+            if not all([len(fpt0) == len(fpt) for fpt in fpts]):
+                raise ValueError(
+                    "All fingerprints must have the same length. "
+                    "Do you have incomplete structures?"
+                )
+            if not isinstance(axs, (np.ndarray, list)):
+                axs = [axs]
+            for ax, fpt, sele in zip(axs, fpts, seles):
+                labels = ["%s %s:%s" % k for k in fpt]
+                arange = np.arange(len(fpt))
+                ax.bar(arange, fpt.values(), color="C0")
+                ax.set_title(sele)
+                ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+                ax.set_xticks(arange, labels=labels, rotation=90)
+                ax.locator_params(axis="x", tight=True, nbins=nbins)
+                for label in ax.xaxis.get_majorticklabels():
+                    label.set_verticalalignment("top")
 
     corrs = []
     labels = []
@@ -755,7 +756,7 @@ def fpt_sim(
 
 
 @declare_command
-def ho(
+def get_ho(
     hs1: Selection,
     hs2: Selection,
     radius: float = 2.5,
@@ -905,7 +906,7 @@ def plot_pairwise_hca(
                 continue
             match function:
                 case SimilarityFunc.HO:
-                    ret = ho(obj1, obj2, radius=radius)
+                    ret = get_ho(obj1, obj2, radius=radius)
                 case SimilarityFunc.RESIDUE_JACCARD:
                     ret = res_sim(
                         obj1,
