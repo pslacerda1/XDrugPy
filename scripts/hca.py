@@ -18,6 +18,12 @@ from xdrugpy.hotspots import load_ftmap, plot_pairwise_hca, plot_euclidean_hca, 
 from pymol import cmd as pm
 from matplotlib import pyplot as plt
 
+# Increase Matplotlib sizes
+plt.rcParams.update({
+    'font.size': 14,
+    'figure.figsize': (10, 6)
+})
+
 # OPTIONAL: Optimization that disables an unuseful feature if we'll not
 # launch the graphical interface after script execution.
 pm.undo_disable()
@@ -40,7 +46,7 @@ for file in files[:25]:
         pm.delete(obj)
 
 # If you don't delete protein structures you can have a nice session!
-pm.save("~/My Folder/nice_session.pze")
+# pm.save("~/My Folder/nice_session.pze")
 
 # Does the actual hierarchical cluster analysis (HCA) with hotspot overlap (HO)
 # function. Only strong Kozakov2015 hotspots with at least p.S0>20 that remained
@@ -66,4 +72,5 @@ plot_euclidean_hca(
     hide_threshold=True,
     annotate=False,
 )
+
 plt.show()  # displays the HCA
