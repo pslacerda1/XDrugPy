@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from xdrugpy.hotspots import (
     load_ftmap,
     fpt_sim,
-    LinkageMethod
+    LinkageMethod,
 )
 
 pm.undo_disable()
@@ -43,9 +43,10 @@ fpt_sim(
     plot_fingerprints=False, # too much structures for individual fingerprint plots
     plot_hca=True,
     linkage_method=LinkageMethod.WARD,
-    color_threshold=1.5,    # limit to color clusters with distance < 2.0
+    color_threshold=0,      # limit to color clusters with distance < 2.0
     hide_threshold=True,    # hide every hotspot below 2.0 except medoids?
     annotate=False,         # is desirable the value at each cell?
     quiet=True,             # print individual correlation values?
 )
 plt.show()  # display plot
+input("Press Enter to continue...")  # keep the plot window open

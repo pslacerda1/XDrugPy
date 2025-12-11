@@ -21,8 +21,7 @@ from .utils import (
     declare_command,
     Selection,
     plot_hca_base,
-    get_residue_from_object,
-    Residue
+    clustal_omega
 )
 
 from pymol import cmd as pm
@@ -663,57 +662,37 @@ def fpt_sim(
     polymers = {p: True for p in polymers}  # ordered set
 
     ref_sele = f"{ref_polymer} and ({ref_polymer} within {radius} of ({site}))"
-    mappings = np.empty((0, 9))
-    for at in pm.get_model(f"({ref_sele}) & name CA").atom:
-        res = get_residue_from_object(at.model, at.index)
-        mappings = np.vstack([mappings, res])
-    for polymer in polymers:
-        if polymer == ref_polymer:
-            continue
-        try:
-            aln_obj = pm.get_unused_name()
-            pm.super(
-                polymer,
-                ref_sele,
-                transform=0,
-                object=aln_obj,
-            )
-            aln = pm.get_raw_alignment(aln_obj)
-        finally:
-            pm.delete(aln_obj)
-        for (obj1, idx1), (obj2, idx2) in aln:
-            res = get_residue_from_object(obj2, idx2)
-            mappings = np.vstack([mappings, res])
-    mappings = pd.DataFrame(mappings, columns=Residue._fields)
+    site_resis = []
+    for at in pm.get_model(f"({ref_sele}) & guide & polymer").atom:
+        site_resis.append((at.model, at.index))
+    
+    mapping = clustal_omega(' | '.join(polymers))
+    ref_map = mapping[ref_polymer]
 
     fpts = []
-    for hs in seles:
+    for hs, (poly, map) in zip(seles, mapping.items()):
         fpt = {}
-        columns = ["chain", "resi", "model", "index", "oneletter"]
-        @(mappings.groupby(["chain", "resi"], as_index=False)[columns]).apply
-        def apply(group):
-            for idx, row in group.iterrows():
-                lbl = (row.oneletter, row.resi, row.chain)
-                cnt = pm.count_atoms(
-                    f"({hs}) within {radius} of (byres %{row.model} & index {row['index']})"
-                )
-                fpt[lbl] = fpt.get(lbl, 0) + cnt
-                break
+        for ref_res, res in zip(ref_map, map):
+            if (ref_polymer, ref_res.index) not in site_resis:
+                continue
+            lbl = (res.resi, res.chain)
+            cnt = pm.count_atoms(
+                f"({hs}) within {radius} of (byres %{poly} & index {res.index})"
+            )
+            fpt[lbl] = fpt.get(lbl, 0) + cnt
         fpts.append(fpt)
-
+    
     if plot_fingerprints:
         fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=True, constrained_layout=True)    
         if not isinstance(axs, (np.ndarray, list)):
-            # if len(seles) == 1
             axs = [axs]
-        fpt0 = fpts[0]
-        if not all([len(fpt0) == len(fpt) for fpt in fpts]):
+        if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
             raise ValueError(
                 "All fingerprints must have the same length. "
                 "Do you have incomplete structures?"
             )
         for ax, fpt, sele in zip(axs, fpts, seles):
-            labels = ["%s %s_%s" % k for k in fpt]
+            labels = ["%s_%s" % k for k in fpt]
             arange = np.arange(len(fpt))
             ax.bar(arange, fpt.values(), color="C0")
             ax.set_title(sele)

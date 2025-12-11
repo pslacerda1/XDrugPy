@@ -48,7 +48,32 @@ def install_xdrugpy_requirements():
         urlretrieve(fpocket_url, fpocket_exe)
         os.chmod(fpocket_exe, stat.S_IEXEC)
 
+    if SYSTEM == "windows":
+            web_name = "clustal-omega-1.2.2-win64.zip"
+            local_name = RESOURCES_DIR / web_name
+            if not exists(local_name):
+                urlretrieve(
+                    f"http://www.clustal.org/omega/{web_name}",
+                    local_name
+                )
+                import zipfile
+                zipfile.ZipFile(local_name).extractall(RESOURCES_DIR)
+                os.chmod(RESOURCES_DIR / 'clustalo.exe', stat.S_IEXEC)
+    else:
+        if SYSTEM == "linux":
+            web_name = "clustalo-1.2.4-Ubuntu-x86_64"
+        elif SYSTEM == "darwin":
+            web_name = "clustal-omega-1.2.3-macosx"
+        else:
+            raise RuntimeError("Unexpected system.")
+        
+        clustalo_url = f"http://www.clustal.org/omega/{web_name}"
+        clustalo_exe = RESOURCES_DIR / "clustalo"
+        if not exists(clustalo_exe):
+            urlretrieve(clustalo_url, clustalo_exe)
+            os.chmod(clustalo_exe, stat.S_IEXEC)
 
+        
 def __init_plugin__(app=None):
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
