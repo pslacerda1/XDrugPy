@@ -122,6 +122,7 @@ def test_fpt():
         "1dq8.K15_* p.ST>12 / 1dq9.K15_D_00 / 1dqa.K15_B_00",
         site="* within 4 of *_D_00",
         nbins=50,
+        sharex=True,
         radius=4.0,
         plot_fingerprints=img_gen1,
         plot_hca=img_gen2,

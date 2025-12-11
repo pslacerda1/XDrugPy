@@ -618,6 +618,7 @@ def fpt_sim(
     site: Selection = "*",
     radius: float = 4.0,
     nbins: int = 5,
+    sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = 0.0,
     hide_threshold: bool = False,
@@ -659,14 +660,12 @@ def fpt_sim(
     assert len(polymers) > 0, "Please review your selections"
         
     ref_polymer = polymers[0]
-    polymers = {p: True for p in polymers}  # ordered set
-
     ref_sele = f"{ref_polymer} and ({ref_polymer} within {radius} of ({site}))"
     site_resis = []
     for at in pm.get_model(f"({ref_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    mapping = clustal_omega(' | '.join(polymers))
+    mapping = clustal_omega(list(polymers))
     ref_map = mapping[ref_polymer]
 
     fpts = []
@@ -683,7 +682,7 @@ def fpt_sim(
         fpts.append(fpt)
     
     if plot_fingerprints:
-        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=True, constrained_layout=True)    
+        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)    
         if not isinstance(axs, (np.ndarray, list)):
             axs = [axs]
         if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
@@ -1511,16 +1510,32 @@ class CountWidget(QWidget):
         self.radiusSpin.setMaximum(10)
         boxLayout.addRow("Radius:", self.radiusSpin)
 
+        self.fingerprintsCheck = QCheckBox()
+        self.fingerprintsCheck.setChecked(False)
+        boxLayout.addRow("Fingerprints:", self.fingerprintsCheck)
+        @self.fingerprintsCheck.stateChanged.connect
+        def stateChanged(checkState):
+            if checkState == QtCore.Qt.Checked:
+                fptBox.setEnabled(True)
+            else:
+                fptBox.setEnabled(False)
+
+        fptBox = QGroupBox()
+        boxLayout.addRow(fptBox)
+        boxLayout.setWidget(boxLayout.rowCount(), QFormLayout.SpanningRole, fptBox)
+        fptLayout = QFormLayout()
+        fptBox.setLayout(fptLayout)
+        fptBox.setEnabled(False)
+
         self.nBinsSpin = QSpinBox()
         self.nBinsSpin.setValue(20)
         self.nBinsSpin.setMinimum(0)
         self.nBinsSpin.setMaximum(500)
-        boxLayout.addRow("Fingerprint bins:", self.nBinsSpin)
+        fptLayout.addRow("Num bins:", self.nBinsSpin)
 
-
-        self.fingerprintsCheck = QCheckBox()
-        self.fingerprintsCheck.setChecked(True)
-        boxLayout.addRow("Fingerprints:", self.fingerprintsCheck)
+        self.sharexCheck = QCheckBox()
+        self.sharexCheck.setChecked(True)
+        fptLayout.addRow("Share x axis:", self.sharexCheck)
 
         self.hcaCheck = QCheckBox()
         self.hcaCheck.setChecked(False)
@@ -1580,6 +1595,7 @@ class CountWidget(QWidget):
         plot_fingerprints = self.fingerprintsCheck.isChecked()
         plot_hca = self.hcaCheck.isChecked()
         nbins = self.nBinsSpin.value()
+        sharex = self.sharexCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
@@ -1592,6 +1608,7 @@ class CountWidget(QWidget):
             plot_fingerprints=plot_fingerprints,
             plot_hca=plot_hca,
             nbins=nbins,
+            sharex=sharex,
             annotate=annotate,
             linkage_method=linkage_method,
             color_threshold=color_threshold,

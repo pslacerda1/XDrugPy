@@ -307,7 +307,8 @@ def get_residue_from_object(obj, idx):
     return res[0]
 
 
-def clustal_omega(sele):
+def clustal_omega(seles):
+    sele = ' | '.join(seles)
     sele = f"({sele}) and present and guide and polymer"
     input_fasta = pm.get_fastastr(sele, key='model')
 
@@ -316,12 +317,12 @@ def clustal_omega(sele):
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         shell=True,
-        text=True
+        text=True,
     )
     output, err = proc.communicate(input_fasta)
     if err:
         raise Exception(f"Clustal Omega error: {err}")
-
+    
     # joining multiline sequences
     output = output.split('\n')[3:]
     sequences = {}
@@ -356,6 +357,11 @@ def clustal_omega(sele):
                         at.model, at.index, int(at.resi), at.chain, at.resn, None, None, None, None
                     ))
                 local_ix += 1
+    
+    omega = {
+        obj: omega[obj]
+        for obj in sorted(omega, key=seles.index)
+    }
     return omega
 
 
