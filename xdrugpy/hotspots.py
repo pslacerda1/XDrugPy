@@ -169,17 +169,21 @@ def get_fpocket(group, protein):
             pocket = SimpleNamespace(selection=f"{group}.fpocket_{idx:02}")
             pm.delete(pocket.selection)
             pm.load(pocket_pdb, pocket.selection)
-            pm.set_property("Type", "Fpocket", pocket.selection)
-            pm.set_property("Group", group)
-            pm.set_property("Selection", pocket.selection)
+            set_properties(
+                pocket, pocket.selection, {
+                    "Type": "Fpocket",
+                    "Group": group,
+                    "Selection": pocket.selection,
+                }
+            )
             for line in pm.get_property("pdb_header", pocket.selection).split("\n"):
                 if match := header_re.match(line):
                     prop = match.group(1).strip()
                     value = float(match.group(2))
-                    setattr(pocket, prop, value)
-                    pm.set_property(prop, value, pocket.selection)
+                    set_properties(pocket, pocket.selection, {
+                        prop: value
+                    })
             pockets.append(pocket)
-
     return pockets
 
 
@@ -228,28 +232,32 @@ def process_eclusters(group, eclusters):
     pm.delete("clust.*")
 
 
-def get_egbert2019(group, fpo_list, clusters):
+def get_egbert2019(group, fpo_list):
     e19 = []
-    idx_e19 = 0
+    ix_e19 = 0
     for pocket in fpo_list:
-        sel = f"byobject ({group}.CS_* within 4 of {pocket.selection})"
+        sel = f"{group}.CS_* near_to 3 of {pocket.selection}"
         objs = pm.get_object_list(sel)
-        if len(objs) > 3 and sum([pm.get_property("ST", o) >= 16 for o in objs]) > 2:
-            new_name = f"{group}.C_{idx_e19:02}"
+        s_list = [pm.get_property("ST", o) for o in objs]
+        if len(objs) >= 4 and sum([s >= 16 for s in s_list]) >= 2:
+            new_name = f"{group}.E19_{ix_e19:02}"
             pm.create(new_name, sel)
             pm.group(group, new_name)
-
-            s_list = [pm.get_property("ST", o) for o in objs]
-            pm.set_property("Type", "E19", new_name)
-            pm.set_property("Group", group, new_name)
-            pm.set_property("Selection", sel, new_name)
-            pm.set_property("Fpocket", pocket.selection, new_name)
-            pm.set_property("ST", sum(s_list), new_name)
-            pm.set_property("S0", s_list[0])
-            pm.set_property("S1", s_list[1])
-            pm.set_property("Length", len(objs), new_name)
-            e19.append(SimpleNamespace(selection=new_name))
-            idx_e19 += 1
+            hs = SimpleNamespace()
+            set_properties(hs, new_name, {
+                "Type": "E19",
+                "Group": group,
+                "Selection": new_name,
+                "Fpocket": pocket.selection,
+                "ST": sum(s_list),
+                "S0": s_list[0],
+                "S1": s_list[1],
+                "S2": s_list[2],
+                "S3": s_list[3],
+                "Length": len(objs),
+            })
+            e19.append(hs)
+            ix_e19 += 1
     return e19
 
 
@@ -443,7 +451,7 @@ def _load_ftmap(
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
     if run_fpocket:
-        e19_list = get_egbert2019(group, fpo_list, clusters)
+        e19_list = get_egbert2019(group, fpo_list)
         k15_dl_list = get_kozakov2015_large(group, fpo_list, clusters)
 
     pm.hide("everything", f"{group}.*")
@@ -616,7 +624,8 @@ class LinkageMethod(StrEnum):
 def fpt_sim(
     multi_seles: Selection,
     site: Selection = "*",
-    radius: float = 4.0,
+    site_radius: float = 4.0,
+    contact_radius: float = 3.0,
     nbins: int = 5,
     sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
@@ -660,14 +669,13 @@ def fpt_sim(
     assert len(polymers) > 0, "Please review your selections"
         
     ref_polymer = polymers[0]
-    ref_sele = f"{ref_polymer} and ({ref_polymer} within {radius} of ({site}))"
+    ref_sele = f"{ref_polymer} and ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
     for at in pm.get_model(f"({ref_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
     mapping = clustal_omega(list(polymers))
     ref_map = mapping[ref_polymer]
-
     fpts = []
     for hs, (poly, map) in zip(seles, mapping.items()):
         fpt = {}
@@ -676,7 +684,7 @@ def fpt_sim(
                 continue
             lbl = (res.resi, res.chain)
             cnt = pm.count_atoms(
-                f"({hs}) within {radius} of (byres %{poly} & index {res.index})"
+                f"({hs}) within {contact_radius} of (byres %{poly} & index {res.index})"
             )
             fpt[lbl] = fpt.get(lbl, 0) + cnt
         fpts.append(fpt)
@@ -719,11 +727,12 @@ def fpt_sim(
             if not quiet:
                 print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
     
+    dendro, medoids = None, None
     if plot_hca:
         fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=True)
         assert len(fpts) > 1, "HCA requires multiple fingerprints, please add more selections."
         
-        plot_hca_base(
+        dendro, medoids = plot_hca_base(
             corrs,
             labels,
             linkage_method=linkage_method,
@@ -739,7 +748,7 @@ def fpt_sim(
             if not quiet:
                 print(f"HCA figure saved to {plot_hca}")
     
-    return fpts, corrs, labels
+    return fpts, corrs, dendro, medoids
 
 
 @declare_command
@@ -1233,7 +1242,7 @@ class TableWidget(QWidget):
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],
             ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D", "IsBekar"],
-            ("Egbert2019", "E19"): ["Fpocket", "ST", "S0", "S1", "Length"],
+            ("Egbert2019", "E19"): ["Fpocket", "ST", "S0", "S1", "S2", "S3", "Length"],
             ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
         }
 
