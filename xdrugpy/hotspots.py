@@ -120,6 +120,19 @@ def get_kozakov2015(group, clusters, max_length):
     k15 = sorted(k15, key=lambda hs: ["D", "DS", "B", "BS"].index(hs.kozakov_class))
     k15 = list(k15)
 
+    unwanted = set()
+    for ix1, hs1 in enumerate(k15):
+        for ix2, hs2 in enumerate(k15):
+            if hs1.kozakov_class != hs2.kozakov_class:
+                continue
+            if ix1 >= ix2:
+                continue
+            if get_fo(hs1.selection, hs2.selection) == 1:
+                unwanted.add(hs1)
+    for hs in unwanted:
+        k15.remove(hs)
+        pm.delte(hs.selection)
+
     idx = 0
     cur_class = None
     for hs in k15:
@@ -348,12 +361,12 @@ def load_ftmap(
             single = False
         rets = []
         if isinstance(groups, (tuple, list)):
-            iterable = zip(filenames, groups)
+            iter = zip(filenames, groups)
         else:
-            iterable = []
+            iter = []
             for filename in filenames:
-                iterable.append((filename, os.path.basename(filename)))
-        for fnames, groups in iterable:
+                iter.append((filename, os.path.splitext(os.path.basename(filename))[0]))
+        for fnames, groups in iter:
             try:
                 rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
             except:
@@ -431,8 +444,8 @@ def _load_ftmap(
     """
     if not group:
         group = os.path.splitext(os.path.basename(filename))[0]
-    group = group.replace(".", "_")
-
+    group = pm.get_legal_name(group)
+    
     pm.delete(f"%{group}")
     pm.load(filename, quiet=1)
 
@@ -457,13 +470,15 @@ def _load_ftmap(
     pm.hide("everything", f"{group}.*")
 
     pm.show("cartoon", f"{group}.protein")
-    pm.show("mesh", f"{group}.K15_D* or {group}.K15_B*")
+    pm.show("mesh", f"{group}.K15_D* or {group}.K15_B* or {group}.E19_*")
 
     pm.show("spheres", f"{group}.ACS_*")
     pm.set("sphere_scale", 0.25, f"{group}.ACS_*")
 
     pm.color("red", f"{group}.K15_D*")
     pm.color("salmon", f"{group}.K15_B*")
+    pm.color("raspberry", f"{group}.E19_*")
+
     pm.color("red", f"{group}.ACS_acceptor_*")
     pm.color("blue", f"{group}.ACS_donor_*")
     pm.color("green", f"{group}.ACS_halogen_*")
@@ -625,6 +640,7 @@ def fpt_sim(
     multi_seles: Selection,
     site: Selection = "*",
     site_radius: float = 4.0,
+    conservation: str = "*:.",
     contact_radius: float = 3.0,
     nbins: int = 5,
     sharex: bool = True,
@@ -667,14 +683,14 @@ def fpt_sim(
             groups.append(group)
     polymers = [f"{g}.protein" for g in groups]
     assert len(polymers) > 0, "Please review your selections"
-        
+
     ref_polymer = polymers[0]
     ref_sele = f"{ref_polymer} and ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
     for at in pm.get_model(f"({ref_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    mapping = clustal_omega(list(polymers))
+    mapping = clustal_omega(list(polymers), conservation)
     ref_map = mapping[ref_polymer]
     fpts = []
     for hs, (poly, map) in zip(seles, mapping.items()):
@@ -682,7 +698,7 @@ def fpt_sim(
         for ref_res, res in zip(ref_map, map):
             if (ref_polymer, ref_res.index) not in site_resis:
                 continue
-            lbl = (res.resi, res.chain)
+            lbl = (res.oneletter, res.conservation, res.resi, res.chain)
             cnt = pm.count_atoms(
                 f"({hs}) within {contact_radius} of (byres %{poly} & index {res.index})"
             )
@@ -698,16 +714,22 @@ def fpt_sim(
                 "All fingerprints must have the same length. "
                 "Do you have incomplete structures?"
             )
-        for ax, fpt, sele in zip(axs, fpts, seles):
-            labels = ["%s_%s" % k for k in fpt]
+        
+        for ix, (ax, fpt, sele) in enumerate(zip(axs, fpts, seles)):
+            labels = ["%s%s %s_%s" % k for k in fpt]
+            if sharex and ix == 0:
+                shared_labels = labels
+            elif sharex and ix + 1 == len(seles):
+                labels = shared_labels
             arange = np.arange(len(fpt))
             ax.bar(arange, fpt.values(), color="C0")
             ax.set_title(sele)
             ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-            ax.set_xticks(arange, labels=labels, rotation=90)
-            ax.locator_params(axis="x", tight=True, nbins=nbins)
-            for label in ax.xaxis.get_majorticklabels():
-                label.set_verticalalignment("top")
+            if not sharex or sharex and ix + 1 == len(seles):
+                ax.set_xticks(arange, labels=labels, rotation=90)
+                ax.locator_params(axis="x", tight=True, nbins=nbins)
+                for label in ax.xaxis.get_majorticklabels():
+                    label.set_verticalalignment("top")
         if isinstance(plot_fingerprints, (str, Path)):
             fig.savefig(plot_fingerprints, dpi=300)
             if not quiet:

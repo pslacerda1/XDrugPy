@@ -48,7 +48,7 @@ def clear_temp():
 atexit.register(clear_temp)
 
 
-Residue = namedtuple("Residue", "model index resi chain resn x y z oneletter")
+Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
 
 
 class AligMethod(StrEnum):
@@ -301,13 +301,13 @@ def get_residue_from_object(obj, idx):
     pm.iterate_state(
         -1,
         f"%{obj} & index {idx}",
-        "res.append(Residue(model, int(index), int(resi), chain, resn, float(x), float(y), float(z), oneletter))",
+        "res.append(Residue(model, int(index), int(resi), chain, resn, oneletter, conservation))",
         space={"res": res, "Residue": Residue},
     )
     return res[0]
 
 
-def clustal_omega(seles):
+def clustal_omega(seles, conservation):
     sele = ' | '.join(seles)
     sele = f"({sele}) and present and guide and polymer"
     input_fasta = pm.get_fastastr(sele, key='model')
@@ -336,7 +336,7 @@ def clustal_omega(seles):
             obj = 'CLUSTALO'
             seq = line[-len(seq):]
         sequences[obj] = sequences.get(obj, "") + seq
-    
+
     # skiping gaps and keeping counters ok
     clu = sequences.pop('CLUSTALO')
     len_aln = len(clu)
@@ -348,13 +348,13 @@ def clustal_omega(seles):
             seq_char = seq[aln_ix]
             clu_char = clu[aln_ix]
             if seq_char != '-':
-                if clu_char == '*':
+                if clu_char in conservation:
                     assert local_ix < len(atoms)
                     at = atoms[local_ix]
                     if obj not in omega:
                         omega[obj] = []
                     omega[obj].append(Residue(
-                        at.model, at.index, int(at.resi), at.chain, at.resn, None, None, None, None
+                        at.model, at.index, int(at.resi), at.chain, at.resn, seq_char, clu_char
                     ))
                 local_ix += 1
     
@@ -366,8 +366,8 @@ def clustal_omega(seles):
 
 
 @declare_command
-def super_clustal_align(mobile: str, target: str):
-    omega = clustal_omega(f"{mobile} | {target}")
+def super_clustal_align(mobile: str, target: str, conservation: str = '*:.'):
+    omega = clustal_omega(f"{mobile} | {target}", conservation)
     target_sele = None
     for obj, (atoms) in omega.items():
         ixs = '+'.join(str(at.index) for at in atoms)
