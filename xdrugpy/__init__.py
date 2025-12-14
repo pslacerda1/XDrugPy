@@ -84,6 +84,13 @@ def __init_plugin__(app=None):
     __init_multi__()
 
     pm.undo_disable()
+    
+    from matplotlib import pyplot as plt
+    plt.rcParams.update({
+        'font.size': 14,
+        'figure.figsize': (10, 6),
+        'svg.fonttype': 'none'
+    })
 
 
 if SYSTEM == "windows":

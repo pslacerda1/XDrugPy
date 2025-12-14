@@ -12,8 +12,10 @@ from matplotlib import pyplot as plt
 # Increase Matplotlib sizes
 plt.rcParams.update({
     'font.size': 14,
-    'figure.figsize': (10, 6)
+    'figure.figsize': (10, 6),
+    'svg.fonttype': 'none'
 })
+
 
 # OPTIONAL: Optimization that disables an unuseful feature if we'll not
 # launch the graphical interface after script execution.
