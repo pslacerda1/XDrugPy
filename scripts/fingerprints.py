@@ -49,31 +49,34 @@ _, _, dendro, _ = fpt_sim(
     """,
     # Focus the analysis to a site. Because the
     # first object is 1JNK, the site can be given
-    # by a ligand or residue index also.
-    #site='resi 207-209+187-189',
-    site='pepseq DFG OR pepseq HRD',
+    # by a ligand or residue index of that 
+    # structure also.
+        #site='resi 207-209+187-189',
+        #site='pepseq DFG OR pepseq HRD',
+    site='*',
     # How many angstroms will be given around the
     # site? It can be 0, 5, any value.
     site_radius=5,
     # Minimum accepted conservation to sequence
     # align.
     conservation='*:.',
-    # How far from residues to look for probes?
-    contact_radius=5.0,
+    # How far from residues to look for probes.
+    contact_radius=3.0,
     # Do plot fingerprints.
     plot_fingerprints=True,
     # Fingerprints will have 40 labels.
     nbins=40,
-    # They will share the the x axis and display
+    # Fingerprints will share the the x axis and display
     # residues from the first mentionated
     # conformation (1JNW).
     sharex=True,
     # Do plot the HCA.
     plot_hca=True,
-    # Annotate the hetmap with cell values.
+    # Annotate the HCA heatmap with cell values.
     annotate=True,
-    # Do not cluster the HCA by height threshold.
-    # Change it to 0.4 to enable the Scoring section.
+    # Do not cluster the HCA by height (color)
+    # threshold. Change it to 0.4 to enable the Scoring
+    # section.
     color_threshold=0.0,
     # Ward is cool.
     linkage_method=LinkageMethod.WARD,
@@ -132,12 +135,11 @@ print(f"Homogeneity Score:             {homogeneity:.4f}")
 print(f"Completeness Score:            {completeness:.4f}")
 print(f"V-Measure:                     {v_measure:.4f}")
 
-
 # These were my results to unsupervised labeling
 # structures of kinases, a complex protein family.
 
-### Adjusted Rand Index (ARI):     0.5028
-### Normalized Mutual Info (NMI):  0.7972
-### Homogeneity Score:             0.8176
-### Completeness Score:            0.7777
-### V-Measure:                     0.7972
+## Adjusted Rand Index (ARI):     0.4366
+## Normalized Mutual Info (NMI):  0.7528
+## Homogeneity Score:             0.7369
+## Completeness Score:            0.7694
+## V-Measure:                     0.7528
