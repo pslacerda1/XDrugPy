@@ -128,10 +128,13 @@ def get_kozakov2015(group, clusters, max_length):
             if ix1 >= ix2:
                 continue
             if get_fo(hs1.selection, hs2.selection) == 1:
-                unwanted.add(hs1)
-    for hs in unwanted:
-        k15.remove(hs)
-        pm.delte(hs.selection)
+                unwanted.add(hs1.selection)
+    for hs_sele in unwanted:
+        k15 = list(filter(
+            lambda hs: hs.selection != hs_sele,
+            k15
+        ))
+        pm.delete(hs.selection)
 
     idx = 0
     cur_class = None
@@ -278,7 +281,7 @@ def get_kozakov2015_large(group, fpo_list, clusters):
     k15l = []
     idx = 0
     for pocket in fpo_list:
-        sel = f"byobject ({group}.CS_* within 4 of {pocket.selection})"
+        sel = f"byobject ({group}.CS_* within 3 of {pocket.selection})"
         objs = pm.get_object_list(sel)
         if len(objs) == 0:
             continue
