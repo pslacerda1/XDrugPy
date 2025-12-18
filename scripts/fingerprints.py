@@ -37,7 +37,7 @@ for obj in pm.get_object_list('*.CS* AND p.ST<5'):
 # Run the fingerprint similarity analisys
 _, _, dendro, _ = fpt_sim(
     # This long string has the wanted hotspots
-    # separated by slashes
+    # separated by slashes. USE LESS STRUCTURES.
     multi_seles="""
         1JNK.CS* / 1K3A.CS* / 1PMN.CS* /
         1E9H.CS* / 1F5Q.CS* / 1FIN.CS* /
@@ -93,7 +93,8 @@ plt.show()
 # and general "it works" touch.
 #
 # It labels the unsupervised clusters with
-# previous knew classes
+# previous knew DFG classes. If you have
+# structure or protein classes or states...
 #
 from pprint import pp
 from sklearn.metrics import (
@@ -103,7 +104,9 @@ from sklearn.metrics import (
     completeness_score,
     v_measure_score
 )
-DFG = {
+DFG = { # Classes goes here. No need to be of the same
+        # size (7x3). Each row a different size is ok.
+        # 3 Active and 5 Inactive? Ok!
     'DFGin_ABAminus':     ['1JNK', '1K3A', '1PMN'],
     'DFGin_BLAminus':     ['1E9H', '1F5Q', '1FIN'],
     'DFGin_BLAplus':      ['1AGW', '1FGI', '1FGK'],
