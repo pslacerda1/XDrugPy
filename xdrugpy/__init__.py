@@ -45,7 +45,7 @@ def install_xdrugpy_requirements():
     pykvf_exe = f"{RESOURCES_DIR}/{bin_fname}"
     if not exists(pykvf_exe):
         print(f"Installing pyKVFinder on", pykvf_exe)
-        pykvf_url = f"https://github.com/pslacerda/XDrugPy/raw/refs/heads/master/bin/pyKVFinder_residues.{SYSTEM}"
+        pykvf_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/pyKVFinder_residues.{SYSTEM}"
         urlretrieve(pykvf_url, pykvf_exe)
         os.chmod(pykvf_exe, stat.S_IEXEC)
 
