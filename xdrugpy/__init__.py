@@ -38,15 +38,16 @@ def install_xdrugpy_requirements():
 
     match SYSTEM:
         case "windows":
-            bin_fname = "fpocket.exe"
+            # bin_fname = "fpocket.exe"
+            pass
         case "linux" | "darwin":
-            bin_fname = "fpocket"
-    fpocket_exe = f"{RESOURCES_DIR}/{bin_fname}"
-    if not exists(fpocket_exe):
-        print(f"Installing Fpocket on", fpocket_exe)
-        fpocket_url = f"https://github.com/pslacerda/XDrugPy/raw/refs/heads/master/bin/fpocket.{SYSTEM}"
-        urlretrieve(fpocket_url, fpocket_exe)
-        os.chmod(fpocket_exe, stat.S_IEXEC)
+            bin_fname = "pyKVFinder_residues"
+    pykvf_exe = f"{RESOURCES_DIR}/{bin_fname}"
+    if not exists(pykvf_exe):
+        print(f"Installing pyKVFinder on", pykvf_exe)
+        pykvf_url = f"https://github.com/pslacerda/XDrugPy/raw/refs/heads/master/bin/pyKVFinder_residues.{SYSTEM}"
+        urlretrieve(pykvf_url, pykvf_exe)
+        os.chmod(pykvf_exe, stat.S_IEXEC)
 
     if SYSTEM == "windows":
             web_name = "clustal-omega-1.2.2-win64.zip"

@@ -1,0 +1,5 @@
+import pyKVFinder
+import sys
+from pprint import pp
+ret = pyKVFinder.run_workflow(sys.argv[1])
+pp(ret.residues)

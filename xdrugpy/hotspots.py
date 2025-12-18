@@ -1,27 +1,28 @@
 import os.path
-import shutil
-import subprocess
-import re
 import tempfile
 from glob import glob
 from itertools import combinations
 from types import SimpleNamespace
 from pathlib import Path
 from typing import List
+import json
 
 import numpy as np
 import pandas as pd
 import matplotlib
-from scipy.spatial import distance_matrix, distance
+from scipy.spatial import distance_matrix, distance, ConvexHull
 from scipy.stats import pearsonr
 from matplotlib import pyplot as plt
 from strenum import StrEnum
+import networkx as nx
+
 
 from .utils import (
     declare_command,
     Selection,
     plot_hca_base,
-    clustal_omega
+    clustal_omega,
+    run
 )
 
 from pymol import cmd as pm
@@ -36,7 +37,8 @@ def get_clusters():
     for obj in pm.get_object_list():
         if obj.startswith(f"crosscluster."):
             _, _, s, _ = obj.split(".", maxsplit=4)
-            coords = pm.get_coords(f"%{obj} & !elem H")
+            pm.remove(f"%{obj} & elem H")
+            coords = pm.get_coords(obj)
             clusters.append(
                 SimpleNamespace(
                     selection=obj,
@@ -46,7 +48,8 @@ def get_clusters():
             )
         elif obj.startswith("consensus."):
             _, _, s = obj.split(".", maxsplit=3)
-            coords = pm.get_coords(f"%{obj} & !elem H")
+            pm.remove(f"%{obj} & elem H")
+            coords = pm.get_coords(obj)
             clusters.append(
                 SimpleNamespace(
                     selection=obj,
@@ -75,7 +78,7 @@ def set_properties(obj, obj_name, properties):
         setattr(obj, prop, value)
 
 
-def get_kozakov2015(group, clusters, max_length):
+def get_kozakov2015(group, clusters, max_length=10):
     k15 = []
     for length in range(max_length, 1, -1):
         for combination in combinations(clusters, length):
@@ -165,42 +168,14 @@ def get_kozakov2015(group, clusters, max_length):
     return k15
 
 
-def get_fpocket(group, protein):
-    pockets = []
-    # FIXME TODO
+def get_pockets(group, protein):
     with tempfile.TemporaryDirectory() as tempdir:
         protein_pdb = f"{tempdir}/{group}.pdb"
         pm.save(protein_pdb, selection=protein)
-        subprocess.check_output(
-            [shutil.which("fpocket"), "-f", protein_pdb],
-        )
-        header_re = re.compile(r"^HEADER\s+\d+\s+-(.*):(.*)$")
-        for pocket_pdb in glob(f"{tempdir}/{group}_out/pockets/pocket*_atm.pdb"):
-            idx = (
-                os.path.basename(pocket_pdb)
-                .replace("pocket", "")
-                .replace("_atm.pdb", "")
-            )
-            idx = int(idx)
-            pocket = SimpleNamespace(selection=f"{group}.fpocket_{idx:02}")
-            pm.delete(pocket.selection)
-            pm.load(pocket_pdb, pocket.selection)
-            set_properties(
-                pocket, pocket.selection, {
-                    "Type": "Fpocket",
-                    "Group": group,
-                    "Selection": pocket.selection,
-                }
-            )
-            for line in pm.get_property("pdb_header", pocket.selection).split("\n"):
-                if match := header_re.match(line):
-                    prop = match.group(1).strip()
-                    value = float(match.group(2))
-                    set_properties(pocket, pocket.selection, {
-                        prop: value
-                    })
-            pockets.append(pocket)
-    return pockets
+        out, ok = run(f'pyKVFinder_residues "{protein_pdb}"', log=False)
+        if not ok:
+            raise RuntimeError(out)
+        return json.loads(out)
 
 
 def process_clusters(group, clusters):
@@ -248,23 +223,43 @@ def process_eclusters(group, eclusters):
     pm.delete("clust.*")
 
 
-def get_egbert2019(group, fpo_list):
+def get_egbert2019(group, pocket_dict, clusters):
     e19 = []
     ix_e19 = 0
-    for pocket in fpo_list:
-        sel = f"{group}.CS_* near_to 3 of {pocket.selection}"
-        objs = pm.get_object_list(sel)
-        s_list = [pm.get_property("ST", o) for o in objs]
+    for key, pocket in pocket_dict.items():
+        p_sele = ''
+        for resi, chain, _ in pocket:
+            p_sele += f'(chain {chain} & resi {resi}) | '
+        p_sele += 'none'
+        hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
+
+        objs = pm.get_object_list(hs_sele)
+        if len(objs) == 0:
+            continue
+
+        p_xyz = pm.get_coords(p_sele)
+        hs_xyz = pm.get_coords(hs_sele)
+        if len(hs_xyz) < 4:
+            continue
+
+        hull = ConvexHull(hs_xyz)
+        surf_ixs = hull.vertices
+        surf_xyz = hs_xyz[surf_ixs]
+
+        pocket_clusters = [
+            c for c in clusters if c.selection in objs
+        ]
+        s_list = [c.strength for c in pocket_clusters]
+
         if len(objs) >= 4 and sum([s >= 16 for s in s_list]) >= 2:
             new_name = f"{group}.E19_{ix_e19:02}"
-            pm.create(new_name, sel)
+            pm.create(new_name, hs_sele)
             pm.group(group, new_name)
             hs = SimpleNamespace()
             set_properties(hs, new_name, {
                 "Type": "E19",
                 "Group": group,
                 "Selection": new_name,
-                "Fpocket": pocket.selection,
                 "ST": sum(s_list),
                 "S0": s_list[0],
                 "S1": s_list[1],
@@ -277,20 +272,42 @@ def get_egbert2019(group, fpo_list):
     return e19
 
 
-def get_kozakov2015_large(group, fpo_list, clusters):
+def get_kozakov2015_large(group, pocket_dict, clusters):
     k15l = []
     idx = 0
-    for pocket in fpo_list:
-        sel = f"byobject ({group}.CS_* within 3 of {pocket.selection})"
-        objs = pm.get_object_list(sel)
-        if len(objs) == 0:
+    for key, pocket in pocket_dict.items():
+        p_sele = ''
+        for resi, chain, _ in pocket:
+            p_sele += f'(chain {chain} & resi {resi}) | '
+        p_sele += 'none'
+        hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
+
+        objs = pm.get_object_list(hs_sele)
+        if len(objs) < 3:
             continue
-        pocket_clusters = [c for c in clusters if c.selection in objs]
-        i_s0 = np.argmax(c.strength for c in pocket_clusters)
-        s0 = pocket_clusters[i_s0].strength
+
+        p_xyz = pm.get_coords(p_sele)
+        hs_xyz = pm.get_coords(hs_sele)
+        if len(hs_xyz) < 4:
+            continue
+
+        hull = ConvexHull(hs_xyz)
+        surf_ixs = hull.vertices
+        surf_xyz = hs_xyz[surf_ixs]
+        
+        d = distance_matrix(surf_xyz, p_xyz) < 4
+        nc = np.sum(np.any(d, axis=1))
+        if nc < 0.1 * len(surf_xyz):
+            continue
+
+        pocket_clusters = [
+            c for c in clusters if c.selection in objs
+        ]
+        ix_s0 = np.argmax(c.strength for c in pocket_clusters)
+        s0 = pocket_clusters[ix_s0].strength
 
         cd = []
-        cluster1 = pocket_clusters[i_s0]
+        cluster1 = pocket_clusters[ix_s0]
         avg1 = np.average(cluster1.coords, axis=0)
         for cluster2 in pocket_clusters:
             avg2 = np.average(cluster2.coords, axis=0)
@@ -316,32 +333,54 @@ def get_kozakov2015_large(group, fpo_list, clusters):
         else:
             continue
         idx += 1
-
         hs = SimpleNamespace()
-        hs.kozakov_class = klass
-        pm.create(new_name, sel)
-        pm.group(group, new_name)
-        set_properties(
-            hs,
-            new_name,
-            {
-                "Type": "K15",
-                "Group": group,
-                "Selection": new_name,
-                "Class": klass,
-                "ST": strength,
-                "S0": s0,
-                "CD": round(cd, 2),
-                "MD": round(md, 2),
-                "Length": len(pocket_clusters),
-                "Fpocket": pocket.selection,
-            },
-        )
-        hs.selection = hs.Selection
-        if hs.kozakov_class:
+        if klass:
+            if has_collisions(group, pocket_clusters):
+                continue
+            hs.kozakov_class = klass
+            pm.create(new_name, hs_sele)
+            pm.group(group, new_name)
+            set_properties(
+                hs,
+                new_name,
+                {
+                    "Type": "K15",
+                    "Group": group,
+                    "Selection": new_name,
+                    "Class": klass,
+                    "ST": strength,
+                    "S0": s0,
+                    "CD": round(cd, 2),
+                    "MD": round(md, 2),
+                    "Length": len(pocket_clusters),
+                },
+            )
+            hs.selection = hs.Selection
             k15l.append(hs)
 
     return k15l
+
+
+def has_collisions(group, clusters, radius=1.5):
+    edges = []
+    prot_xyz = pm.get_coords(f'{group}.protein')
+    for ix1, c1 in enumerate(clusters):
+        avg1 = np.average(c1.coords, axis=0)
+        for ix2, c2 in enumerate(clusters):
+            if ix1 <= ix2:
+                continue
+            avg2 = np.average(c2.coords, axis=0)
+            for xyz in np.linspace(avg1, avg2):
+                dist = distance_matrix(prot_xyz, [xyz]) <= radius
+                if np.any(dist) > 0:
+                    break
+            else:
+                edges.append((c1.selection, c2.selection))
+
+    g = nx.Graph()
+    g.add_edges_from(edges)
+    nc = nx.number_connected_components(g)
+    return nc > 1
 
 class FtmapResults:
     pass
@@ -350,8 +389,6 @@ class FtmapResults:
 def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
-    k15_max_length: int = 3,
-    run_fpocket: bool = False,
     bekar_label: bool = '',
 ):
     try:
@@ -371,9 +408,9 @@ def load_ftmap(
                 iter.append((filename, os.path.splitext(os.path.basename(filename))[0]))
         for fnames, groups in iter:
             try:
-                rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
+                rets.append(_load_ftmap(fnames, groups))
             except:
-                rets.append(_load_ftmap(fnames, groups, k15_max_length, run_fpocket))
+                rets.append(_load_ftmap(fnames, groups))
         if single:
             return rets[0]
         else:
@@ -428,7 +465,7 @@ def eval_bekar25_limits(label, ftmap_results):
 
 
 def _load_ftmap(
-    filename: Path, group: str = "", k15_max_length: int = 3, run_fpocket: bool = False
+    filename: Path, group: str = ""
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -438,12 +475,10 @@ def _load_ftmap(
     OPTIONS
         filename        mapping PDB file.
         group           optional group name.
-        k15_max_length  max hotspot length for Kozakov15 hotspots (default: 8).
 
     EXAMPLES
         load_ftmap ace_example.pdb
         load_ftmap ace_example.pdb, group=MyProtein
-        load_ftmap 3PO1.pdb, k15_max_length=5
     """
     if not group:
         group = os.path.splitext(os.path.basename(filename))[0]
@@ -461,14 +496,12 @@ def _load_ftmap(
     pm.group(group, f"{group}.protein")
 
     clusters, eclusters = get_clusters()
-    k15_list = get_kozakov2015(group, clusters, k15_max_length)
-    if run_fpocket:
-        fpo_list = get_fpocket(group, f"{group}.protein")
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
-    if run_fpocket:
-        e19_list = get_egbert2019(group, fpo_list)
-        k15_dl_list = get_kozakov2015_large(group, fpo_list, clusters)
+    k15_list = get_kozakov2015(group, clusters)
+    pocket_dict = get_pockets(group, f"{group}.protein")
+    k15_dl_list = get_kozakov2015_large(group, pocket_dict, clusters)
+    e19_list = get_egbert2019(group, pocket_dict, clusters)
 
     pm.hide("everything", f"{group}.*")
 
@@ -489,29 +522,21 @@ def _load_ftmap(
     pm.color("yellow", f"{group}.ACS_apolar_*")
 
     pm.show("line", f"{group}.CS_*")
-    pm.show("spheres", f"{group}.fpocket_*")
-    pm.set("sphere_scale", 0.25, f"{group}.fpocket_*")
-    pm.color("white", f"{group}.fpocket_*")
 
     pm.disable(f"{group}.CS_*")
-    pm.disable(f"{group}.fpocket_*")
 
     pm.set("mesh_mode", 1)
     pm.orient("all")
 
-    pm.order(f"{group}.fpocket_*", location="top")
     pm.order(f"{group}.K15_*", location="top")
     pm.order(f"{group}.protein", location="top")
 
     ret = SimpleNamespace(
         clusters=clusters,
         eclusters=eclusters,
-        kozakov2015=k15_list,
+        kozakov2015=[*k15_list, *k15_dl_list],
+        egbert2019=e19_list
     )
-    if run_fpocket:
-        ret.kozakov2015 = [*ret.kozakov2015, *k15_dl_list]
-        ret.egbert2019 = e19_list
-        ret.fpocket = fpo_list
     return ret
 
 
@@ -1131,16 +1156,6 @@ class LoadWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.maxLengthSpin = QSpinBox()
-        self.maxLengthSpin.setValue(3)
-        self.maxLengthSpin.setMinimum(3)
-        self.maxLengthSpin.setMaximum(8)
-        boxLayout.addRow("Max length:", self.maxLengthSpin)
-
-        self.runFpocketCheck = QCheckBox()
-        self.runFpocketCheck.setChecked(False)
-        boxLayout.addRow("Calc Fpocket, DL/BL and Egbert (2019):", self.runFpocketCheck)
-
         self.bekarLabel = QLineEdit()
         boxLayout.addWidget(self.bekarLabel)
         boxLayout.addRow("Bekar-Cesaretli (2025) label:", self.bekarLabel)
@@ -1175,8 +1190,6 @@ class LoadWidget(QWidget):
         self.bekarLabel.setText("")
 
     def load(self):
-        run_fpocket = self.runFpocketCheck.isChecked()
-        max_length = self.maxLengthSpin.value()
         bekar_label = self.bekarLabel.text().strip()
         try:
             filenames = []
@@ -1192,8 +1205,6 @@ class LoadWidget(QWidget):
         load_ftmap(
             filenames,
             groups=groups,
-            k15_max_length=max_length,
-            run_fpocket=run_fpocket,
             bekar_label=bekar_label
         )
 
@@ -1262,13 +1273,11 @@ class TableWidget(QWidget):
                 "CD",
                 "MD",
                 "Length",
-                "Fpocket",
             ],
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],
             ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D", "IsBekar"],
-            ("Egbert2019", "E19"): ["Fpocket", "ST", "S0", "S1", "S2", "S3", "Length"],
-            ("Fpocket", "Fpocket"): ["Pocket Score", "Drug Score"],
+            ("Egbert2019", "E19"): ["ST", "S0", "S1", "S2", "S3", "Length"],
         }
 
         self.tables = {}

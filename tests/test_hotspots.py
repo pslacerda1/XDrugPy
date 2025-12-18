@@ -91,7 +91,6 @@ def test_ho():
             f"{pkg_data}/1dq9_atlas.pdb",
         ],
         groups=['1dq8', '1dq9'],
-        run_fpocket=True
     )
     assert get_ho('1dq9.fpocket_01', '1dq9.K15_D_00') == 0.0
     assert get_ho('1dq9.K15_D_00', '1dq8.K15_D_00') == 1.0
@@ -123,7 +122,7 @@ def test_fpt():
         site="* within 4 of *_D_00",
         nbins=50,
         sharex=True,
-        radius=4.0,
+        site_radius=4.0,
         plot_fingerprints=img_gen1,
         plot_hca=img_gen2,
     )
@@ -165,3 +164,19 @@ def test_bekar_cesaretli_2025():
     assert ftmap.cs16_count == 2
     assert '_BC25_MyObject' in pm.get_object_list()
     assert pm.get_property('IsBekar', '_BC25_MyObject') == False
+
+
+def test_collisions():
+    pm.reinitialize()
+    ftmap = load_ftmap([
+        pkg_data + "/1CKP.pdb",
+        pkg_data + "/1E1V.pdb"
+    ])
+    assert len(ftmap.results[1].kozakov2015) == 1
+
+    pm.reinitialize()
+    breakpoint()
+    ftmap = load_ftmap([
+        pkg_data + "/1E1V.pdb"
+    ])
+    assert len(ftmap.results[0].kozakov2015) == 1
