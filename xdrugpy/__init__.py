@@ -31,11 +31,11 @@ def install_xdrugpy_requirements():
         case "darwin":
             bin_fname = "vina_1.2.7_mac_x86_64"
     vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
-    vina_exe = f"{RESOURCES_DIR}/vina"
+    vina_exe = RESOURCES_DIR / "vina"
     if SYSTEM == "windows":
         vina_exe += ".exe"
     if not exists(vina_exe):
-        print(f"Installing AutoDock Vina on", vina_exe)
+        print(f"Installing AutoDock Vina on", RESOURCES_DIR)
         urlretrieve(vina_url, vina_exe)
         os.chmod(vina_exe, stat.S_IEXEC)
 
@@ -51,13 +51,13 @@ def install_xdrugpy_requirements():
     pykvf_exe = RESOURCES_DIR / bin_fname
     pykvf_dll = RESOURCES_DIR / dll_fname
     if not exists(pykvf_exe):
-        print(f"Installing pyKVFinder on", pykvf_exe)
+        print(f"Installing pyKVFinder on", RESOURCES_DIR)
         pykvf_exe_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{bin_fname}.{SYSTEM}"
-        pykvf_dll_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{dll_fname}.{SYSTEM}"
+        pykvf_dll_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{dll_fname}"
         urlretrieve(pykvf_exe_url, pykvf_exe)
         urlretrieve(pykvf_dll_url, pykvf_dll)
         os.chmod(pykvf_exe, stat.S_IEXEC)
-        os.chmod(pykvf_dll, stat.S_IEXEC)
+        os.chmod(pykvf_dll, stat.S_IEXEC | stat.S_IRUSR)
 
     #
     # Install Clustal Omega
