@@ -20,6 +20,9 @@ def install_xdrugpy_requirements():
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
 
+    #
+    # Install Vina
+    #
     match SYSTEM:
         case "windows":
             bin_fname = "vina_1.2.7_win.exe"
@@ -36,30 +39,40 @@ def install_xdrugpy_requirements():
         urlretrieve(vina_url, vina_exe)
         os.chmod(vina_exe, stat.S_IEXEC)
 
+    #
+    # Install pyKVFinder
+    #
     match SYSTEM:
-        case "windows":
-            # bin_fname = "fpocket.exe"
+        case "windows" | "darwin":
             pass
-        case "linux" | "darwin":
+        case "linux":
             bin_fname = "pyKVFinder_residues"
-    pykvf_exe = f"{RESOURCES_DIR}/{bin_fname}"
+            dll_fname = "_pyKVFinder.cpython-311-x86_64-linux-gnu.so"
+    pykvf_exe = RESOURCES_DIR / bin_fname
+    pykvf_dll = RESOURCES_DIR / dll_fname
     if not exists(pykvf_exe):
         print(f"Installing pyKVFinder on", pykvf_exe)
-        pykvf_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/pyKVFinder_residues.{SYSTEM}"
-        urlretrieve(pykvf_url, pykvf_exe)
+        pykvf_exe_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{bin_fname}.{SYSTEM}"
+        pykvf_dll_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{dll_fname}.{SYSTEM}"
+        urlretrieve(pykvf_exe_url, pykvf_exe)
+        urlretrieve(pykvf_dll_url, pykvf_dll)
         os.chmod(pykvf_exe, stat.S_IEXEC)
+        os.chmod(pykvf_dll, stat.S_IEXEC)
 
+    #
+    # Install Clustal Omega
+    #
     if SYSTEM == "windows":
-            web_name = "clustal-omega-1.2.2-win64.zip"
-            local_name = RESOURCES_DIR / web_name
-            if not exists(local_name):
-                urlretrieve(
-                    f"http://www.clustal.org/omega/{web_name}",
-                    local_name
-                )
-                import zipfile
-                zipfile.ZipFile(local_name).extractall(RESOURCES_DIR)
-                os.chmod(RESOURCES_DIR / 'clustalo.exe', stat.S_IEXEC)
+        web_name = "clustal-omega-1.2.2-win64.zip"
+        local_name = RESOURCES_DIR / web_name
+        if not exists(local_name):
+            urlretrieve(
+                f"http://www.clustal.org/omega/{web_name}",
+                local_name
+            )
+            import zipfile
+            zipfile.ZipFile(local_name).extractall(RESOURCES_DIR)
+            os.chmod(RESOURCES_DIR / 'clustalo.exe', stat.S_IEXEC)
     else:
         if SYSTEM == "linux":
             web_name = "clustalo-1.2.4-Ubuntu-x86_64"

@@ -295,9 +295,9 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
         surf_ixs = hull.vertices
         surf_xyz = hs_xyz[surf_ixs]
         
-        d = distance_matrix(surf_xyz, p_xyz) < 4
+        d = distance_matrix(surf_xyz, p_xyz) < 2
         nc = np.sum(np.any(d, axis=1))
-        if nc < 0.1 * len(surf_xyz):
+        if nc > 0.1 * len(surf_xyz):
             continue
 
         pocket_clusters = [
