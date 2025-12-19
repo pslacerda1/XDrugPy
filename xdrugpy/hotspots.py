@@ -123,22 +123,6 @@ def get_kozakov2015(group, clusters, max_length=10):
     k15 = sorted(k15, key=lambda hs: ["D", "DS", "B", "BS"].index(hs.kozakov_class))
     k15 = list(k15)
 
-    unwanted = set()
-    for ix1, hs1 in enumerate(k15):
-        for ix2, hs2 in enumerate(k15):
-            if hs1.kozakov_class != hs2.kozakov_class:
-                continue
-            if ix1 >= ix2:
-                continue
-            if get_fo(hs1.selection, hs2.selection) == 1:
-                unwanted.add(hs1.selection)
-    for hs_sele in unwanted:
-        k15 = list(filter(
-            lambda hs: hs.selection != hs_sele,
-            k15
-        ))
-        pm.delete(hs.selection)
-
     idx = 0
     cur_class = None
     for hs in k15:
@@ -303,13 +287,15 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
         pocket_clusters = [
             c for c in clusters if c.selection in objs
         ]
-        ix_s0 = np.argmax(c.strength for c in pocket_clusters)
-        s0 = pocket_clusters[ix_s0].strength
+        sz = pocket_clusters[-1].strength
+        if sz <= 5:
+            continue
 
+        s0 = pocket_clusters[0].strength
         cd = []
-        cluster1 = pocket_clusters[ix_s0]
+        cluster1 = pocket_clusters[0]
         avg1 = np.average(cluster1.coords, axis=0)
-        for cluster2 in pocket_clusters:
+        for cluster2 in pocket_clusters[1:]:
             avg2 = np.average(cluster2.coords, axis=0)
             cd.append(distance.euclidean(avg1, avg2))
         cd = max(cd)
@@ -389,7 +375,8 @@ class FtmapResults:
 def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
-    bekar_label: bool = '',
+    bekar_label: str = '',
+    allow_nested: bool = True,
 ):
     try:
         pm.set('defer_updates', 1)
@@ -408,9 +395,9 @@ def load_ftmap(
                 iter.append((filename, os.path.splitext(os.path.basename(filename))[0]))
         for fnames, groups in iter:
             try:
-                rets.append(_load_ftmap(fnames, groups))
+                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested))
             except:
-                rets.append(_load_ftmap(fnames, groups))
+                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested))
         if single:
             return rets[0]
         else:
@@ -465,7 +452,9 @@ def eval_bekar25_limits(label, ftmap_results):
 
 
 def _load_ftmap(
-    filename: Path, group: str = ""
+    filename: Path,
+    group: str = "",
+    allow_nested: bool = True
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -498,10 +487,30 @@ def _load_ftmap(
     clusters, eclusters = get_clusters()
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
-    k15_list = get_kozakov2015(group, clusters)
     pocket_dict = get_pockets(group, f"{group}.protein")
-    k15_dl_list = get_kozakov2015_large(group, pocket_dict, clusters)
+    k15_list = [
+        *get_kozakov2015(group, clusters),
+        *get_kozakov2015_large(group, pocket_dict, clusters)
+    ]
     e19_list = get_egbert2019(group, pocket_dict, clusters)
+
+    if not allow_nested:
+        inside_rep = set()
+        for ix1, hs1 in enumerate(k15_list):
+            for ix2, hs2 in enumerate(k15_list):
+                if hs1.kozakov_class != hs2.kozakov_class:
+                    continue
+                if hs1.selection == hs2.selection:
+                    continue
+                if get_fo(hs2.selection, hs1.selection) == 1:
+                    inside_rep.add(hs1.selection)
+                    
+        for hs_sele in inside_rep:
+            k15_list = list(filter(
+                lambda hs: hs.selection != hs_sele,
+                k15_list
+            ))
+            pm.delete(hs_sele)
 
     pm.hide("everything", f"{group}.*")
 
@@ -534,7 +543,7 @@ def _load_ftmap(
     ret = SimpleNamespace(
         clusters=clusters,
         eclusters=eclusters,
-        kozakov2015=[*k15_list, *k15_dl_list],
+        kozakov2015=k15_list,
         egbert2019=e19_list
     )
     return ret
@@ -1156,8 +1165,11 @@ class LoadWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
+        self.allowNested = QCheckBox()
+        self.allowNested.setChecked(False)
+        boxLayout.addRow("Allow nested hotspots", self.allowNested)
+        
         self.bekarLabel = QLineEdit()
-        boxLayout.addWidget(self.bekarLabel)
         boxLayout.addRow("Bekar-Cesaretli (2025) label:", self.bekarLabel)
 
     def pickFile(self):
@@ -1190,6 +1202,7 @@ class LoadWidget(QWidget):
         self.bekarLabel.setText("")
 
     def load(self):
+        allow_nested = self.allowNested.isChecked()
         bekar_label = self.bekarLabel.text().strip()
         try:
             filenames = []
@@ -1205,6 +1218,7 @@ class LoadWidget(QWidget):
         load_ftmap(
             filenames,
             groups=groups,
+            allow_nested=allow_nested,
             bekar_label=bekar_label
         )
 
@@ -1236,11 +1250,12 @@ class TableWidget(QWidget):
                     idx, QHeaderView.ResizeMode.ResizeToContents
                 )
 
-            @self.itemClicked.connect
-            def itemClicked(item):
-                obj = self.item(item.row(), 0).text()
-                pm.select(obj)
-                pm.enable("sele")
+            @self.itemSelectionChanged.connect
+            def itemSelectionChanged():
+                for item in self.selectedItems(): # only once
+                    obj = self.item(item.row(), 0).text()
+                    pm.select(obj)
+                    pm.enable("sele")
 
         def hideEvent(self, evt):
             self.clearSelection()
