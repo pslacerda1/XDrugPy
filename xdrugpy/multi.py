@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.table import Table
 from strenum import StrEnum
 
-from .utils import declare_command, mpl_axis, PyMOLComboObjectBox, AligMethod
+from .utils import new_command, mpl_axis, PyMOLComboObjectBox, AligMethod
 
 
 logging.getLogger("rcsbapi").setLevel(logging.CRITICAL)
@@ -39,7 +39,7 @@ class SequenceType(StrEnum):
     PROTEIN = "protein"
 
 
-@declare_command
+@new_command
 def fetch_similar(
     sequence_sele: str,
     sequence_type: SequenceType = SequenceType.PROTEIN,
@@ -179,7 +179,7 @@ def fetch_similar(
     return results
 
 
-@declare_command
+@new_command
 def rmsf(
     prot_expr: str,
     ref_site: str = "*",
@@ -303,7 +303,7 @@ def rmsf(
     return RMSF, LABELS
 
     
-@declare_command
+@new_command
 def pca(
     prots_sele: str,
     site_sele: str = '*',

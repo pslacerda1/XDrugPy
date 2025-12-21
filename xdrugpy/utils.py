@@ -1,3 +1,4 @@
+import builtins
 import itertools
 import subprocess
 import os
@@ -5,7 +6,13 @@ import atexit
 import sys
 import io
 import signal
+import shlex
+import inspect
 import scipy.cluster.hierarchy as sch
+from contextlib import wraps
+from textwrap import dedent
+from typing import get_args, Union, Any, get_origin
+from types import UnionType
 from collections import namedtuple, defaultdict
 from shutil import rmtree
 from tempfile import mkdtemp
@@ -22,7 +29,9 @@ from rich.console import Console
 from rich.traceback import Traceback
 from rich import terminal_theme
 from strenum import StrEnum
+from enum import Enum
 
+from pymol.parser import __file__ as _parser_filename
 
 QStandardPaths = Qt.QtCore.QStandardPaths
 
@@ -75,41 +84,139 @@ def run(command, log=True, cwd=None, env=os.environ):
     return output, success
 
 
+
 class Selection(str):
     pass
 
+        
+class ArgumentParsingError(ValueError):
+    "Error on argument parsing."
 
-def _bool_func(value: str):
-    if isinstance(value, str):
-        if value.lower() in ["yes", "1", "true", "on"]:
+    def __init__(self, arg_name, message):
+        message = dedent(message).strip()
+        if arg_name:
+            s = f"Failed at parsing '{arg_name}'. {message}"
+        else:
+            s = message
+        super().__init__(s)
+
+
+def _into_types(var, type, value):
+    
+    # Untyped string
+    if type == Any:
+        return value
+            
+    # Boolean flags
+    elif type is bool:
+        if isinstance(value, bool):
+            return value
+        trues = ["yes", "1", "true", "on", "y"]
+        falses = ["no", "0", "false", "off", "n"]
+        if value.lower() in trues:
             return True
-        elif value.lower() in ["no", "0", "false", "off"]:
+        elif value.lower() in falses:
             return False
         else:
-            raise Exception("Invalid boolean value: %s" % value)
-    elif isinstance(value, bool):
+            raise ArgumentParsingError(
+                var,
+                f"Can't parse {value!r} as bool."
+                f" Supported true values are {', '.join(trues)}."
+                f" Supported false values are {', '.join(falses)}."
+            )
+    
+    # Types from typing module
+    elif origin := get_origin(type):
+
+        if origin in {Union, UnionType}:
+            funcs = get_args(type)
+            for func in funcs:
+                try:
+                    return _into_types(None, func, value)
+                except:
+                    continue
+            raise ArgumentParsingError(
+                var,
+                f"Can't parse {value!r} into {type}."
+                f" The parser tried each union type and none was suitable."
+            )
+        
+        elif issubclass(origin, tuple):
+            funcs = get_args(type)
+            if funcs:
+                values = shlex.split(value)
+                if len(funcs) > 0 and len(funcs) != len(values):
+                    raise ArgumentParsingError(
+                        var,
+                        f"Can't parse {value!r} into {type}."
+                        f" The number of tuple arguments are incorrect."
+                    )
+                try:
+                    return tuple(_into_types(None, f, v) for f, v in zip(funcs, values))
+                except:
+                    raise ArgumentParsingError(
+                        var,
+                        f"Can't parse {value!r} into {type}."
+                        f" One or more tuple values are of incorrect types."
+                    )
+            else:
+                return tuple(shlex.split(value))
+
+        elif issubclass(origin, list):
+            funcs = get_args(type)
+            if len(funcs) == 1:
+                func = funcs[0]
+                return [_into_types(None, func, a) for a in shlex.split(value)]
+            return shlex.split(value)
+    
+    elif sys.version_info >= (3, 11) and issubclass(type, StrEnum):
+        try:
+            return type(value)
+        except:
+            names = [e.value for e in list(type)]
+            raise ArgumentParsingError(
+                var,
+                f"Invalid value for {type.__name__}."
+                f" Accepted values are {', '.join(names)}."
+            )
+
+    # Specific types must go before other generic types
+    #   isinstance(type, builtins.type) comes after
+    elif issubclass(type, Enum):
+        value = type.__members__.get(value)
+        if value is None:
+            raise ArgumentParsingError(
+                var,
+                f"Invalid value for {type.__name__}."
+                f" Accepted values are {', '.join(type.__members__)}."
+            )
         return value
-    else:
-        raise Exception(f"Unsuported boolean flag {value}")
+    
+    # Generic types must accept str as single argument to __init__(s)
+    elif isinstance(type, builtins.type):
+        try:
+            return type(value)
+        except Exception as exc:
+            raise ArgumentParsingError(
+                var,
+                f"Invalid value {value!r} for custom type {type.__name__}."
+                f" The type must accept str as the solo argument to __init__(s)."
+            ) from exc
 
 
-def declare_command(name, function=None, _self=pm):
+def new_command(name, function=None, _self=pm):
+
     if function is None:
         name, function = name.__name__, name
 
-    if function.__code__.co_argcount != len(function.__annotations__):
-        raise Exception("All command options must be annotated.")
-    from functools import wraps
-    import inspect
-    from pathlib import Path
-    from enum import Enum
-    import traceback
+    # docstring text, if present, should be dedented
+    if function.__doc__ is not None:
+        function.__doc__ = dedent(function.__doc__).strip()
 
+    # Analysing arguments
     spec = inspect.getfullargspec(function)
-
     kwargs_ = {}
     args_ = spec.args[:]
-
     defaults = list(spec.defaults or [])
 
     args2_ = args_[:]
@@ -120,31 +227,42 @@ def declare_command(name, function=None, _self=pm):
     for idx, (var, func) in enumerate(spec.annotations.items()):
         funcs[var] = func
 
+    # Inner function that will be callable every time the command is executed
     @wraps(function)
     def inner(*args, **kwargs):
-        frame = traceback.format_stack()[-2]
-        caller = frame.split('"', maxsplit=2)[1]
-        if caller.endswith("pymol/parser.py"):
-            kwargs = {**kwargs_, **kwargs, **dict(zip(args2_, args))}
+        caller = sys._getframe(1).f_code.co_filename
+        # It was called from command line or pml script, so parse arguments
+        if caller == _parser_filename:
+            kwargs = {**kwargs, **dict(zip(args2_, args))}
+            # special _self argument
             kwargs.pop("_self", None)
-            for arg in kwargs.copy():
-                if funcs[arg] is _bool_func or issubclass(funcs[arg], bool):
-                    funcs[arg] = _bool_func
-                kwargs[arg] = funcs[arg](kwargs[arg])
-            return function(**kwargs)
-        else:
-            try:
-                return function(*args, **kwargs)
-            except Exception:
-                display_exception()
-                raise
+            new_kwargs = {}
+            for var, type in funcs.items():
+                if var in kwargs:
+                    value = kwargs[var]
+                    # special 'quiet' argument
+                    if var == 'quiet' and isinstance(value, int):
+                        new_kwargs[var] = bool(value)
+                    else:
+                        new_kwargs[var] = _into_types(var, type, value)
+            final_kwargs = {
+                **kwargs_,
+                **new_kwargs
+            }
+            return function(**final_kwargs)
 
-    name = function.__name__
-    _self.keyword[name] = [inner, 0, 0, ",", parsing.STRICT]
+        # It was called from Python, so pass the arguments as is
+        else:
+            return function(*args, **kwargs)
+    
+    _self.keyword[name] = [inner, 0, 0, ',', parsing.STRICT]
     _self.kwhash.append(name)
     _self.help_sc.append(name)
+    
+    # Accessor to the original function so bypass the stack extraction.
+    # The purpose is optimization (loops, for instance).
+    inner.func = inner.__wrapped__ 
     return inner
-
 
 @contextmanager
 def mpl_axis(ax, **kwargs):
@@ -162,7 +280,7 @@ def mpl_axis(ax, **kwargs):
         plt.savefig(output_file)
 
 
-@declare_command
+@new_command
 def align_groups(
     mobile_groups: Selection,
     target: Selection,
@@ -365,7 +483,7 @@ def clustal_omega(seles, conservation):
     return omega
 
 
-@declare_command
+@new_command
 def super_clustal_align(mobile: str, target: str, conservation: str = '*:.'):
     omega = clustal_omega(f"{mobile} | {target}", conservation)
     target_sele = None

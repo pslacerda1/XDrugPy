@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 import os.path
 import tempfile
-from glob import glob
 from itertools import combinations
 from types import SimpleNamespace
 from pathlib import Path
-from typing import List
 import json
+from dataclasses import dataclass, field
+from typing import Any, Optional, Literal, List
+
 
 import numpy as np
 import pandas as pd
@@ -16,9 +19,8 @@ from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
 
-
 from .utils import (
-    declare_command,
+    new_command,
     Selection,
     plot_hca_base,
     clustal_omega,
@@ -27,20 +29,36 @@ from .utils import (
 
 from pymol import cmd as pm
 
+
 matplotlib.use("Qt5Agg")
+
+
+@dataclass
+class Cluster:
+    selection: str
+    strength: int
+    coords: Any = field(repr=False)
+
+
+@dataclass
+class ECluster:
+    selection: str
+    probe_type: str
+    strength: int
+    coords: Any = field(repr=False)
+    idx: int
 
 
 def get_clusters():
     clusters = []
     eclusters = []
-
     for obj in pm.get_object_list():
         if obj.startswith(f"crosscluster."):
             _, _, s, _ = obj.split(".", maxsplit=4)
             pm.remove(f"%{obj} & elem H")
             coords = pm.get_coords(obj)
             clusters.append(
-                SimpleNamespace(
+                Cluster(
                     selection=obj,
                     strength=int(s),
                     coords=coords,
@@ -51,17 +69,16 @@ def get_clusters():
             pm.remove(f"%{obj} & elem H")
             coords = pm.get_coords(obj)
             clusters.append(
-                SimpleNamespace(
+                Cluster(
                     selection=obj,
                     strength=int(s),
                     coords=coords,
                 )
             )
-
         elif obj.startswith("clust."):
             _, idx, s, probe_type = obj.split(".", maxsplit=4)
             eclusters.append(
-                SimpleNamespace(
+                ECluster(
                     selection=obj,
                     probe_type=probe_type,
                     strength=int(s),
@@ -78,59 +95,77 @@ def set_properties(obj, obj_name, properties):
         setattr(obj, prop, value)
 
 
+@dataclass
+class KozakovHotspot:
+    selection: str
+    clusters: List[Cluster] = field(repr=False, compare=False)
+    kozakov_class: Optional[Literal["D", "DS", "DL", "B", "BS", "BL"]]
+    strength: int
+    strength0: int
+    strengthz: int
+    center_center: float
+    max_dist: float
+    length: int
+
+    @staticmethod
+    def from_clusters(clusters: List[Cluster]) -> KozakovHotspot:
+        averages = [np.average(c.coords, axis=0) for c in clusters]
+        cd = [distance.euclidean(averages[0], avg) for avg in averages]
+
+        coords = np.concatenate([c.coords for c in clusters])
+        max_coord = coords.max(axis=0)
+        min_coord = coords.min(axis=0)
+
+        selection = " or ".join(c.selection for c in clusters)
+        hs = KozakovHotspot(
+            selection=selection,
+            clusters=clusters,
+            kozakov_class=None,
+            strength=sum(c.strength for c in clusters),
+            strength0=clusters[0].strength,
+            strengthz=clusters[-1].strength,
+            center_center=np.max(cd),
+            max_dist=distance.euclidean(max_coord, min_coord),
+            length=len(clusters),
+        )
+        s0 = hs.clusters[0].strength
+        sz = hs.clusters[-1].strength
+        cd = hs.center_center
+        md = hs.max_dist
+        if sz < 5:
+            return hs
+        
+        if s0 >= 16 and cd < 8 and md >= 10:
+            hs.kozakov_class = "D"
+        if s0 >= 16 and cd < 8 and 7 <= md < 10:
+            hs.kozakov_class = "DS"
+        if 13 <= s0 < 16 and cd < 8 and md >= 10:
+            hs.kozakov_class = "B"
+        if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
+            hs.kozakov_class = "BS"
+        return hs
+
+
 def get_kozakov2015(group, clusters, max_length=10):
-    k15 = []
+    spots = []
     for length in range(max_length, 1, -1):
         for combination in combinations(clusters, length):
-            averages = [np.average(c.coords, axis=0) for c in combination]
-            cd = [distance.euclidean(averages[0], avg) for avg in averages]
-
-            coords = np.concatenate([c.coords for c in combination])
-            max_coord = coords.max(axis=0)
-            min_coord = coords.min(axis=0)
-
-            selection = " or ".join(c.selection for c in combination)
-            hs = SimpleNamespace(
-                selection=selection,
-                clusters=combination,
-                kozakov_class=None,
-                strength=sum(c.strength for c in combination),
-                strength0=combination[0].strength,
-                center_center=np.max(cd),
-                max_dist=distance.euclidean(max_coord, min_coord),
-                length=len(combination),
-            )
-            s0 = hs.clusters[0].strength
-            sz = hs.clusters[-1].strength
-            cd = hs.center_center
-            md = hs.max_dist
-
-            if s0 < 13 or md < 7 or sz <= 5:
-                continue
-            if s0 >= 16 and cd < 8 and md >= 10:
-                hs.kozakov_class = "D"
-            if s0 >= 16 and cd < 8 and 7 <= md < 10:
-                hs.kozakov_class = "DS"
-            if 13 <= s0 < 16 and cd < 8 and md >= 10:
-                hs.kozakov_class = "B"
-            if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
-                hs.kozakov_class = "BS"
-
+            hs = KozakovHotspot.from_clusters(combination)
             if hs.kozakov_class:
-                k15.append(hs)
+                spots.append(hs)
 
-    k15 = sorted(k15, key=lambda hs: (-hs.strength0, -hs.strength))
-    k15 = sorted(k15, key=lambda hs: ["D", "DS", "B", "BS"].index(hs.kozakov_class))
-    k15 = list(k15)
+    spots = sorted(spots, key=lambda hs: (-hs.strength0, -hs.strength))
+    spots = sorted(spots, key=lambda hs: ["D", "DS", "B", "BS"].index(hs.kozakov_class))
+    spots = list(spots)
 
     idx = 0
-    cur_class = None
-    for hs in k15:
-        if hs.kozakov_class != cur_class:
-            cur_class = hs.kozakov_class
+    current_class = None
+    for hs in spots:
+        if hs.kozakov_class != current_class:
+            current_class = hs.kozakov_class
             idx = -1
         idx += 1
-        new_name = f"{group}.K15_{cur_class}_{idx:02}"
+        new_name = f"{group}.K15_{current_class}_{idx:02}"
         pm.create(new_name, hs.selection)
         pm.group(group, new_name)
         hs.selection = new_name
@@ -149,10 +184,10 @@ def get_kozakov2015(group, clusters, max_length=10):
                 "Length": hs.length,
             },
         )
-    return k15
+    return spots
 
 
-def get_pockets(group, protein):
+def get_pykvf_pockets(group, protein):
     with tempfile.TemporaryDirectory() as tempdir:
         protein_pdb = f"{tempdir}/{group}.pdb"
         pm.save(protein_pdb, selection=protein)
@@ -164,7 +199,7 @@ def get_pockets(group, protein):
 
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
-        new_name = f"{group}.CS_{idx:02}"
+        new_name = f"{group}.CS_{idx:03}"
         pm.set_name(cs.selection, new_name)
         cs.selection = new_name
         pm.group(group, new_name)
@@ -214,11 +249,11 @@ def get_egbert2019(group, pocket_dict, clusters):
         p_sele = ''
         for resi, chain, _ in pocket:
             p_sele += f'(chain {chain} & resi {resi}) | '
-        p_sele += 'none'
+        p_sele = f'{group}.protein & ({p_sele})'
         hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
 
         objs = pm.get_object_list(hs_sele)
-        if len(objs) == 0:
+        if not objs or len(objs) < 4:
             continue
 
         p_xyz = pm.get_coords(p_sele)
@@ -230,12 +265,19 @@ def get_egbert2019(group, pocket_dict, clusters):
         surf_ixs = hull.vertices
         surf_xyz = hs_xyz[surf_ixs]
 
+        d = distance_matrix(surf_xyz, p_xyz) < 3
+        nc = np.sum(np.any(d, axis=1))
+        if nc < 0.1 * len(surf_xyz):
+            continue
+
         pocket_clusters = [
             c for c in clusters if c.selection in objs
         ]
         s_list = [c.strength for c in pocket_clusters]
 
-        if len(objs) >= 4 and sum([s >= 16 for s in s_list]) >= 2:
+        if len(objs) >= 4 and sum([s >= 16 for s in s_list]) >= 2 and s_list[-1] >= 5:
+            if has_collisions(group, pocket_clusters):
+                continue
             new_name = f"{group}.E19_{ix_e19:02}"
             pm.create(new_name, hs_sele)
             pm.group(group, new_name)
@@ -247,8 +289,7 @@ def get_egbert2019(group, pocket_dict, clusters):
                 "ST": sum(s_list),
                 "S0": s_list[0],
                 "S1": s_list[1],
-                "S2": s_list[2],
-                "S3": s_list[3],
+                "SZ": s_list[-1],
                 "Length": len(objs),
             })
             e19.append(hs)
@@ -264,10 +305,11 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
         for resi, chain, _ in pocket:
             p_sele += f'(chain {chain} & resi {resi}) | '
         p_sele += 'none'
+        p_sele = f'{group}.protein & ({p_sele})'
         hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
 
         objs = pm.get_object_list(hs_sele)
-        if len(objs) < 3:
+        if not objs or len(objs) < 3:
             continue
 
         p_xyz = pm.get_coords(p_sele)
@@ -279,9 +321,9 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
         surf_ixs = hull.vertices
         surf_xyz = hs_xyz[surf_ixs]
         
-        d = distance_matrix(surf_xyz, p_xyz) < 2
+        d = distance_matrix(surf_xyz, p_xyz) < 3
         nc = np.sum(np.any(d, axis=1))
-        if nc > 0.1 * len(surf_xyz):
+        if nc < 0.1 * len(surf_xyz):
             continue
 
         pocket_clusters = [
@@ -307,9 +349,6 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
 
         strength = sum(c.strength for c in pocket_clusters)
 
-        i_sz = np.argmin(c.strength for c in pocket_clusters)
-        sz = pocket_clusters[i_sz].strength
-
         if 13 <= s0 < 16 and cd >= 8 and md >= 10 and sz >= 5:
             new_name = f"{group}.K15_BL_{idx:02}"
             klass = "BL"
@@ -318,14 +357,22 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
             klass = "DL"
         else:
             continue
-        idx += 1
-        hs = SimpleNamespace()
         if klass:
             if has_collisions(group, pocket_clusters):
                 continue
-            hs.kozakov_class = klass
             pm.create(new_name, hs_sele)
             pm.group(group, new_name)
+            hs = KozakovHotspot(
+                selection=new_name,
+                clusters=pocket_clusters,
+                kozakov_class=klass,
+                strength=strength,
+                strength0=s0,
+                strengthz=sz,
+                center_center=cd,
+                max_dist=md,
+                length=len(pocket_clusters)
+            )
             set_properties(
                 hs,
                 new_name,
@@ -336,14 +383,14 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
                     "Class": klass,
                     "ST": strength,
                     "S0": s0,
+                    "SZ": sz,
                     "CD": round(cd, 2),
                     "MD": round(md, 2),
                     "Length": len(pocket_clusters),
                 },
             )
-            hs.selection = hs.Selection
             k15l.append(hs)
-
+            idx += 1
     return k15l
 
 
@@ -371,12 +418,12 @@ def has_collisions(group, clusters, radius=1.5):
 class FtmapResults:
     pass
 
-@declare_command
+@new_command
 def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
     bekar_label: str = '',
-    allow_nested: bool = True,
+    allow_nested: bool = False,
 ):
     try:
         pm.set('defer_updates', 1)
@@ -454,7 +501,7 @@ def eval_bekar25_limits(label, ftmap_results):
 def _load_ftmap(
     filename: Path,
     group: str = "",
-    allow_nested: bool = True
+    allow_nested: bool = False
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -487,7 +534,7 @@ def _load_ftmap(
     clusters, eclusters = get_clusters()
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
-    pocket_dict = get_pockets(group, f"{group}.protein")
+    pocket_dict = get_pykvf_pockets(group, f"{group}.protein")
     k15_list = [
         *get_kozakov2015(group, clusters),
         *get_kozakov2015_large(group, pocket_dict, clusters)
@@ -495,22 +542,38 @@ def _load_ftmap(
     e19_list = get_egbert2019(group, pocket_dict, clusters)
 
     if not allow_nested:
-        inside_rep = set()
-        for ix1, hs1 in enumerate(k15_list):
-            for ix2, hs2 in enumerate(k15_list):
+        nested = {} # ordered set
+        for hs1 in k15_list:
+            for hs2 in k15_list:
                 if hs1.kozakov_class != hs2.kozakov_class:
                     continue
-                if hs1.selection == hs2.selection:
+                if hs1 == hs2:
                     continue
-                if get_fo(hs2.selection, hs1.selection) == 1:
-                    inside_rep.add(hs1.selection)
-                    
-        for hs_sele in inside_rep:
-            k15_list = list(filter(
-                lambda hs: hs.selection != hs_sele,
-                k15_list
-            ))
-            pm.delete(hs_sele)
+                if get_fo(hs1.selection, hs2.selection) == 1:
+                    nested[hs1.selection] = True
+
+        k15_list = sorted(k15_list, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.kozakov_class))
+
+        ix_class = 0
+        last_class = None
+
+        for hs in k15_list.copy():
+            if hs.kozakov_class != last_class:
+                last_class = hs.kozakov_class
+                ix_class = 0
+            
+            old_name = hs.selection
+            
+            if old_name in nested:
+                pm.delete(old_name)
+                k15_list.remove(hs)
+                continue
+            
+            new_name = f"{group}.K15_{hs.kozakov_class}_{ix_class:02}"
+            hs.selection = new_name
+            pm.set_name(old_name, new_name)
+
+            ix_class += 1
 
     pm.hide("everything", f"{group}.*")
 
@@ -566,12 +629,12 @@ def count_molecules(sel):
     return num_objs
 
 
-@declare_command
+@new_command
 def get_fo(
     sel1: Selection,
     sel2: Selection,
     radius: float = 2,
-    quiet: int = True,
+    quiet: bool = True,
 ):
     """
     Compute the fractional overlap of sel1 respective to sel2.
@@ -599,12 +662,12 @@ def get_fo(
     return fo
 
 
-@declare_command
+@new_command
 def get_dc(
     sel1: Selection,
     sel2: Selection,
     radius: float = 1.25,
-    quiet: int = True,
+    quiet: bool = True,
 ):
     """
     Compute the Density Correlation according to:
@@ -634,12 +697,12 @@ def get_dc(
     return dc
 
 
-@declare_command
+@new_command
 def get_dce(
     sel1: Selection,
     sel2: Selection,
     radius: float = 1.25,
-    quiet: int = True,
+    quiet: bool = True,
 ):
     """
     Compute the Density Correlation Efficiency according to:
@@ -672,7 +735,7 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-@declare_command
+@new_command
 def fpt_sim(
     multi_seles: Selection,
     site: Selection = "*",
@@ -687,7 +750,7 @@ def fpt_sim(
     annotate: bool = True,
     plot_fingerprints: str = "",
     plot_hca: str = "",
-    quiet: int = True,
+    quiet: bool = True,
 ):
     """
     Compute the similarity between the residue contact fingerprint of two
@@ -810,12 +873,12 @@ def fpt_sim(
     return fpts, corrs, dendro, medoids
 
 
-@declare_command
+@new_command
 def get_ho(
     hs1: Selection,
     hs2: Selection,
-    radius: float = 2.5,
-    quiet: int = True,
+    radius: float = 2.0,
+    quiet: bool = True,
 ):
     """
     Compute the Hotspot Overlap (HO) metric. HO is defined as the number of
@@ -830,7 +893,7 @@ def get_ho(
     """
     atoms1 = pm.get_coords(hs1)
     atoms2 = pm.get_coords(hs2)
-    dist = distance_matrix(atoms1, atoms2) - radius <= 0
+    dist = distance_matrix(atoms1, atoms2) <= radius
     num_contacts1 = np.sum(np.any(dist, axis=1))
     num_contacts2 = np.sum(np.any(dist, axis=0))
     ho = (num_contacts1 + num_contacts2) / (len(atoms1) + len(atoms2))
@@ -844,14 +907,14 @@ class ResidueSimilarityMethod(StrEnum):
     OVERLAP = "overlap"
 
 
-@declare_command
+@new_command
 def res_sim(
     hs1: Selection,
     hs2: Selection,
     radius: float = 4.0,
     seq_align: bool = False,
     method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
-    quiet: int = True,
+    quiet: bool = True,
 ):
     """
     Compute hotspots similarity by the Jaccard or overlap coefficient of nearby
@@ -868,7 +931,7 @@ def res_sim(
         res_sim 8DSU.D_001*, 6XHM.D_001*
         res_sim 8DSU.CS_*, 6XHM.CS_*
     """
-    group1 = pm.get_property("Group", hs1)
+    group1 = pm.get_property("Group", hs1)  # FIXME it doesn't works with arbitrary objects
     group2 = pm.get_property("Group", hs2)
 
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
@@ -882,6 +945,7 @@ def res_sim(
         pm.iterate(sel2, "resis2.add((chain, resi))", space={"resis2": resis2})
     else:
         try:
+            # FIXME Clustal Omega?
             aln_obj = pm.get_unused_name()
             pm.cealign(
                 f"{group1}.protein", f"{group2}.protein", transform=0, object=aln_obj
@@ -923,7 +987,7 @@ class SimilarityFunc(StrEnum):
     RESIDUE_OVERLAP = "residue_overlap"
 
 
-@declare_command
+@new_command
 def plot_pairwise_hca(
     sele: Selection,
     function: SimilarityFunc = SimilarityFunc.HO,
@@ -988,7 +1052,7 @@ class PrioritizationType(StrEnum):
     ATOM = "atom"
 
 
-@declare_command
+@new_command
 def hs_proj(
     sel: Selection,
     protein: Selection = "",
@@ -1031,7 +1095,7 @@ def hs_proj(
     pm.spectrum("q", palette=palette, selection=protein)
 
 
-@declare_command
+@new_command
 def plot_euclidean_hca(
     exprs: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
@@ -1285,6 +1349,7 @@ class TableWidget(QWidget):
                 "Class",
                 "ST",
                 "S0",
+                "SZ",
                 "CD",
                 "MD",
                 "Length",
@@ -1292,7 +1357,7 @@ class TableWidget(QWidget):
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],
             ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D", "IsBekar"],
-            ("Egbert2019", "E19"): ["ST", "S0", "S1", "S2", "S3", "Length"],
+            ("Egbert2019", "E19"): ["ST", "S0", "S1", "SZ", "Length"],
         }
 
         self.tables = {}

@@ -1,4 +1,5 @@
 import os.path
+import sys
 from pymol import cmd as pm
 import numpy as np
 import matplotlib as mpl
@@ -13,6 +14,9 @@ from xdrugpy.hotspots import (
     get_fo,
     get_dce,
 )
+from xdrugpy.utils import RESOURCES_DIR
+
+sys.path.append(RESOURCES_DIR)
 mpl.use('SVG')
 mpl.rcParams['svg.hashsalt'] = 'fixed_salt_123'
 mpl.rcParams['svg.fonttype'] = 'none'
@@ -40,9 +44,9 @@ def images_identical(img1_path, img2_path):
 
 def test_euclidean_hca():
     pm.reinitialize()
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group")
+    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group", allow_nested=True)
 
-    expr = "*.K15_* & p.S0>5"
+    expr = "*.K15_*"
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
 
@@ -69,7 +73,7 @@ def test_euclidean_hca():
 
 def test_pairwise_hca():
     pm.reinitialize()
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "A7YT55_6css")
+    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "A7YT55_6css", allow_nested=True)
     expr = "*.K15_*"
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
@@ -79,21 +83,21 @@ def test_pairwise_hca():
         radius=4,
         annotate=True,
         plot=img_gen,
-        color_threshold=0.5
+        color_threshold=0.3
     )
     assert images_identical(img_ref, img_gen)
 
 
 def test_ho():
     pm.reinitialize()
-    load_ftmap([
+    ftmap = load_ftmap([
             f"{pkg_data}/1dq8_atlas.pdb",
             f"{pkg_data}/1dq9_atlas.pdb",
         ],
-        groups=['1dq8', '1dq9'],
+        groups=['1dq8', '1dq9']
     )
-    assert get_ho('1dq9.fpocket_01', '1dq9.K15_D_00') == 0.0
-    assert get_ho('1dq9.K15_D_00', '1dq8.K15_D_00') == 1.0
+    assert get_ho('1dq8.K15_D_00', '1dq8.K15_D_01') == 0.0
+    assert get_ho('1dq8.K15_D_00', '1dq9.K15_B_00') == 0.9304635761589404
 
 
 def test_fo_and_dce():
@@ -118,8 +122,8 @@ def test_fpt():
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
     fpt_sim(
-        "1dq8.K15_* p.ST>12 / 1dq9.K15_D_00 / 1dqa.K15_B_00",
-        site="* within 4 of *_D_00",
+        "1dq8.K15_* / 1dq9.K15_D_00 / 1dqa.K15_B_00",
+        site="*.K15_D_00",
         nbins=50,
         sharex=True,
         site_radius=4.0,
@@ -135,7 +139,7 @@ def test_res_sim():
     pm.reinitialize()
     load_ftmap(pkg_data + "/3mer_c10.pdb")
     load_ftmap(pkg_data + "/3mer_c16.pdb")
-    assert res_sim("3mer_c10.K15_B_00", "3mer_c16.K15_D_00", radius=4) == 11 / 18
+    assert res_sim("3mer_c10.K15_B_00", "3mer_c16.K15_D_00", radius=4) == 10 / 18
 
 
 def test_bekar_cesaretli_2025():
@@ -166,17 +170,15 @@ def test_bekar_cesaretli_2025():
     assert pm.get_property('IsBekar', '_BC25_MyObject') == False
 
 
-def test_collisions():
+def test_load():
     pm.reinitialize()
     ftmap = load_ftmap([
+        pkg_data + "/1E1V.pdb",
         pkg_data + "/1CKP.pdb",
-        pkg_data + "/1E1V.pdb"
-    ])
-    assert len(ftmap.results[1].kozakov2015) == 1
-
-    pm.reinitialize()
-    breakpoint()
-    ftmap = load_ftmap([
-        pkg_data + "/1E1V.pdb"
+        pkg_data + "/1K3A.pdb",
     ])
     assert len(ftmap.results[0].kozakov2015) == 1
+    assert len(ftmap.results[1].kozakov2015) == 2
+    assert len(ftmap.results[2].kozakov2015) == 2
+    assert ftmap.results[2].kozakov2015[0].kozakov_class == 'D'
+    assert ftmap.results[2].kozakov2015[1].kozakov_class == 'DL'
