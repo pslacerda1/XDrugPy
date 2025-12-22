@@ -13,6 +13,7 @@ from xdrugpy.hotspots import (
     get_ho,
     get_fo,
     get_dce,
+    ResidueSimilarityMethod
 )
 from xdrugpy.utils import RESOURCES_DIR
 
@@ -57,26 +58,25 @@ def test_euclidean_hca():
         plot=img_gen
     )
     
-    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_D_01"]
-    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_D_01"]
+    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_DL_00"]
+    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_DL_00"]
     assert len(medoids["C1"]) == 0
 
-    assert medoids["C2"].pop() in ["group.K15_D_02", "group.K15_D_03"]
-    assert medoids["C2"].pop() in ["group.K15_D_02", "group.K15_D_03"]
+    assert medoids["C2"].pop() in ["group.K15_B_00", "group.K15_BS_00"]
+    assert medoids["C2"].pop() in ["group.K15_B_00", "group.K15_BS_00"]
     assert len(medoids["C2"]) == 0
-
-    assert medoids["C3"].pop() in ["group.K15_B_01"]
-    assert len(medoids["C3"]) == 0
 
     assert images_identical(img_ref, img_gen)
 
 
 def test_pairwise_hca():
     pm.reinitialize()
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "A7YT55_6css", allow_nested=True)
+    ftmap = load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "A7YT55_6css", allow_nested=True)
+
     expr = "*.K15_*"
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
+
     plot_pairwise_hca(
         expr,
         function=SimilarityFunc.RESIDUE_JACCARD,
@@ -96,8 +96,7 @@ def test_ho():
         ],
         groups=['1dq8', '1dq9']
     )
-    assert get_ho('1dq8.K15_D_00', '1dq8.K15_D_01') == 0.0
-    assert get_ho('1dq8.K15_D_00', '1dq9.K15_B_00') == 0.9304635761589404
+    assert get_ho('1dq8.K15_D_00', '1dq9.K15_DS_00') == 0.75
 
 
 def test_fo_and_dce():
@@ -137,9 +136,20 @@ def test_fpt():
 
 def test_res_sim():
     pm.reinitialize()
-    load_ftmap(pkg_data + "/3mer_c10.pdb")
-    load_ftmap(pkg_data + "/3mer_c16.pdb")
-    assert res_sim("3mer_c10.K15_B_00", "3mer_c16.K15_D_00", radius=4) == 10 / 18
+    load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
+    load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
+    assert res_sim(
+        '1dq8.K15_D_00',
+        '1dq9.K15_DS_00',
+        method=ResidueSimilarityMethod.JACCARD,
+        radius=4.0
+    ) == 0.75
+    assert res_sim(
+        '1dq8.K15_D_00',
+        '1dq9.K15_DS_00',
+        method=ResidueSimilarityMethod.OVERLAP,
+        radius=4.0
+    ) == 1.0
 
 
 def test_bekar_cesaretli_2025():
@@ -178,7 +188,7 @@ def test_load():
         pkg_data + "/1K3A.pdb",
     ])
     assert len(ftmap.results[0].kozakov2015) == 1
-    assert len(ftmap.results[1].kozakov2015) == 2
+    assert len(ftmap.results[1].kozakov2015) == 1
     assert len(ftmap.results[2].kozakov2015) == 2
-    assert ftmap.results[2].kozakov2015[0].kozakov_class == 'D'
-    assert ftmap.results[2].kozakov2015[1].kozakov_class == 'DL'
+    assert ftmap.results[2].kozakov2015[0].klass == 'D'
+    assert ftmap.results[2].kozakov2015[1].klass == 'DL'

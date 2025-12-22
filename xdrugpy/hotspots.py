@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from pathlib import Path
 import json
 from dataclasses import dataclass, field
-from typing import Any, Optional, Literal, List
+from typing import Any, Optional, Literal, List, Dict, Tuple
 
 
 import numpy as np
@@ -36,17 +36,17 @@ matplotlib.use("Qt5Agg")
 @dataclass
 class Cluster:
     selection: str
-    strength: int
-    coords: Any = field(repr=False)
+    coords: Any = field(repr=False, hash=False)
+    ST: int
 
 
 @dataclass
 class ECluster:
     selection: str
     probe_type: str
-    strength: int
-    coords: Any = field(repr=False)
+    coords: Any = field(repr=False, hash=False)
     idx: int
+    ST: int
 
 
 def get_clusters():
@@ -60,8 +60,8 @@ def get_clusters():
             clusters.append(
                 Cluster(
                     selection=obj,
-                    strength=int(s),
                     coords=coords,
+                    ST=int(s),
                 )
             )
         elif obj.startswith("consensus."):
@@ -71,8 +71,8 @@ def get_clusters():
             clusters.append(
                 Cluster(
                     selection=obj,
-                    strength=int(s),
                     coords=coords,
+                    ST=int(s),
                 )
             )
         elif obj.startswith("clust."):
@@ -81,8 +81,8 @@ def get_clusters():
                 ECluster(
                     selection=obj,
                     probe_type=probe_type,
-                    strength=int(s),
                     idx=int(idx),
+                    ST=int(s),
                 )
             )
     return clusters, eclusters
@@ -95,101 +95,57 @@ def set_properties(obj, obj_name, properties):
         setattr(obj, prop, value)
 
 
-@dataclass
-class KozakovHotspot:
-    selection: str
-    clusters: List[Cluster] = field(repr=False, compare=False)
-    kozakov_class: Optional[Literal["D", "DS", "DL", "B", "BS", "BL"]]
-    strength: int
-    strength0: int
-    strengthz: int
-    center_center: float
-    max_dist: float
-    length: int
+def find_occupied_pockets(
+        group: str,
+        pocket_residues: Dict[str, List[Any]],
+        clusters: List[Cluster],
+        max_length: int = 10
+) -> List[Tuple[str, List[Cluster]]]:
+    pockets = {}
+    for key, pocket in pocket_residues.items():
+        p_sele = ''
+        for resi, chain, _ in pocket:
+            p_sele += f'(chain {chain} & resi {resi}) | '
+        p_sele += 'none'
+        p_sele = f'{group}.protein & ({p_sele})'
 
-    @staticmethod
-    def from_clusters(clusters: List[Cluster]) -> KozakovHotspot:
-        averages = [np.average(c.coords, axis=0) for c in clusters]
-        cd = [distance.euclidean(averages[0], avg) for avg in averages]
-
-        coords = np.concatenate([c.coords for c in clusters])
-        max_coord = coords.max(axis=0)
-        min_coord = coords.min(axis=0)
-
-        selection = " or ".join(c.selection for c in clusters)
-        hs = KozakovHotspot(
-            selection=selection,
-            clusters=clusters,
-            kozakov_class=None,
-            strength=sum(c.strength for c in clusters),
-            strength0=clusters[0].strength,
-            strengthz=clusters[-1].strength,
-            center_center=np.max(cd),
-            max_dist=distance.euclidean(max_coord, min_coord),
-            length=len(clusters),
-        )
-        s0 = hs.clusters[0].strength
-        sz = hs.clusters[-1].strength
-        cd = hs.center_center
-        md = hs.max_dist
-        if sz < 5:
-            return hs
+        hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
+        objs = pm.get_object_list(hs_sele)
+        if not objs:
+            continue
         
-        if s0 >= 16 and cd < 8 and md >= 10:
-            hs.kozakov_class = "D"
-        if s0 >= 16 and cd < 8 and 7 <= md < 10:
-            hs.kozakov_class = "DS"
-        if 13 <= s0 < 16 and cd < 8 and md >= 10:
-            hs.kozakov_class = "B"
-        if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
-            hs.kozakov_class = "BS"
-        return hs
+        s_list = [c.ST for c in clusters if c.selection in objs]
+        if not s_list or s_list[-1] < 5:
+            continue
+
+        # p_xyz = pm.get_coords(p_sele)
+        # hs_xyz = pm.get_coords(hs_sele)
+        # if len(hs_xyz) < 4:
+        #     continue
+
+        # hull = ConvexHull(hs_xyz)
+        # surf_ixs = hull.vertices
+        # surf_xyz = hs_xyz[surf_ixs]
+        
+        # d = distance_matrix(surf_xyz, p_xyz) < 3
+        # nc = np.sum(np.any(d, axis=1))
+        # if nc < 0.2 * len(surf_xyz):
+        #     continue
+        
+        hs_sele = ' | '.join(objs)
+        pocket_clusters = [c for c in clusters if c.selection in objs]
+        if hs_sele in pockets:
+            assert all(c1 == c2 for c1, c2 in zip(pocket_clusters, pockets[hs_sele]))
+            assert len(pocket_clusters) == len(pockets[hs_sele])
+        pockets[hs_sele] = pocket_clusters
+    
+    return pockets
 
 
-def get_kozakov2015(group, clusters, max_length=10):
-    spots = []
-    for length in range(max_length, 1, -1):
-        for combination in combinations(clusters, length):
-            hs = KozakovHotspot.from_clusters(combination)
-            if hs.kozakov_class:
-                spots.append(hs)
-
-    spots = sorted(spots, key=lambda hs: (-hs.strength0, -hs.strength))
-    spots = sorted(spots, key=lambda hs: ["D", "DS", "B", "BS"].index(hs.kozakov_class))
-    spots = list(spots)
-
-    idx = 0
-    current_class = None
-    for hs in spots:
-        if hs.kozakov_class != current_class:
-            current_class = hs.kozakov_class
-            idx = -1
-        idx += 1
-        new_name = f"{group}.K15_{current_class}_{idx:02}"
-        pm.create(new_name, hs.selection)
-        pm.group(group, new_name)
-        hs.selection = new_name
-        set_properties(
-            hs,
-            new_name,
-            {
-                "Type": "K15",
-                "Group": group,
-                "Selection": new_name,
-                "Class": hs.kozakov_class,
-                "ST": hs.strength,
-                "S0": hs.strength0,
-                "CD": round(hs.center_center, 2),
-                "MD": round(hs.max_dist, 2),
-                "Length": hs.length,
-            },
-        )
-    return spots
-
-
-def get_pykvf_pockets(group, protein):
+def find_pykvf_pockets(protein):
     with tempfile.TemporaryDirectory() as tempdir:
-        protein_pdb = f"{tempdir}/{group}.pdb"
+        tempdir = "/tmp/"
+        protein_pdb = f"{tempdir}/protein.pdb"
         pm.save(protein_pdb, selection=protein)
         out, ok = run(f'pyKVFinder_residues "{protein_pdb}"', log=False)
         if not ok:
@@ -210,7 +166,7 @@ def process_clusters(group, clusters):
                 "Type": "CS",
                 "Group": group,
                 "Selection": new_name,
-                "ST": cs.strength,
+                "ST": cs.ST,
             },
         )
     pm.delete("consensus.*")
@@ -235,144 +191,118 @@ def process_eclusters(group, eclusters):
                 "Group": group,
                 "Selection": new_name,
                 "Class": acs.probe_type,
-                "ST": acs.strength,
+                "ST": acs.ST,
                 "MD": round(md, 2),
             },
         )
     pm.delete("clust.*")
 
 
-def get_egbert2019(group, pocket_dict, clusters):
-    e19 = []
-    ix_e19 = 0
-    for key, pocket in pocket_dict.items():
-        p_sele = ''
-        for resi, chain, _ in pocket:
-            p_sele += f'(chain {chain} & resi {resi}) | '
-        p_sele = f'{group}.protein & ({p_sele})'
-        hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
+@dataclass
+class Hotspot:
+    group: str
+    selection: str
+    clusters: List[Cluster] = field(repr=False, compare=False)
 
-        objs = pm.get_object_list(hs_sele)
-        if not objs or len(objs) < 4:
-            continue
+    def has_collisions(self):
+        return has_collisions(self.group, self.clusters, 1.5)
 
-        p_xyz = pm.get_coords(p_sele)
-        hs_xyz = pm.get_coords(hs_sele)
-        if len(hs_xyz) < 4:
-            continue
+    def show(self):
+        pass
+    
+    @staticmethod
+    def from_clusters(clusters: List[Cluster]) -> Hotspot:
+        raise NotImplementedError
+    
 
-        hull = ConvexHull(hs_xyz)
-        surf_ixs = hull.vertices
-        surf_xyz = hs_xyz[surf_ixs]
+@dataclass
+class KozakovHotspot(Hotspot):
+    klass: Optional[Literal["D", "DS", "DL", "B", "BS", "BL"]]
+    ST: int
+    S0: int
+    S1: int
+    SZ: int
+    CD: float
+    MD: float
+    length: int
+    isE19: bool
 
-        d = distance_matrix(surf_xyz, p_xyz) < 3
-        nc = np.sum(np.any(d, axis=1))
-        if nc < 0.1 * len(surf_xyz):
-            continue
+    @staticmethod
+    def from_clusters(group: str, clusters: List[Cluster]) -> KozakovHotspot:
+        averages = [np.average(c.coords, axis=0) for c in clusters]
+        cd = [distance.euclidean(averages[0], avg) for avg in averages]
 
-        pocket_clusters = [
-            c for c in clusters if c.selection in objs
-        ]
-        s_list = [c.strength for c in pocket_clusters]
-
-        if len(objs) >= 4 and sum([s >= 16 for s in s_list]) >= 2 and s_list[-1] >= 5:
-            if has_collisions(group, pocket_clusters):
-                continue
-            new_name = f"{group}.E19_{ix_e19:02}"
-            pm.create(new_name, hs_sele)
-            pm.group(group, new_name)
-            hs = SimpleNamespace()
-            set_properties(hs, new_name, {
-                "Type": "E19",
-                "Group": group,
-                "Selection": new_name,
-                "ST": sum(s_list),
-                "S0": s_list[0],
-                "S1": s_list[1],
-                "SZ": s_list[-1],
-                "Length": len(objs),
-            })
-            e19.append(hs)
-            ix_e19 += 1
-    return e19
-
-
-def get_kozakov2015_large(group, pocket_dict, clusters):
-    k15l = []
-    idx = 0
-    for key, pocket in pocket_dict.items():
-        p_sele = ''
-        for resi, chain, _ in pocket:
-            p_sele += f'(chain {chain} & resi {resi}) | '
-        p_sele += 'none'
-        p_sele = f'{group}.protein & ({p_sele})'
-        hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
-
-        objs = pm.get_object_list(hs_sele)
-        if not objs or len(objs) < 3:
-            continue
-
-        p_xyz = pm.get_coords(p_sele)
-        hs_xyz = pm.get_coords(hs_sele)
-        if len(hs_xyz) < 4:
-            continue
-
-        hull = ConvexHull(hs_xyz)
-        surf_ixs = hull.vertices
-        surf_xyz = hs_xyz[surf_ixs]
-        
-        d = distance_matrix(surf_xyz, p_xyz) < 3
-        nc = np.sum(np.any(d, axis=1))
-        if nc < 0.1 * len(surf_xyz):
-            continue
-
-        pocket_clusters = [
-            c for c in clusters if c.selection in objs
-        ]
-        sz = pocket_clusters[-1].strength
-        if sz <= 5:
-            continue
-
-        s0 = pocket_clusters[0].strength
-        cd = []
-        cluster1 = pocket_clusters[0]
-        avg1 = np.average(cluster1.coords, axis=0)
-        for cluster2 in pocket_clusters[1:]:
-            avg2 = np.average(cluster2.coords, axis=0)
-            cd.append(distance.euclidean(avg1, avg2))
-        cd = max(cd)
-
-        coords = np.concatenate([c.coords for c in pocket_clusters])
+        coords = np.concatenate([c.coords for c in clusters])
         max_coord = coords.max(axis=0)
         min_coord = coords.min(axis=0)
-        md = distance.euclidean(max_coord, min_coord)
 
-        strength = sum(c.strength for c in pocket_clusters)
+        selection = " or ".join(c.selection for c in clusters)
+        hs = KozakovHotspot(
+            group=group,
+            selection=selection,
+            clusters=clusters,
+            klass=None,
+            ST=sum(c.ST for c in clusters),
+            S0=clusters[0].ST,
+            S1=clusters[1].ST if len(clusters) >= 2 else 0,
+            SZ=clusters[-1].ST if len(clusters) >= 3 else 0,
+            CD=np.max(cd),
+            MD=distance.euclidean(max_coord, min_coord),
+            length=len(clusters),
+            isE19=len(clusters) >= 4 and clusters[1].ST >= 16
+        )
+        s0 = hs.S0
+        sz = hs.SZ
+        cd = hs.CD
+        md = hs.MD
 
+        if 0 < hs.SZ < 5:
+            return hs
+        if s0 >= 16 and cd < 8 and md >= 10:
+            hs.klass = "D"
+        if s0 >= 16 and cd < 8 and 7 <= md < 10:
+            hs.klass = "DS"
+        if 13 <= s0 < 16 and cd < 8 and md >= 10:
+            hs.klass = "B"
+        if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
+            hs.klass = "BS"
         if 13 <= s0 < 16 and cd >= 8 and md >= 10 and sz >= 5:
-            new_name = f"{group}.K15_BL_{idx:02}"
-            klass = "BL"
-        elif s0 >= 16 and cd >= 8 and md >= 10 and sz >= 5:
-            new_name = f"{group}.K15_DL_{idx:02}"
-            klass = "DL"
-        else:
-            continue
-        if klass:
-            if has_collisions(group, pocket_clusters):
-                continue
-            pm.create(new_name, hs_sele)
+            hs.klass = "BL" 
+        if s0 >= 16 and cd >= 8 and md >= 10 and sz >= 5:
+            hs.klass = "DL"
+        
+        return hs
+
+    @staticmethod
+    def find_hotspots(
+        group: str,
+        pocket_residues: Dict[str, Any],
+        clusters: List[Cluster],
+    ) -> List[KozakovHotspot]:
+
+        spots = []
+        pockets = find_occupied_pockets(group, pocket_residues, clusters)
+        for hs_sele, pocket_clusters in pockets.items():
+            hs = KozakovHotspot.from_clusters(group, pocket_clusters)
+            if hs.klass and not hs.has_collisions():
+                hs.selection = hs_sele
+                spots.append(hs)
+
+        spots = sorted(spots, key=lambda hs: (-hs.S0, -hs.S1, -hs.SZ, -hs.ST))
+        spots = sorted(spots, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
+        spots = list(spots)
+
+        idx = 0
+        current_class = None
+        for hs in spots:
+            if hs.klass != current_class:
+                current_class = hs.klass
+                idx = 0
+            
+            new_name = f"{group}.K15_{current_class}_{idx:02}"
+            pm.create(new_name, hs.selection)
             pm.group(group, new_name)
-            hs = KozakovHotspot(
-                selection=new_name,
-                clusters=pocket_clusters,
-                kozakov_class=klass,
-                strength=strength,
-                strength0=s0,
-                strengthz=sz,
-                center_center=cd,
-                max_dist=md,
-                length=len(pocket_clusters)
-            )
+            hs.selection = new_name
             set_properties(
                 hs,
                 new_name,
@@ -380,18 +310,19 @@ def get_kozakov2015_large(group, pocket_dict, clusters):
                     "Type": "K15",
                     "Group": group,
                     "Selection": new_name,
-                    "Class": klass,
-                    "ST": strength,
-                    "S0": s0,
-                    "SZ": sz,
-                    "CD": round(cd, 2),
-                    "MD": round(md, 2),
-                    "Length": len(pocket_clusters),
+                    "Class": hs.klass,
+                    "ST": hs.ST,
+                    "S0": hs.S0,
+                    "S1": hs.S1,
+                    "SZ": hs.SZ,
+                    "CD": hs.CD,
+                    "MD": hs.MD,
+                    "Length": hs.length,
+                    "isE19": hs.isE19
                 },
             )
-            k15l.append(hs)
             idx += 1
-    return k15l
+        return spots
 
 
 def has_collisions(group, clusters, radius=1.5):
@@ -409,7 +340,6 @@ def has_collisions(group, clusters, radius=1.5):
                     break
             else:
                 edges.append((c1.selection, c2.selection))
-
     g = nx.Graph()
     g.add_edges_from(edges)
     nc = nx.number_connected_components(g)
@@ -469,16 +399,16 @@ def eval_bekar25_limits(label, ftmap_results):
     k15d_count = 0
     for res in ftmap_results:
         for cs in res.clusters:
-            if cs.strength >= 16:
+            if cs.ST >= 16:
                 cs16_count += 1
                 break
-            elif cs.strength <= 15:
+            elif cs.ST <= 15:
                 continue
         for k15 in res.kozakov2015:
-            if k15.kozakov_class in ["D", "DS", "DL"]:
+            if k15.klass in ["D", "DS", "DL"]:
                 k15d_count += 1
                 break
-            elif k15.kozakov_class in ["B", "BS", "BL"]:
+            elif k15.klass in ["B", "BS", "BL"]:
                 continue
     bekar = cs16_count / len(ftmap_results) > 0.7 and k15d_count / len(ftmap_results) > 0.5
     obj = SimpleNamespace()
@@ -534,32 +464,28 @@ def _load_ftmap(
     clusters, eclusters = get_clusters()
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
-    pocket_dict = get_pykvf_pockets(group, f"{group}.protein")
-    k15_list = [
-        *get_kozakov2015(group, clusters),
-        *get_kozakov2015_large(group, pocket_dict, clusters)
-    ]
-    e19_list = get_egbert2019(group, pocket_dict, clusters)
+    pocket_residues = find_pykvf_pockets(f"{group}.protein")
+    k15_list = KozakovHotspot.find_hotspots(group, pocket_residues, clusters)
 
     if not allow_nested:
         nested = {} # ordered set
         for hs1 in k15_list:
             for hs2 in k15_list:
-                if hs1.kozakov_class != hs2.kozakov_class:
+                if hs1.klass != hs2.klass:
                     continue
                 if hs1 == hs2:
                     continue
                 if get_fo(hs1.selection, hs2.selection) == 1:
                     nested[hs1.selection] = True
 
-        k15_list = sorted(k15_list, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.kozakov_class))
+        k15_list = sorted(k15_list, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
 
         ix_class = 0
         last_class = None
 
         for hs in k15_list.copy():
-            if hs.kozakov_class != last_class:
-                last_class = hs.kozakov_class
+            if hs.klass != last_class:
+                last_class = hs.klass
                 ix_class = 0
             
             old_name = hs.selection
@@ -569,7 +495,7 @@ def _load_ftmap(
                 k15_list.remove(hs)
                 continue
             
-            new_name = f"{group}.K15_{hs.kozakov_class}_{ix_class:02}"
+            new_name = f"{group}.K15_{hs.klass}_{ix_class:02}"
             hs.selection = new_name
             pm.set_name(old_name, new_name)
 
@@ -606,8 +532,7 @@ def _load_ftmap(
     ret = SimpleNamespace(
         clusters=clusters,
         eclusters=eclusters,
-        kozakov2015=k15_list,
-        egbert2019=e19_list
+        kozakov2015=k15_list
     )
     return ret
 
@@ -785,7 +710,7 @@ def fpt_sim(
     assert len(polymers) > 0, "Please review your selections"
 
     ref_polymer = polymers[0]
-    ref_sele = f"{ref_polymer} and ({ref_polymer} within {site_radius} of ({site}))"
+    ref_sele = f"{ref_polymer} near_to {site_radius} of ({site})"
     site_resis = []
     for at in pm.get_model(f"({ref_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
@@ -1124,7 +1049,7 @@ def plot_euclidean_hca(
 
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "K15":
-        n_props = 4
+        n_props = 6
     elif hs_type == "CS":
         n_props = 1
     elif hs_type == "ACS":
@@ -1139,9 +1064,11 @@ def plot_euclidean_hca(
         if hs_type == "K15":
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
+            S1 = pm.get_property("S1", obj)
+            SZ = pm.get_property("SZ", obj)
             CD = pm.get_property("CD", obj)
             MD = pm.get_property("MD", obj)
-            p[idx, :] = np.array([ST, S0, CD, MD, x, y, z])
+            p[idx, :] = np.array([ST, S0, S1, SZ, CD, MD, x, y, z])
         elif hs_type == "CS":
             ST = pm.get_property("ST", obj)
             p[idx, :] = np.array([ST, x, y, z])
@@ -1289,14 +1216,16 @@ class LoadWidget(QWidget):
 
 class SortableItem(QTableWidgetItem):
     def __init__(self, obj):
-        super().__init__(str(obj))
+        super().__init__()
         self.setFlags(self.flags() & ~QtCore.Qt.ItemIsEditable)
-
-    def __lt__(self, other):
         try:
-            return float(self.text()) < float(other.text())
+            self.setData(QtCore.Qt.ItemDataRole.EditRole, float(obj))
+        except:
+            self.setData(QtCore.Qt.ItemDataRole.EditRole, str(obj))
+        try:
+            self.setData(QtCore.Qt.ItemDataRole.DisplayRole, f"{obj:.2f}")
         except ValueError:
-            return self.text() < other.text()
+            self.setData(QtCore.Qt.ItemDataRole.DisplayRole, str(obj))
 
 
 class TableWidget(QWidget):
@@ -1349,15 +1278,16 @@ class TableWidget(QWidget):
                 "Class",
                 "ST",
                 "S0",
+                "S1",
                 "SZ",
                 "CD",
                 "MD",
                 "Length",
+                "isE19"
             ],
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],
             ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D", "IsBekar"],
-            ("Egbert2019", "E19"): ["ST", "S0", "S1", "SZ", "Length"],
         }
 
         self.tables = {}
@@ -1744,7 +1674,7 @@ class MainDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.resize(600, 400)
+        self.resize(650, 400)
 
         layout = QVBoxLayout()
         self.setLayout(layout)
