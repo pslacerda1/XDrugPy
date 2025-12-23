@@ -67,7 +67,7 @@ def install_xdrugpy_requirements():
         local_name = RESOURCES_DIR / web_name
         if not exists(local_name):
             urlretrieve(
-                f"http://www.clustal.org/omega/{web_name}",
+                f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}",
                 local_name
             )
             import zipfile
@@ -81,13 +81,13 @@ def install_xdrugpy_requirements():
         else:
             raise RuntimeError("Unexpected system.")
         
-        clustalo_url = f"http://www.clustal.org/omega/{web_name}"
+        clustalo_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}"
         clustalo_exe = RESOURCES_DIR / "clustalo"
         if not exists(clustalo_exe):
             urlretrieve(clustalo_url, clustalo_exe)
             os.chmod(clustalo_exe, stat.S_IEXEC)
 
-        
+
 def __init_plugin__(app=None):
     from .hotspots import __init_plugin__ as __init_hotspots__
     from .docking import __init_plugin__ as __init_docking__
