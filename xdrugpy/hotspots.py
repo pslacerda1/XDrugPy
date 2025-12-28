@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import os.path
 import tempfile
-from itertools import combinations
 from types import SimpleNamespace
 from pathlib import Path
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Any, Optional, Literal, List, Dict, Tuple
-
+from itertools import combinations
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 import matplotlib
-from scipy.spatial import distance_matrix, distance, ConvexHull
+from scipy.spatial import distance_matrix, distance, cKDTree, ConvexHull
+
 from scipy.stats import pearsonr
 from matplotlib import pyplot as plt
 from strenum import StrEnum
@@ -99,7 +100,6 @@ def find_occupied_pockets(
         group: str,
         pocket_residues: Dict[str, List[Any]],
         clusters: List[Cluster],
-        max_length: int = 10
 ) -> List[Tuple[str, List[Cluster]]]:
     pockets = {}
     for key, pocket in pocket_residues.items():
@@ -109,13 +109,16 @@ def find_occupied_pockets(
         p_sele += 'none'
         p_sele = f'{group}.protein & ({p_sele})'
 
-        hs_sele = f"byobject ({group}.CS_* near_to 3 of ({p_sele}))"
-        objs = pm.get_object_list(hs_sele)
-        if not objs:
+        hs_sele = f"byobject ({group}.CS_* near_to 4 of ({p_sele}))"
+        hs_objs = pm.get_object_list(hs_sele)
+        if not hs_objs:
             continue
-        
-        s_list = [c.ST for c in clusters if c.selection in objs]
-        if not s_list or s_list[-1] < 5:
+                
+        pocket_clusters = [c for c in clusters if c.selection in hs_objs]
+        ix_ignore = next((i for i, c in enumerate(pocket_clusters) if c.ST<5), -1)
+        pocket_clusters = pocket_clusters[:ix_ignore]
+
+        if not pocket_clusters:
             continue
 
         # p_xyz = pm.get_coords(p_sele)
@@ -132,13 +135,12 @@ def find_occupied_pockets(
         # if nc < 0.2 * len(surf_xyz):
         #     continue
         
-        hs_sele = ' | '.join(objs)
-        pocket_clusters = [c for c in clusters if c.selection in objs]
+        hs_sele = ' | '.join([c.selection for c in pocket_clusters])
         if hs_sele in pockets:
             assert all(c1 == c2 for c1, c2 in zip(pocket_clusters, pockets[hs_sele]))
             assert len(pocket_clusters) == len(pockets[hs_sele])
         pockets[hs_sele] = pocket_clusters
-    
+                
     return pockets
 
 
@@ -155,7 +157,7 @@ def find_pykvf_pockets(protein):
 
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
-        new_name = f"{group}.CS_{idx:03}"
+        new_name = f"{group}.CS_{idx:02}"
         pm.set_name(cs.selection, new_name)
         cs.selection = new_name
         pm.group(group, new_name)
@@ -199,24 +201,12 @@ def process_eclusters(group, eclusters):
 
 
 @dataclass
-class Hotspot:
+class KozakovHotspot:
     group: str
     selection: str
-    clusters: List[Cluster] = field(repr=False, compare=False)
+    clusters: List[Cluster] = field(repr=False, compare=False, hash=False)
+    cluster_list: str = field(repr=False, compare=True)
 
-    def has_collisions(self):
-        return has_collisions(self.group, self.clusters, 1.5)
-
-    def show(self):
-        pass
-    
-    @staticmethod
-    def from_clusters(clusters: List[Cluster]) -> Hotspot:
-        raise NotImplementedError
-    
-
-@dataclass
-class KozakovHotspot(Hotspot):
     klass: Optional[Literal["D", "DS", "DL", "B", "BS", "BL"]]
     ST: int
     S0: int
@@ -226,9 +216,43 @@ class KozakovHotspot(Hotspot):
     MD: float
     length: int
     isE19: bool
-
+    nComponents: int
+    type: Literal["K15"] =  field(default="K15")
+    
+    def copy_into_properties(self):
+        d = asdict(self)
+        del d['clusters'], d['type']
+        set_properties(
+            SimpleNamespace(),
+            self.selection,
+            {
+                **d,
+                'Group': self.group,
+                'Type': 'K15',
+                'Class': self.klass,
+                'Length': self.length,
+                'cluster_list': self.cluster_list,
+            }
+        )
+    
     @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster]) -> KozakovHotspot:
+    def from_cluster_selections(selections: List[str]) -> KozakovHotspot:
+        clusters = []
+        objs = pm.get_object_list(' | '.join(selections))
+        for obj in objs:
+            group = obj.split('.')[0]
+            assert obj.startswith(f"{group}.CS_")
+            clu = Cluster(
+                obj,
+                pm.get_coordset(obj),
+                count_molecules(obj)
+            )
+            pm.group(group, obj, action='add')
+            clusters.append(clu)
+        return KozakovHotspot.from_clusters(group, clusters)
+        
+    @staticmethod
+    def from_clusters(group: str, clusters: List[Cluster], disable_L: bool=False) -> KozakovHotspot:
         averages = [np.average(c.coords, axis=0) for c in clusters]
         cd = [distance.euclidean(averages[0], avg) for avg in averages]
 
@@ -236,11 +260,12 @@ class KozakovHotspot(Hotspot):
         max_coord = coords.max(axis=0)
         min_coord = coords.min(axis=0)
 
-        selection = " or ".join(c.selection for c in clusters)
+        selection = " ".join(c.selection for c in clusters)
         hs = KozakovHotspot(
             group=group,
             selection=selection,
             clusters=clusters,
+            cluster_list=selection,
             klass=None,
             ST=sum(c.ST for c in clusters),
             S0=clusters[0].ST,
@@ -249,15 +274,15 @@ class KozakovHotspot(Hotspot):
             CD=np.max(cd),
             MD=distance.euclidean(max_coord, min_coord),
             length=len(clusters),
-            isE19=len(clusters) >= 4 and clusters[1].ST >= 16
+            isE19=len(clusters) >= 4 and clusters[1].ST >= 16,
+            nComponents=KozakovHotspot.make_graph(group, clusters)
         )
+        
         s0 = hs.S0
         sz = hs.SZ
         cd = hs.CD
         md = hs.MD
 
-        if 0 < hs.SZ < 5:
-            return hs
         if s0 >= 16 and cd < 8 and md >= 10:
             hs.klass = "D"
         if s0 >= 16 and cd < 8 and 7 <= md < 10:
@@ -266,86 +291,194 @@ class KozakovHotspot(Hotspot):
             hs.klass = "B"
         if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
             hs.klass = "BS"
-        if 13 <= s0 < 16 and cd >= 8 and md >= 10 and sz >= 5:
-            hs.klass = "BL" 
-        if s0 >= 16 and cd >= 8 and md >= 10 and sz >= 5:
-            hs.klass = "DL"
-        
+        if not disable_L:
+            if 13 <= s0 < 16 and cd >= 8 and md >= 10:
+                hs.klass = "BL" 
+            if s0 >= 16 and cd >= 8 and md >= 10:
+                hs.klass = "DL"
         return hs
-
+    
     @staticmethod
     def find_hotspots(
         group: str,
         pocket_residues: Dict[str, Any],
         clusters: List[Cluster],
+        allow_nested: bool
     ) -> List[KozakovHotspot]:
+        
+        # filter out weak clusters
+        ix_ignore = next((i for i, c in enumerate(clusters) if c.ST<5), -1)
+        clusters = clusters[:ix_ignore]
 
+        # identify hotspots from pockets and consensus sites
         spots = []
         pockets = find_occupied_pockets(group, pocket_residues, clusters)
         for hs_sele, pocket_clusters in pockets.items():
             hs = KozakovHotspot.from_clusters(group, pocket_clusters)
-            if hs.klass and not hs.has_collisions():
-                hs.selection = hs_sele
-                spots.append(hs)
+            if (hs.klass or hs.isE19) and hs.nComponents == 1:
+                    hs.selection = hs_sele
+                    spots.append(hs)
+        
+        # identify hotspots from combinations of consensus sites
+        for r in range(1, 4):
+            for comb in combinations(clusters, r):
+                comb = list(comb)
+                hs = KozakovHotspot.from_clusters(group, comb, disable_L=True)
+                if (hs.klass or hs.isE19) and hs.nComponents == 1:
+                    spots.append(hs)
+        
+        # remove hotspot objects when they totally fit inside another (and are of the same class)
+        nested = set()
+        if not allow_nested:
+            for ix1, hs1 in enumerate(spots):
+                for ix2, hs2 in enumerate(spots):
+                    if ix1 == ix2:
+                        continue
+                    if hs1.klass != hs2.klass:
+                        continue
+                    if hs1.selection == hs2.selection:
+                        nested.add(hs1.selection)
+                        continue
+                    if get_fo(hs1.selection, hs2.selection) == 1:
+                        nested.add(hs1.selection)
+                        continue
 
+            for hs in spots:
+                if hs.selection in nested:
+                    spots.remove(hs)
+                
+
+        # rename and renumber hotspots
         spots = sorted(spots, key=lambda hs: (-hs.S0, -hs.S1, -hs.SZ, -hs.ST))
         spots = sorted(spots, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
         spots = list(spots)
 
-        idx = 0
-        current_class = None
-        for hs in spots:
-            if hs.klass != current_class:
-                current_class = hs.klass
-                idx = 0
-            
-            new_name = f"{group}.K15_{current_class}_{idx:02}"
+        ix_class = 0
+        last_class = None
+        for hs in spots.copy():
+            if hs.klass != last_class:
+                last_class = hs.klass
+                ix_class = 0
+            new_name = f"{group}.K15_{hs.klass}_{ix_class:02}"
             pm.create(new_name, hs.selection)
-            pm.group(group, new_name)
             hs.selection = new_name
-            set_properties(
-                hs,
-                new_name,
-                {
-                    "Type": "K15",
-                    "Group": group,
-                    "Selection": new_name,
-                    "Class": hs.klass,
-                    "ST": hs.ST,
-                    "S0": hs.S0,
-                    "S1": hs.S1,
-                    "SZ": hs.SZ,
-                    "CD": hs.CD,
-                    "MD": hs.MD,
-                    "Length": hs.length,
-                    "isE19": hs.isE19
-                },
-            )
-            idx += 1
+            ix_class += 1
+        
+        for hs in spots:
+            hs.copy_into_properties()
+        
         return spots
+    
+    def show(self, plot_graph: bool=False):
+        group = self.group
+        base_name = f"{group}.diagnose"
+        pm.delete(f'{base_name}*')
+
+        # create surface object
+        surf_sele = f"{group}.protein near_to 5 of ({self.cluster_list})"
+        surf_name = f"{base_name}.surf"
+        pm.create(surf_name, surf_sele)
+        pm.hide(selection=surf_name)
+        pm.show(representation="surface", selection=surf_name)
+        pm.set("transparency", 0.4, surf_name)
+
+        for ix, clu in enumerate(self.clusters):
+            clu = self.clusters[ix]
+            S = clu.ST
+            label_ps = pm.get_unused_name(f'{base_name}.label_ps_')
+            pm.pseudoatom(
+                label_ps,
+                selection=clu.selection,
+                label=f"{clu.selection}\nS={S}"
+            )
+            pm.set("float_label", 0, label_ps)
+
+            if ix != 0:
+                measure_name = pm.get_unused_name(f'{group}.diagnose_dist_')
+                pm.distance(
+                    measure_name,
+                    self.clusters[0].selection,
+                    self.clusters[ix].selection,
+                    mode=4
+                )
+                pm.group(group, base_name, action='add')
+            
+            if plot_graph:
+                for ix1, clu1 in enumerate(self.clusters):
+                    for ix2, clu2 in enumerate(self.clusters):
+                        if ix1 >= ix2:
+                            continue
+                        e = (clu1.selection, clu2.selection)
+                        if e not in self.graph.edges:
+                            measure_name = pm.get_unused_name(f'{group}.diagnose_graph_')
+                            pm.distance(measure_name, e[0], e[1], mode=4)
+                            pm.color('cyan', measure_name)
+
+    @staticmethod
+    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=25):
+        g = nx.Graph()
+        # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
+        g.add_nodes_from([c.selection for c in clusters])
+
+        for ix1, c1 in enumerate(clusters):
+            for ix2, c2 in enumerate(clusters):
+                if ix1 >= ix2:
+                    continue
+                obstructions = KozakovHotspot.has_obstruction(group, c1.selection, c2.selection, radius, samples)
+                # Lógica de Conectividade:
+                # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
+                atoms_a_connected = np.any(obstructions, axis=1) # Vetor (N,)
+                atoms_b_connected = np.any(obstructions, axis=0) # Vetor (M,)
+                
+                # Se mais de 40% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
+                if np.mean(atoms_a_connected) > 0.5 and np.mean(atoms_b_connected) > 0.5:
+                    g.add_edge(c1.selection, c2.selection)
+        return nx.number_connected_components(g)
+
+    @staticmethod
+    @lru_cache
+    def has_obstruction(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
+
+        list_a = pm.get_coords(clu_sele1)
+        list_b = pm.get_coords(clu_sele2)
+        
+        # Otimização: Constrói a árvore da proteína FORA dos loops
+        prot_xyz = pm.get_coords(f'{group}.protein')
+        tree = cKDTree(prot_xyz)
+        
+        t = np.linspace(0, 1, samples)
+
+        # Broadcasting para gerar pontos intermediários
+        # Mágica avançada da IA
+        A = list_a[:, np.newaxis, np.newaxis, :]
+        B = list_b[np.newaxis, :, np.newaxis, :]
+        T = t[np.newaxis, np.newaxis, :, np.newaxis]
+        
+        # Matriz (N, M, samples, 3)
+        inter_points = A + T * (B - A)
+        c1c2_xyz = inter_points.reshape(-1, 3)
+        
+        # Checa colisões com a proteína
+        collisions = tree.query_ball_point(c1c2_xyz, r=radius)
+        
+        # True se o ponto i->j no frame k colide
+        has_obstruction = np.array([
+            len(c) > 0 for c in collisions
+        ]).reshape(len(list_a), len(list_b), samples)
+        
+        # Um caminho entre o átomo i e o átomo j é CONSIDERADO LIVRE se não houver colisões em 'samples'
+        has_obstruction = np.any(has_obstruction, axis=2) # Matriz (N, M)
+        return has_obstruction
+    
+@new_command
+def show_k15(selections: List[str], plot_graph: bool=False) -> KozakovHotspot:
+    hs = KozakovHotspot.from_cluster_selections(selections)
+    hs.show(plot_graph)
+    print(hs)
+    return hs
 
 
-def has_collisions(group, clusters, radius=1.5):
-    edges = []
-    prot_xyz = pm.get_coords(f'{group}.protein')
-    for ix1, c1 in enumerate(clusters):
-        avg1 = np.average(c1.coords, axis=0)
-        for ix2, c2 in enumerate(clusters):
-            if ix1 <= ix2:
-                continue
-            avg2 = np.average(c2.coords, axis=0)
-            for xyz in np.linspace(avg1, avg2):
-                dist = distance_matrix(prot_xyz, [xyz]) <= radius
-                if np.any(dist) > 0:
-                    break
-            else:
-                edges.append((c1.selection, c2.selection))
-    g = nx.Graph()
-    g.add_edges_from(edges)
-    nc = nx.number_connected_components(g)
-    return nc > 1
-
-class FtmapResults:
+class FTMapResults:
     pass
 
 @new_command
@@ -378,7 +511,7 @@ def load_ftmap(
         if single:
             return rets[0]
         else:
-            ftmap = FtmapResults()
+            ftmap = FTMapResults()
             ftmap.results = rets
             if bekar_label:
                 bekar, cs16_count, k15d_count = eval_bekar25_limits(bekar_label, rets)
@@ -394,7 +527,7 @@ def load_ftmap(
         pm.set('defer_updates', 0)
 
 
-def eval_bekar25_limits(label, ftmap_results):   
+def eval_bekar25_limits(label, ftmap_results):
     cs16_count = 0
     k15d_count = 0
     for res in ftmap_results:
@@ -465,41 +598,7 @@ def _load_ftmap(
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
     pocket_residues = find_pykvf_pockets(f"{group}.protein")
-    k15_list = KozakovHotspot.find_hotspots(group, pocket_residues, clusters)
-
-    if not allow_nested:
-        nested = {} # ordered set
-        for hs1 in k15_list:
-            for hs2 in k15_list:
-                if hs1.klass != hs2.klass:
-                    continue
-                if hs1 == hs2:
-                    continue
-                if get_fo(hs1.selection, hs2.selection) == 1:
-                    nested[hs1.selection] = True
-
-        k15_list = sorted(k15_list, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
-
-        ix_class = 0
-        last_class = None
-
-        for hs in k15_list.copy():
-            if hs.klass != last_class:
-                last_class = hs.klass
-                ix_class = 0
-            
-            old_name = hs.selection
-            
-            if old_name in nested:
-                pm.delete(old_name)
-                k15_list.remove(hs)
-                continue
-            
-            new_name = f"{group}.K15_{hs.klass}_{ix_class:02}"
-            hs.selection = new_name
-            pm.set_name(old_name, new_name)
-
-            ix_class += 1
+    k15_list = KozakovHotspot.find_hotspots(group, pocket_residues, clusters, allow_nested)
 
     pm.hide("everything", f"{group}.*")
 
@@ -704,6 +803,8 @@ def fpt_sim(
         obj = pm.get_object_list(sele)
         if obj is not None and len(obj) >= 1:
             obj = obj[0]
+        else:
+            raise ValueError(f"Bad selection: {sele}")
         if group := pm.get_property("Group", obj):
             groups.append(group)
     polymers = [f"{g}.protein" for g in groups]
@@ -1076,7 +1177,13 @@ def plot_euclidean_hca(
             ST = pm.get_property("ST", obj)
             MD = pm.get_property("MD", obj)
             p[idx, :] = np.array([ST, MD, x, y, z])
-        
+    
+    for col in range(n_props + 3):
+        if max(p[:, col]) - min(p[:, col]) == 0:
+            p[:, col] = 0
+        else:
+            p[:, col] = (p[:, col] - min(p[:, col])) / (max(p[:, col]) - min(p[:, col]))
+
     X = []
     for idx1, obj1 in enumerate(object_list):
         for idx2, obj2 in enumerate(object_list):
@@ -1087,7 +1194,6 @@ def plot_euclidean_hca(
             d = np.sqrt(np.sum((p1-p2)**2))
             X.append(d)
     X = np.array(X)
-    X = (X-X.min())/(X.max()-X.min())
     return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, plot)
 
 
@@ -1209,8 +1315,8 @@ class LoadWidget(QWidget):
         load_ftmap(
             filenames,
             groups=groups,
+            bekar_label=bekar_label,
             allow_nested=allow_nested,
-            bekar_label=bekar_label
         )
 
 
@@ -1224,7 +1330,7 @@ class SortableItem(QTableWidgetItem):
             self.setData(QtCore.Qt.ItemDataRole.EditRole, str(obj))
         try:
             self.setData(QtCore.Qt.ItemDataRole.DisplayRole, f"{obj:.2f}")
-        except ValueError:
+        except (ValueError, TypeError):
             self.setData(QtCore.Qt.ItemDataRole.DisplayRole, str(obj))
 
 
@@ -1245,7 +1351,7 @@ class TableWidget(QWidget):
 
             @self.itemSelectionChanged.connect
             def itemSelectionChanged():
-                for item in self.selectedItems(): # only once
+                for item in self.selectedItems():
                     obj = self.item(item.row(), 0).text()
                     pm.select(obj)
                     pm.enable("sele")
@@ -1283,7 +1389,7 @@ class TableWidget(QWidget):
                 "CD",
                 "MD",
                 "Length",
-                "isE19"
+                "isE19",
             ],
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],

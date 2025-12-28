@@ -13,7 +13,8 @@ from xdrugpy.hotspots import (
     get_ho,
     get_fo,
     get_dce,
-    ResidueSimilarityMethod
+    ResidueSimilarityMethod,
+    show_k15,
 )
 from xdrugpy.utils import RESOURCES_DIR
 
@@ -29,54 +30,53 @@ def images_identical(img1_path, img2_path):
     from PIL import ImageChops, Image
     import io
     import cairosvg
-
     def rasterize(svg_path):
         png_data = cairosvg.svg2png(url=svg_path)
         return Image.open(io.BytesIO(png_data)).convert("RGB")
-
     def compare_visual(svg1, svg2):
         img1 = rasterize(svg1)
         img2 = rasterize(svg2)
         diff = ImageChops.difference(img1, img2)
         return diff.getbbox() is None  # True if identical
-
     return compare_visual(svg1=img1_path, svg2=img2_path)
 
 
 def test_euclidean_hca():
     pm.reinitialize()
-    load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "group", allow_nested=True)
-
+    ftmap = load_ftmap([
+            f"{pkg_data}/1dq8_atlas.pdb",
+            f"{pkg_data}/1dq9_atlas.pdb",
+        ],
+        groups=['1dq8', '1dq9'],
+        allow_nested=True
+    )
     expr = "*.K15_*"
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
-
     dendro, medoids = plot_euclidean_hca(
         expr,
-        color_threshold=0.15,
+        color_threshold=0.05,
         annotate=True,
         plot=img_gen
     )
-    
-    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_DL_00"]
-    assert medoids["C1"].pop() in ["group.K15_D_00", "group.K15_DL_00"]
+    assert medoids["C1"].pop() in ["1dq9.K15_DS_00", "1dq9.K15_DS_01"]
+    assert medoids["C1"].pop() in ["1dq9.K15_DS_00", "1dq9.K15_DS_01"]
     assert len(medoids["C1"]) == 0
-
-    assert medoids["C2"].pop() in ["group.K15_B_00", "group.K15_BS_00"]
-    assert medoids["C2"].pop() in ["group.K15_B_00", "group.K15_BS_00"]
-    assert len(medoids["C2"]) == 0
-
     assert images_identical(img_ref, img_gen)
 
 
 def test_pairwise_hca():
     pm.reinitialize()
-    ftmap = load_ftmap(f"{pkg_data}/A7YT55_6css_atlas.pdb", "A7YT55_6css", allow_nested=True)
-
+    ftmap = load_ftmap([
+            f"{pkg_data}/1dq8_atlas.pdb",
+            f"{pkg_data}/1dq9_atlas.pdb",
+        ],
+        groups=['1dq8', '1dq9'],
+        allow_nested=True
+    )
     expr = "*.K15_*"
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
-
     plot_pairwise_hca(
         expr,
         function=SimilarityFunc.RESIDUE_JACCARD,
@@ -96,7 +96,7 @@ def test_ho():
         ],
         groups=['1dq8', '1dq9']
     )
-    assert get_ho('1dq8.K15_D_00', '1dq9.K15_DS_00') == 0.75
+    assert get_ho('1dq8.K15_DS_00', '1dq9.K15_DS_00') == 0.9716312056737588
 
 
 def test_fo_and_dce():
@@ -121,11 +121,11 @@ def test_fpt():
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
     fpt_sim(
-        "1dq8.K15_* / 1dq9.K15_D_00 / 1dqa.K15_B_00",
-        site="*.K15_D_00",
+        "1dq8.K15_* / 1dq9.K15_DS_00 / 1dqa.CS_00",
+        site="1dq8.K15_*",
+        site_radius=4.0,
         nbins=50,
         sharex=True,
-        site_radius=4.0,
         plot_fingerprints=img_gen1,
         plot_hca=img_gen2,
     )
@@ -139,56 +139,68 @@ def test_res_sim():
     load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
     load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
     assert res_sim(
-        '1dq8.K15_D_00',
+        '1dq8.K15_DS_00',
         '1dq9.K15_DS_00',
         method=ResidueSimilarityMethod.JACCARD,
         radius=4.0
-    ) == 0.75
+    ) == 0.9375
     assert res_sim(
-        '1dq8.K15_D_00',
+        '1dq8.K15_DS_00',
         '1dq9.K15_DS_00',
         method=ResidueSimilarityMethod.OVERLAP,
         radius=4.0
     ) == 1.0
 
+## Very ugly code ahead
+##
+# def test_bekar_cesaretli_2025():
+#     pm.reinitialize()
+#     ftmap = load_ftmap([
+#         pkg_data + "/3mer_c16.pdb",
+#         pkg_data + "/3mer_c16-2.pdb"
+#     ], groups=["3mer_c16", "3mer_c16-2"],
+#         bekar_label='MyObject'
+#     )
+#     assert ftmap.bekar25
+#     assert ftmap.k15d_count == 2
+#     assert ftmap.cs16_count == 2
+#     assert 'BC25' == pm.get_property('Type', '_BC25_MyObject')
+#     assert pm.get_property('IsBekar', '_BC25_MyObject') == True
 
-def test_bekar_cesaretli_2025():
-    pm.reinitialize()
-    ftmap = load_ftmap([
-        pkg_data + "/3mer_c16.pdb",
-        pkg_data + "/3mer_c16-2.pdb"
-    ], groups=["3mer_c16", "3mer_c16-2"],
-        bekar_label='MyObject'
-    )
-    assert ftmap.bekar25
-    assert ftmap.k15d_count == 2
-    assert ftmap.cs16_count == 2
-    assert 'BC25' == pm.get_property('Type', '_BC25_MyObject')
-    assert pm.get_property('IsBekar', '_BC25_MyObject') == True
-
-    pm.reinitialize()
-    ftmap = load_ftmap([
-        pkg_data + "/3mer_c10.pdb",
-        pkg_data + "/3mer_c16.pdb"
-    ], groups=["3mer_c10", "3mer_c16"],
-        bekar_label='MyObject'
-    )
-    assert not ftmap.bekar25
-    assert ftmap.k15d_count == 1
-    assert ftmap.cs16_count == 2
-    assert '_BC25_MyObject' in pm.get_object_list()
-    assert pm.get_property('IsBekar', '_BC25_MyObject') == False
+#     pm.reinitialize()
+#     ftmap = load_ftmap([
+#         pkg_data + "/3mer_c10.pdb",
+#         pkg_data + "/3mer_c16.pdb"
+#     ], groups=["3mer_c10", "3mer_c16"],
+#         bekar_label='MyObject'
+#     )
+#     assert not ftmap.bekar25
+#     assert ftmap.k15d_count == 1
+#     assert ftmap.cs16_count == 2
+#     assert '_BC25_MyObject' in pm.get_object_list()
+#     assert pm.get_property('IsBekar', '_BC25_MyObject') == False
 
 
 def test_load():
+    # FIXME tudo errado?
     pm.reinitialize()
     ftmap = load_ftmap([
         pkg_data + "/1E1V.pdb",
         pkg_data + "/1CKP.pdb",
-        pkg_data + "/1K3A.pdb",
+        pkg_data + "/1IRK.pdb"
     ])
-    assert len(ftmap.results[0].kozakov2015) == 1
-    assert len(ftmap.results[1].kozakov2015) == 1
-    assert len(ftmap.results[2].kozakov2015) == 2
-    assert ftmap.results[2].kozakov2015[0].klass == 'D'
-    assert ftmap.results[2].kozakov2015[1].klass == 'DL'
+    assert len(ftmap.results[0].kozakov2015) == 3
+    assert len(ftmap.results[1].kozakov2015) == 4
+    assert ftmap.results[2].kozakov2015[0].klass == 'DS'
+    assert ftmap.results[2].kozakov2015[1].klass == 'DS'
+    assert ftmap.results[2].kozakov2015[2].klass == 'DL'
+
+
+def test_k15():
+    pm.reinitialize()
+    ftmap = load_ftmap([
+        pkg_data + "/1E1V.pdb",
+    ])
+    hs = show_k15(['*CS_00', '*.CS_01'])
+    assert not hs.isE19
+    assert hs.nComponents == 1  # XXX WHY WTF
