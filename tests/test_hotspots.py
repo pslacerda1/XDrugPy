@@ -193,10 +193,10 @@ def test_load():
     assert ftmap.results[2].kozakov2015[0].klass == 'D'
     assert ftmap.results[2].kozakov2015[4].klass == 'DS'
 
-
 def test_show_hs():
     pm.reinitialize()
-    load_ftmap(f"{pkg_data}/1BZL_ftmap.pdb", "1BZL")
+    ftmap = load_ftmap(f"{pkg_data}/1BZL_atlas.pdb", "1BZL")
+    
     hs = show_hs(['*.CS_00', '*.CS_02', "*.CS_04"])
     assert not hs.isE19
     assert hs.nComponents == 1
