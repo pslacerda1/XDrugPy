@@ -14,7 +14,7 @@ from xdrugpy.hotspots import (
     get_fo,
     get_dce,
     ResidueSimilarityMethod,
-    show_k15,
+    show_hs,
 )
 from xdrugpy.utils import RESOURCES_DIR
 
@@ -48,7 +48,6 @@ def test_euclidean_hca():
             f"{pkg_data}/1dq9_atlas.pdb",
         ],
         groups=['1dq8', '1dq9'],
-        allow_nested=True
     )
     expr = "*.K15_*"
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
@@ -72,7 +71,6 @@ def test_pairwise_hca():
             f"{pkg_data}/1dq9_atlas.pdb",
         ],
         groups=['1dq8', '1dq9'],
-        allow_nested=True
     )
     expr = "*.K15_*"
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
@@ -189,18 +187,16 @@ def test_load():
         pkg_data + "/1CKP.pdb",
         pkg_data + "/1IRK.pdb"
     ])
-    assert len(ftmap.results[0].kozakov2015) == 3
-    assert len(ftmap.results[1].kozakov2015) == 4
-    assert ftmap.results[2].kozakov2015[0].klass == 'DS'
-    assert ftmap.results[2].kozakov2015[1].klass == 'DS'
-    assert ftmap.results[2].kozakov2015[2].klass == 'DL'
+    assert len(ftmap.results[0].kozakov2015) == 5
+    assert len(ftmap.results[1].kozakov2015) == 8
+    assert len(ftmap.results[2].kozakov2015) == 8
+    assert ftmap.results[2].kozakov2015[0].klass == 'D'
+    assert ftmap.results[2].kozakov2015[4].klass == 'DS'
 
 
-def test_k15():
+def test_show_hs():
     pm.reinitialize()
-    ftmap = load_ftmap([
-        pkg_data + "/1E1V.pdb",
-    ])
-    hs = show_k15(['*CS_00', '*.CS_01'])
+    load_ftmap(f"{pkg_data}/1BZL_ftmap.pdb", "1BZL")
+    hs = show_hs(['*.CS_00', '*.CS_02', "*.CS_04"])
     assert not hs.isE19
-    assert hs.nComponents == 1  # XXX WHY WTF
+    assert hs.nComponents == 1

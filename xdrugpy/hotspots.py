@@ -4,7 +4,6 @@ import os.path
 import tempfile
 from types import SimpleNamespace
 from pathlib import Path
-import json
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional, Literal, List, Dict, Tuple
 from itertools import combinations
@@ -19,6 +18,7 @@ from scipy.stats import pearsonr
 from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
+import pyKVFinder
 
 from .utils import (
     new_command,
@@ -140,20 +140,19 @@ def find_occupied_pockets(
             assert all(c1 == c2 for c1, c2 in zip(pocket_clusters, pockets[hs_sele]))
             assert len(pocket_clusters) == len(pockets[hs_sele])
         pockets[hs_sele] = pocket_clusters
-                
     return pockets
 
 
 def find_pykvf_pockets(protein):
     with tempfile.TemporaryDirectory() as tempdir:
-        tempdir = "/tmp/"
         protein_pdb = f"{tempdir}/protein.pdb"
         pm.save(protein_pdb, selection=protein)
-        out, ok = run(f'pyKVFinder_residues "{protein_pdb}"', log=False)
-        if not ok:
-            raise RuntimeError(out)
-        return json.loads(out)
-
+        atomic = pyKVFinder.read_pdb(protein_pdb)
+        
+    vertices = pyKVFinder.get_vertices(atomic)
+    _, cavities = pyKVFinder.detect(atomic, vertices)
+    residues = pyKVFinder.constitutional(cavities, atomic, vertices)
+    return residues
 
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
@@ -201,7 +200,7 @@ def process_eclusters(group, eclusters):
 
 
 @dataclass
-class KozakovHotspot:
+class Hotspot:
     group: str
     selection: str
     clusters: List[Cluster] = field(repr=False, compare=False, hash=False)
@@ -217,7 +216,7 @@ class KozakovHotspot:
     length: int
     isE19: bool
     nComponents: int
-    type: Literal["K15"] =  field(default="K15")
+    type: Literal["K15"] =  field(default="K15", repr=False)
     
     def copy_into_properties(self):
         d = asdict(self)
@@ -236,7 +235,7 @@ class KozakovHotspot:
         )
     
     @staticmethod
-    def from_cluster_selections(selections: List[str]) -> KozakovHotspot:
+    def from_cluster_selections(selections: List[str]) -> Hotspot:
         clusters = []
         objs = pm.get_object_list(' | '.join(selections))
         for obj in objs:
@@ -249,10 +248,10 @@ class KozakovHotspot:
             )
             pm.group(group, obj, action='add')
             clusters.append(clu)
-        return KozakovHotspot.from_clusters(group, clusters)
+        return Hotspot.from_clusters(group, clusters)
         
     @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], disable_L: bool=False) -> KozakovHotspot:
+    def from_clusters(group: str, clusters: List[Cluster], disable_L: bool=False) -> Hotspot:
         averages = [np.average(c.coords, axis=0) for c in clusters]
         cd = [distance.euclidean(averages[0], avg) for avg in averages]
 
@@ -261,7 +260,7 @@ class KozakovHotspot:
         min_coord = coords.min(axis=0)
 
         selection = " ".join(c.selection for c in clusters)
-        hs = KozakovHotspot(
+        hs = Hotspot(
             group=group,
             selection=selection,
             clusters=clusters,
@@ -275,7 +274,7 @@ class KozakovHotspot:
             MD=distance.euclidean(max_coord, min_coord),
             length=len(clusters),
             isE19=len(clusters) >= 4 and clusters[1].ST >= 16,
-            nComponents=KozakovHotspot.make_graph(group, clusters)
+            nComponents=Hotspot.make_graph(group, clusters)
         )
         
         s0 = hs.S0
@@ -304,7 +303,7 @@ class KozakovHotspot:
         pocket_residues: Dict[str, Any],
         clusters: List[Cluster],
         allow_nested: bool
-    ) -> List[KozakovHotspot]:
+    ) -> List[Hotspot]:
         
         # filter out weak clusters
         ix_ignore = next((i for i, c in enumerate(clusters) if c.ST<5), -1)
@@ -314,7 +313,7 @@ class KozakovHotspot:
         spots = []
         pockets = find_occupied_pockets(group, pocket_residues, clusters)
         for hs_sele, pocket_clusters in pockets.items():
-            hs = KozakovHotspot.from_clusters(group, pocket_clusters)
+            hs = Hotspot.from_clusters(group, pocket_clusters)
             if (hs.klass or hs.isE19) and hs.nComponents == 1:
                     hs.selection = hs_sele
                     spots.append(hs)
@@ -323,7 +322,7 @@ class KozakovHotspot:
         for r in range(1, 4):
             for comb in combinations(clusters, r):
                 comb = list(comb)
-                hs = KozakovHotspot.from_clusters(group, comb, disable_L=True)
+                hs = Hotspot.from_clusters(group, comb, disable_L=True)
                 if (hs.klass or hs.isE19) and hs.nComponents == 1:
                     spots.append(hs)
         
@@ -414,7 +413,6 @@ class KozakovHotspot:
                             pm.distance(measure_name, e[0], e[1], mode=4)
                             pm.color('cyan', measure_name)
 
-    @staticmethod
     def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=25):
         g = nx.Graph()
         # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
@@ -424,14 +422,14 @@ class KozakovHotspot:
             for ix2, c2 in enumerate(clusters):
                 if ix1 >= ix2:
                     continue
-                obstructions = KozakovHotspot.has_obstruction(group, c1.selection, c2.selection, radius, samples)
+                obstructions = Hotspot.has_obstruction(group, c1.selection, c2.selection, radius, samples)
                 # Lógica de Conectividade:
                 # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
-                atoms_a_connected = np.any(obstructions, axis=1) # Vetor (N,)
-                atoms_b_connected = np.any(obstructions, axis=0) # Vetor (M,)
+                atoms1_connected = np.any(~obstructions, axis=1) # Vetor (N,)
+                atoms2_connected = np.any(~obstructions, axis=0) # Vetor (M,)
                 
                 # Se mais de 40% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
-                if np.mean(atoms_a_connected) > 0.5 and np.mean(atoms_b_connected) > 0.5:
+                if np.mean(atoms1_connected) > 0.75 and np.mean(atoms2_connected) > 0.75:
                     g.add_edge(c1.selection, c2.selection)
         return nx.number_connected_components(g)
 
@@ -442,7 +440,6 @@ class KozakovHotspot:
         list_a = pm.get_coords(clu_sele1)
         list_b = pm.get_coords(clu_sele2)
         
-        # Otimização: Constrói a árvore da proteína FORA dos loops
         prot_xyz = pm.get_coords(f'{group}.protein')
         tree = cKDTree(prot_xyz)
         
@@ -471,9 +468,8 @@ class KozakovHotspot:
         return has_obstruction
     
 @new_command
-def show_k15(selections: List[str], plot_graph: bool=False) -> KozakovHotspot:
-    hs = KozakovHotspot.from_cluster_selections(selections)
-    hs.show(plot_graph)
+def show_hs(selections: List[str]) -> Hotspot:
+    hs = Hotspot.from_cluster_selections(selections)
     print(hs)
     return hs
 
@@ -598,7 +594,7 @@ def _load_ftmap(
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
     pocket_residues = find_pykvf_pockets(f"{group}.protein")
-    k15_list = KozakovHotspot.find_hotspots(group, pocket_residues, clusters, allow_nested)
+    k15_list = Hotspot.find_hotspots(group, pocket_residues, clusters, allow_nested)
 
     pm.hide("everything", f"{group}.*")
 
@@ -811,7 +807,7 @@ def fpt_sim(
     assert len(polymers) > 0, "Please review your selections"
 
     ref_polymer = polymers[0]
-    ref_sele = f"{ref_polymer} near_to {site_radius} of ({site})"
+    ref_sele = f"{ref_polymer} ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
     for at in pm.get_model(f"({ref_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
@@ -832,7 +828,7 @@ def fpt_sim(
         fpts.append(fpt)
     
     if plot_fingerprints:
-        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)    
+        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
         if not isinstance(axs, (np.ndarray, list)):
             axs = [axs]
         if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):

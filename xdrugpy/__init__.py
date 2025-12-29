@@ -20,6 +20,11 @@ def install_xdrugpy_requirements():
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
 
+    try:
+        import pyKVFinder
+    except:
+        os.system("pip install --no-deps pyKVFinder")
+
     #
     # Install Vina
     #
@@ -38,26 +43,6 @@ def install_xdrugpy_requirements():
         print(f"Installing AutoDock Vina on", RESOURCES_DIR)
         urlretrieve(vina_url, vina_exe)
         os.chmod(vina_exe, stat.S_IEXEC)
-
-    #
-    # Install pyKVFinder
-    #
-    match SYSTEM:
-        case "windows" | "darwin":
-            pass
-        case "linux":
-            bin_fname = "pyKVFinder_residues"
-            dll_fname = "_pyKVFinder.cpython-311-x86_64-linux-gnu.so"
-    pykvf_exe = RESOURCES_DIR / bin_fname
-    pykvf_dll = RESOURCES_DIR / dll_fname
-    if not exists(pykvf_exe):
-        print(f"Installing pyKVFinder on", RESOURCES_DIR)
-        pykvf_exe_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{bin_fname}.{SYSTEM}"
-        pykvf_dll_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{dll_fname}"
-        urlretrieve(pykvf_exe_url, pykvf_exe)
-        urlretrieve(pykvf_dll_url, pykvf_dll)
-        os.chmod(pykvf_exe, stat.S_IEXEC)
-        os.chmod(pykvf_dll, stat.S_IEXEC | stat.S_IRUSR)
 
     #
     # Install Clustal Omega

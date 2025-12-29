@@ -1,5 +1,0 @@
-import pyKVFinder
-import sys
-from json import dumps
-ret = pyKVFinder.run_workflow(sys.argv[1])
-print(dumps(ret.residues))
