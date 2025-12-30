@@ -36,7 +36,7 @@ def install_xdrugpy_requirements():
         case "darwin":
             bin_fname = "vina_1.2.7_mac_x86_64"
     vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
-    vina_exe = RESOURCES_DIR / "vina"
+    vina_exe = f'{RESOURCES_DIR}/vina'
     if SYSTEM == "windows":
         vina_exe += ".exe"
     if not exists(vina_exe):
@@ -90,6 +90,9 @@ def __init_plugin__(app=None):
         'figure.figsize': (10, 6),
         'svg.fonttype': 'none'
     })
+
+    from PyQt5.QtCore import QLocale
+    QLocale.setDefault(QLocale("en_US"))
 
 
 if SYSTEM == "windows":
