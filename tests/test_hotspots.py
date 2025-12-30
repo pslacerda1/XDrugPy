@@ -111,13 +111,21 @@ def test_fpt():
     load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
     load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
     load_ftmap(f"{pkg_data}/1dqa_atlas.pdb", "1dqa")
+    img_gen = f"{pkg_data}/test_fpt_gen.svg"
+    img_ref = f"{pkg_data}/test_fpt_ref.svg"
+    fpt_sim(
+        "1dqa.CS_00 / 1dqa.CS_01",
+        site="1dqa.CS_00 | 1dqa.CS_01",
+        site_radius=4,
+        plot_fingerprints=img_gen
+    )
+    assert images_identical(img_ref, img_gen)
+
 
     img_gen1 = f"{pkg_data}/test_fpt1_gen.svg"
     img_gen2 = f"{pkg_data}/test_fpt2_gen.svg"
-
     img_ref1 = f"{pkg_data}/test_fpt1_ref.svg"
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
-
     fpt_sim(
         "1dq8.K15_* / 1dq9.K15_DS_00 / 1dqa.CS_00",
         site="1dq8.K15_*",
@@ -127,9 +135,9 @@ def test_fpt():
         plot_fingerprints=img_gen1,
         plot_hca=img_gen2,
     )
-
     assert images_identical(img_ref1, img_gen1)
     assert images_identical(img_ref2, img_gen2)
+
 
 
 def test_res_sim():

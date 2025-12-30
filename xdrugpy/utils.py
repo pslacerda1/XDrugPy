@@ -430,11 +430,19 @@ def get_residue_from_object(obj, idx):
     return res[0]
 
 
-def clustal_omega(seles, conservation):
-    sele = ' | '.join(seles)
-    sele = f"({sele}) and present and guide and polymer"
-    input_fasta = pm.get_fastastr(sele, key='model')
-
+def clustal_omega(seles, conservation, titles=None):
+    if not titles:
+        titles = seles
+    input_fasta = ''
+    for sele, title in zip(seles, titles):
+        query = f'({sele}) and present and guide and polymer'
+        input_fasta += (
+            ">" + title + 
+            pm
+            .get_fastastr(query, key='model')
+            .removeprefix(f'>{sele}')
+        )
+    
     proc = subprocess.Popen(
         "clustalo -i - --outfmt=clustal",
         stdin=subprocess.PIPE,
@@ -454,19 +462,19 @@ def clustal_omega(seles, conservation):
         if line.strip() == "":
             continue
         if line[0] != ' ':
-            obj, seq = line.split()
+            name, seq = line.split()
         else:
-            obj = 'CLUSTALO'
+            name = 'CLUSTALO'
             seq = line[-len(seq):]
-        sequences[obj] = sequences.get(obj, "") + seq
+        sequences[name] = sequences.get(name, "") + seq
 
     # skiping gaps and keeping counters ok
     clu = sequences.pop('CLUSTALO')
     len_aln = len(clu)
     omega = {}
-    for obj, seq in sequences.items():
+    for (title, seq), sele in zip(sequences.items(), seles):
         local_ix = 0
-        atoms = [a for a in pm.get_model(f"%{obj} & guide").atom]
+        atoms = [a for a in pm.get_model(f"%{sele} & present & guide & polymer").atom]
         for aln_ix in range(len_aln):
             seq_char = seq[aln_ix]
             clu_char = clu[aln_ix]
@@ -474,16 +482,16 @@ def clustal_omega(seles, conservation):
                 if clu_char in conservation:
                     assert local_ix < len(atoms)
                     at = atoms[local_ix]
-                    if obj not in omega:
-                        omega[obj] = []
-                    omega[obj].append(Residue(
+                    if title not in omega:
+                        omega[title] = []
+                    omega[title].append(Residue(
                         at.model, at.index, int(at.resi), at.chain, at.resn, seq_char, clu_char
                     ))
                 local_ix += 1
     
     omega = {
-        obj: omega[obj]
-        for obj in sorted(omega, key=seles.index)
+        title: omega[title]
+        for title in sorted(omega, key=titles.index)
     }
     return omega
 

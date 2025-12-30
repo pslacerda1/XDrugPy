@@ -78,10 +78,12 @@ def get_clusters():
             )
         elif obj.startswith("clust."):
             _, idx, s, probe_type = obj.split(".", maxsplit=4)
+            coords = pm.get_coords(obj)
             eclusters.append(
                 ECluster(
                     selection=obj,
                     probe_type=probe_type,
+                    coords=coords,
                     idx=int(idx),
                     ST=int(s),
                 )
@@ -805,17 +807,18 @@ def fpt_sim(
             groups.append(group)
     polymers = [f"{g}.protein" for g in groups]
     assert len(polymers) > 0, "Please review your selections"
-
+    
     ref_polymer = polymers[0]
-    ref_sele = f"{ref_polymer} ({ref_polymer} within {site_radius} of ({site}))"
+    ref_sele = seles[0]
+    site_sele = f"{ref_polymer} ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
-    for at in pm.get_model(f"({ref_sele}) & guide & polymer").atom:
+    for at in pm.get_model(f"({site_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    mapping = clustal_omega(list(polymers), conservation)
-    ref_map = mapping[ref_polymer]
+    mapping = clustal_omega(list(polymers), conservation, titles=seles)
+    ref_map = mapping[ref_sele]
     fpts = []
-    for hs, (poly, map) in zip(seles, mapping.items()):
+    for poly, (hs, map) in zip(polymers, mapping.items()):
         fpt = {}
         for ref_res, res in zip(ref_map, map):
             if (ref_polymer, ref_res.index) not in site_resis:
@@ -1633,7 +1636,7 @@ class CountWidget(QWidget):
         self.radiusSpin.setSingleStep(0.5)
         self.radiusSpin.setMinimum(2)
         self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Radius:", self.radiusSpin)
+        boxLayout.addRow("Site radius:", self.radiusSpin)
 
         self.typeCombo = QComboBox()
         self.typeCombo.addItems([e.value for e in PrioritizationType])
@@ -1657,13 +1660,21 @@ class CountWidget(QWidget):
         self.siteSelectionLine = QLineEdit("*")
         boxLayout.addRow("Focus site:", self.siteSelectionLine)
 
-        self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(3)
-        self.radiusSpin.setDecimals(2)
-        self.radiusSpin.setSingleStep(0.5)
-        self.radiusSpin.setMinimum(2)
-        self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Radius:", self.radiusSpin)
+        self.siteRadiusSpin = QDoubleSpinBox()
+        self.siteRadiusSpin.setValue(3)
+        self.siteRadiusSpin.setDecimals(2)
+        self.siteRadiusSpin.setSingleStep(0.5)
+        self.siteRadiusSpin.setMinimum(0)
+        self.siteRadiusSpin.setMaximum(10)
+        boxLayout.addRow("Site radius:", self.siteRadiusSpin)
+
+        self.contactRadiusSpin = QDoubleSpinBox()
+        self.contactRadiusSpin.setValue(3)
+        self.contactRadiusSpin.setDecimals(3)
+        self.contactRadiusSpin.setSingleStep(0.5)
+        self.contactRadiusSpin.setMinimum(1)
+        self.contactRadiusSpin.setMaximum(10)
+        boxLayout.addRow("Contact radius:", self.contactRadiusSpin)
 
         self.fingerprintsCheck = QCheckBox()
         self.fingerprintsCheck.setChecked(False)
@@ -1746,7 +1757,8 @@ class CountWidget(QWidget):
     def plot_fingerprint(self):
         multi_seles = self.multiSelesLine.text()
         site = self.siteSelectionLine.text()
-        radius = self.radiusSpin.value()
+        site_radius = self.siteRadiusSpin.value()
+        contact_radius = self.contactRadiusSpin.value()
         plot_fingerprints = self.fingerprintsCheck.isChecked()
         plot_hca = self.hcaCheck.isChecked()
         nbins = self.nBinsSpin.value()
@@ -1759,7 +1771,8 @@ class CountWidget(QWidget):
         fpt_sim(
             multi_seles,
             site,
-            radius,
+            site_radius,
+            contact_radius=contact_radius,
             plot_fingerprints=plot_fingerprints,
             plot_hca=plot_hca,
             nbins=nbins,
