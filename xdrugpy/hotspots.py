@@ -1158,7 +1158,7 @@ def plot_euclidean_hca(
 
     p = np.zeros((len(object_list), n_props + 3))
 
-    for idx, obj in enumerate(object_list):
+    for ix, obj in enumerate(object_list):
         labels.append(obj)
         x, y, z = np.mean(pm.get_coordset(obj), axis=0)
         if hs_type == "K15":
@@ -1168,31 +1168,19 @@ def plot_euclidean_hca(
             SZ = pm.get_property("SZ", obj)
             CD = pm.get_property("CD", obj)
             MD = pm.get_property("MD", obj)
-            p[idx, :] = np.array([ST, S0, S1, SZ, CD, MD, x, y, z])
+            p[ix, :] = np.array([ST, S0, S1, SZ, CD, MD, x, y, z])
         elif hs_type == "CS":
             ST = pm.get_property("ST", obj)
-            p[idx, :] = np.array([ST, x, y, z])
+            p[ix, :] = np.array([ST, x, y, z])
         elif hs_type == "ACS":
             ST = pm.get_property("ST", obj)
             MD = pm.get_property("MD", obj)
-            p[idx, :] = np.array([ST, MD, x, y, z])
+            p[ix, :] = np.array([ST, MD, x, y, z])
     
-    for col in range(n_props + 3):
-        if max(p[:, col]) - min(p[:, col]) == 0:
-            p[:, col] = 0
-        else:
-            p[:, col] = (p[:, col] - min(p[:, col])) / (max(p[:, col]) - min(p[:, col]))
-
-    X = []
-    for idx1, obj1 in enumerate(object_list):
-        for idx2, obj2 in enumerate(object_list):
-            if idx1 >= idx2:
-                continue
-            p1 = p[idx1, :]
-            p2 = p[idx2, :]
-            d = np.sqrt(np.sum((p1-p2)**2))
-            X.append(d)
-    X = np.array(X)
+    var = np.var(p, axis=0)
+    var[var==0] = np.inf  # Avoid division by zero
+    X = distance.pdist(p, metric='seuclidean', V=var)
+    X = (X-X.min()) / (X.max()-X.min())
     return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, plot)
 
 

@@ -49,18 +49,21 @@ def test_euclidean_hca():
         ],
         groups=['1dq8', '1dq9'],
     )
-    expr = "*.K15_*"
+    expr = "*.K15_D_*"
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
     dendro, medoids = plot_euclidean_hca(
         expr,
-        color_threshold=0.05,
+        color_threshold=0.7,
         annotate=True,
+        linkage_method='ward',
         plot=img_gen
     )
-    assert medoids["C1"].pop() in ["1dq9.K15_DS_00", "1dq9.K15_DS_01"]
-    assert medoids["C1"].pop() in ["1dq9.K15_DS_00", "1dq9.K15_DS_01"]
+    assert medoids["C1"].pop() in ["1dq8.K15_D_02", "1dq8.K15_D_03"]
+    assert medoids["C1"].pop() in ["1dq8.K15_D_02", "1dq8.K15_D_03"]
     assert len(medoids["C1"]) == 0
+    assert medoids["C2"].pop() in ["1dq9.K15_D_01"]
+    assert len(medoids["C2"]) == 0
     assert images_identical(img_ref, img_gen)
 
 
