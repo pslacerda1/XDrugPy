@@ -472,6 +472,7 @@ class Hotspot:
 @new_command
 def show_hs(selections: List[str]) -> Hotspot:
     hs = Hotspot.from_cluster_selections(selections)
+    hs.show()
     print(hs)
     return hs
 
@@ -840,6 +841,7 @@ def fpt_sim(
                 "Do you have incomplete structures?"
             )
         
+        max_val = 0
         for ix, (ax, fpt, sele) in enumerate(zip(axs, fpts, seles)):
             labels = ["%s%s %s_%s" % k for k in fpt]
             if sharex and ix == 0:
@@ -847,6 +849,7 @@ def fpt_sim(
             elif sharex and ix + 1 == len(seles):
                 labels = shared_labels
             arange = np.arange(len(fpt))
+            max_val = max(max(fpt.values()), max_val)
             ax.bar(arange, fpt.values(), color="C0")
             ax.set_title(sele)
             ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
@@ -855,6 +858,9 @@ def fpt_sim(
                 ax.locator_params(axis="x", tight=True, nbins=nbins)
                 for label in ax.xaxis.get_majorticklabels():
                     label.set_verticalalignment("top")
+        for ax in axs:
+            ax.set_ylim(0, max_val * 1.05)
+        
         if isinstance(plot_fingerprints, (str, Path)):
             fig.savefig(plot_fingerprints, dpi=300)
             if not quiet:
