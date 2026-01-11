@@ -360,7 +360,7 @@ class Hotspot:
             if hs.klass != last_class:
                 last_class = hs.klass
                 ix_class = 0
-            new_name = f"{group}.K15_{hs.klass}_{ix_class:02}"
+            new_name = f"{group}.{hs.klass}_{ix_class:02}"
             pm.create(new_name, hs.selection)
             hs.selection = new_name
             ix_class += 1
@@ -602,14 +602,13 @@ def _load_ftmap(
     pm.hide("everything", f"{group}.*")
 
     pm.show("cartoon", f"{group}.protein")
-    pm.show("mesh", f"{group}.K15_D* or {group}.K15_B* or {group}.E19_*")
+    pm.show("mesh", f"{group}.D* or {group}.B*")
 
     pm.show("spheres", f"{group}.ACS_*")
     pm.set("sphere_scale", 0.25, f"{group}.ACS_*")
 
-    pm.color("red", f"{group}.K15_D*")
-    pm.color("salmon", f"{group}.K15_B*")
-    pm.color("raspberry", f"{group}.E19_*")
+    pm.color("red", f"{group}.D*")
+    pm.color("salmon", f"{group}.B*")
 
     pm.color("red", f"{group}.ACS_acceptor_*")
     pm.color("blue", f"{group}.ACS_donor_*")
@@ -624,7 +623,15 @@ def _load_ftmap(
     pm.set("mesh_mode", 1)
     pm.orient("all")
 
-    pm.order(f"{group}.K15_*", location="top")
+    pm.order(f"{group}.CS_*", location="top")
+
+    pm.order(f"{group}.BS_*", location="top")
+    pm.order(f"{group}.BL_*", location="top")
+    pm.order(f"{group}.B_*", location="top")
+    pm.order(f"{group}.DS_*", location="top")
+    pm.order(f"{group}.DL_*", location="top")
+    pm.order(f"{group}.D_*", location="top")
+    
     pm.order(f"{group}.protein", location="top")
 
     ret = SimpleNamespace(
@@ -811,12 +818,12 @@ def fpt_sim(
     
     ref_polymer = polymers[0]
     ref_sele = seles[0]
-    site_sele = f"{ref_polymer} ({ref_polymer} within {site_radius} of ({site}))"
+    site_sele = f"{ref_polymer} & ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
     for at in pm.get_model(f"({site_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    mapping = clustal_omega(list(polymers), conservation, titles=seles)
+    mapping = clustal_omega(polymers, conservation, titles=seles)
     ref_map = mapping[ref_sele]
     fpts = []
     for poly, (hs, map) in zip(polymers, mapping.items()):
@@ -1422,6 +1429,8 @@ class TableWidget(QWidget):
 
             # append new rows
             for obj in pm.get_names("objects"):
+                if '.' not in obj:
+                    continue
                 if not pm.get_property_list(obj):
                     continue
                 obj_type = pm.get_property("Type", obj)
@@ -1443,14 +1452,12 @@ class TableWidget(QWidget):
 
     def updateCurrentList(self):
         sele = self.filter_line.text()
-        if self.current_tab == "BC25":
-            self.selected_objs = pm.get_object_list(sele)
-        else:
-            self.selected_objs = pm.get_object_list(
-                f"({sele}) & (*.{self.current_tab}*)",
-            )
+        self.selected_objs = pm.get_object_list(sele)
         if self.selected_objs is None:
             self.selected_objs = set()
+        for obj in self.selected_objs.copy():
+            if pm.get_property("Type", obj) != self.current_tab:
+                self.selected_objs.remove(obj)
         self.refresh()
     
     def export(self):
