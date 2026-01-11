@@ -111,7 +111,7 @@ def find_occupied_pockets(
         p_sele += 'none'
         p_sele = f'{group}.protein & ({p_sele})'
 
-        hs_sele = f"byobject ({group}.CS_* near_to 4 of ({p_sele}))"
+        hs_sele = f"{group}.CS_* near_to 4 of ({p_sele})"
         hs_objs = pm.get_object_list(hs_sele)
         if not hs_objs:
             continue
@@ -152,7 +152,7 @@ def find_pykvf_pockets(protein):
         atomic = pyKVFinder.read_pdb(protein_pdb)
         
     vertices = pyKVFinder.get_vertices(atomic)
-    _, cavities = pyKVFinder.detect(atomic, vertices)
+    _, cavities = pyKVFinder.detect(atomic, vertices, volume_cutoff=1000)
     residues = pyKVFinder.constitutional(cavities, atomic, vertices)
     return residues
 
@@ -591,7 +591,7 @@ def _load_ftmap(
     ret = SimpleNamespace(
         clusters=clusters,
         eclusters=eclusters,
-        kozakov2015=k15_list
+        hotspots=k15_list
     )
     return ret
 
@@ -733,6 +733,7 @@ def fpt_sim(
     hide_threshold: bool = False,
     annotate: bool = True,
     plot_fingerprints: str = "",
+    same_ylim: bool = True,
     plot_hca: str = "",
     quiet: bool = True,
 ):
@@ -819,8 +820,9 @@ def fpt_sim(
                 ax.locator_params(axis="x", tight=True, nbins=nbins)
                 for label in ax.xaxis.get_majorticklabels():
                     label.set_verticalalignment("top")
-        for ax in axs:
-            ax.set_ylim(0, max_val * 1.05)
+        if same_ylim:
+            for ax in axs:
+                ax.set_ylim(0, max_val * 1.05)
         
         if isinstance(plot_fingerprints, (str, Path)):
             fig.savefig(plot_fingerprints, dpi=300)
@@ -1649,6 +1651,10 @@ class CountWidget(QWidget):
         self.nBinsSpin.setMaximum(500)
         fptLayout.addRow("Num bins:", self.nBinsSpin)
 
+        self.sameYLimCheck = QCheckBox()
+        self.sameYLimCheck.setChecked(True)
+        fptLayout.addRow("Same y limit:", self.sameYLimCheck)
+
         self.sharexCheck = QCheckBox()
         self.sharexCheck.setChecked(True)
         fptLayout.addRow("Share x axis:", self.sharexCheck)
@@ -1712,6 +1718,7 @@ class CountWidget(QWidget):
         plot_fingerprints = self.fingerprintsCheck.isChecked()
         plot_hca = self.hcaCheck.isChecked()
         nbins = self.nBinsSpin.value()
+        same_ylim = self.sameYLimCheck.isChecked()
         sharex = self.sharexCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
@@ -1726,6 +1733,7 @@ class CountWidget(QWidget):
             plot_fingerprints=plot_fingerprints,
             plot_hca=plot_hca,
             nbins=nbins,
+            same_ylim=same_ylim,
             sharex=sharex,
             annotate=annotate,
             linkage_method=linkage_method,

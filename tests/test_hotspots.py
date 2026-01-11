@@ -59,10 +59,10 @@ def test_euclidean_hca():
         linkage_method='ward',
         plot=img_gen
     )
-    assert medoids["C1"].pop() in ["1dq8.D_02", "1dq8.D_03"]
-    assert medoids["C1"].pop() in ["1dq8.D_02", "1dq8.D_03"]
+    assert medoids["C1"].pop() in ["1dq9.D_01", "1dq8.D_03"]
+    assert medoids["C1"].pop() in ["1dq9.D_01", "1dq8.D_03"]
     assert len(medoids["C1"]) == 0
-    assert medoids["C2"].pop() in ["1dq9.D_01"]
+    assert medoids["C2"].pop() in ["1dq8.D_00"]
     assert len(medoids["C2"]) == 0
     assert images_identical(img_ref, img_gen)
 
@@ -122,7 +122,8 @@ def test_fpt():
         "1dqa.CS_00 / 1dqa.CS_01",
         site="1dqa.CS_00 | 1dqa.CS_01",
         site_radius=4,
-        plot_fingerprints=img_gen
+        plot_fingerprints=img_gen,
+        nbins=50,
     )
     assert images_identical(img_ref, img_gen)
 
@@ -198,11 +199,11 @@ def test_load():
         pkg_data + "/1CKP.pdb",
         pkg_data + "/1IRK.pdb"
     ])
-    assert len(ftmap[0].kozakov2015) == 5
-    assert len(ftmap[1].kozakov2015) == 8
-    assert len(ftmap[2].kozakov2015) == 8
-    assert ftmap[2].kozakov2015[0].klass == 'D'
-    assert ftmap[2].kozakov2015[4].klass == 'DS'
+    assert len(ftmap[0].hotspots) == 3
+    assert len(ftmap[1].hotspots) == 5
+    assert len(ftmap[2].hotspots) == 6
+    assert ftmap[2].hotspots[0].klass == 'D'
+    assert ftmap[2].hotspots[4].klass == 'DS'
 
 
 def test_show_hs():
