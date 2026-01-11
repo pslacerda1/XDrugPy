@@ -1399,6 +1399,8 @@ class TableWidget(QWidget):
 
     def updateCurrentList(self):
         sele = self.filter_line.text()
+        if sele.strip() == '':
+            sele = '*'
         self.selected_objs = pm.get_object_list(sele)
         if self.selected_objs is None:
             self.selected_objs = set()
