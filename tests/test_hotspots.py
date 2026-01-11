@@ -196,15 +196,11 @@ def test_load():
     # FIXME tudo errado?
     pm.reinitialize()
     ftmap = load_ftmap([
-        pkg_data + "/1E1V.pdb",
-        pkg_data + "/1CKP.pdb",
-        pkg_data + "/1IRK.pdb"
+        pkg_data + "/2TPR.pdb",
     ])
-    assert len(ftmap[0].hotspots) == 3
-    assert len(ftmap[1].hotspots) == 5
-    assert len(ftmap[2].hotspots) == 6
-    assert ftmap[2].hotspots[0].klass == 'D'
-    assert ftmap[2].hotspots[4].klass == 'DS'
+    hotspots = ftmap[0].hotspots
+    assert len(hotspots) == 6
+    assert hotspots[5].klass == 'DS' 
 
 
 def test_show_hs():

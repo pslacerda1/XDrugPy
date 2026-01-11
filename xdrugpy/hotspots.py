@@ -297,7 +297,11 @@ class Hotspot:
                 hs.klass = "BL" 
             if s0 >= 16 and cd >= 8 and md >= 10:
                 hs.klass = "DL"
-            hs.nComponents = Hotspot.make_graph(group, clusters)
+            # out-of-order optimization
+            if hs.klass:
+                hs.nComponents = Hotspot.make_graph(group, clusters)
+                if hs.nComponents > 1:
+                    hs.klass = None
         return hs
     
     @staticmethod
@@ -317,9 +321,9 @@ class Hotspot:
         pockets = find_occupied_pockets(group, pocket_residues, clusters)
         for hs_sele, pocket_clusters in pockets.items():
             hs = Hotspot.from_clusters(group, pocket_clusters)
-            if (hs.klass or hs.isComplex) and hs.nComponents == 1:
-                    hs.selection = hs_sele
-                    spots.append(hs)
+            if hs.klass:
+                hs.selection = hs_sele
+                spots.append(hs)
         
         # identify hotspots from combinations of consensus sites
         for r in range(1, 4):
@@ -416,7 +420,7 @@ class Hotspot:
                             pm.distance(measure_name, e[0], e[1], mode=4)
                             pm.color('cyan', measure_name)
 
-    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=25):
+    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=50) -> int:
         g = nx.Graph()
         # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
         g.add_nodes_from([c.selection for c in clusters])
@@ -425,20 +429,20 @@ class Hotspot:
             for ix2, c2 in enumerate(clusters):
                 if ix1 >= ix2:
                     continue
-                obstructions = Hotspot.has_obstruction(group, c1.selection, c2.selection, radius, samples)
+                collision = Hotspot.has_collision(group, c1.selection, c2.selection, radius, samples)
                 # Lógica de Conectividade:
                 # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
-                atoms1_connected = np.any(~obstructions, axis=1) # Vetor (N,)
-                atoms2_connected = np.any(~obstructions, axis=0) # Vetor (M,)
+                atoms1_collided = np.any(collision, axis=1) # Vetor (N,)
+                atoms2_collided = np.any(collision, axis=0) # Vetor (M,)
                 
                 # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
-                if np.mean(atoms1_connected) > 0.75 and np.mean(atoms2_connected) > 0.75:
+                if np.mean(atoms1_collided) < 0.25 and np.mean(atoms2_collided) < 0.25:
                     g.add_edge(c1.selection, c2.selection)
         return nx.number_connected_components(g)
 
     @staticmethod
     @lru_cache
-    def has_obstruction(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
+    def has_collision(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
 
         list_a = pm.get_coords(clu_sele1)
         list_b = pm.get_coords(clu_sele2)
@@ -462,13 +466,13 @@ class Hotspot:
         collisions = tree.query_ball_point(c1c2_xyz, r=radius)
         
         # True se o ponto i->j no frame k colide
-        has_obstruction = np.array([
+        has_collision = np.array([
             len(c) > 0 for c in collisions
         ]).reshape(len(list_a), len(list_b), samples)
         
         # Um caminho entre o átomo i e o átomo j é CONSIDERADO LIVRE se não houver colisões em 'samples'
-        has_obstruction = np.any(has_obstruction, axis=2) # Matriz (N, M)
-        return has_obstruction
+        has_collision = np.any(has_collision, axis=2) # Matriz (N, M)
+        return has_collision
     
 @new_command
 def show_hs(selections: List[str]) -> Hotspot:
