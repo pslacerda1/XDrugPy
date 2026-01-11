@@ -484,7 +484,6 @@ class FTMapResults:
 def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
-    bekar_label: str = '',
     allow_nested: bool = False,
 ):
     try:
@@ -510,54 +509,9 @@ def load_ftmap(
         if single:
             return rets[0]
         else:
-            ftmap = FTMapResults()
-            ftmap.results = rets
-            if bekar_label:
-                bekar, cs16_count, k15d_count = eval_bekar25_limits(bekar_label, rets)
-                ftmap.bekar25 = bekar
-                ftmap.cs16_count = cs16_count
-                ftmap.k15d_count = k15d_count
-            else:
-                ftmap.bekar25 = None
-                ftmap.cs16_count = None
-                ftmap.k15d_count = None
-            return ftmap
+            return rets
     finally:
         pm.set('defer_updates', 0)
-
-
-def eval_bekar25_limits(label, ftmap_results):
-    cs16_count = 0
-    k15d_count = 0
-    for res in ftmap_results:
-        for cs in res.clusters:
-            if cs.ST >= 16:
-                cs16_count += 1
-                break
-            elif cs.ST <= 15:
-                continue
-        for k15 in res.kozakov2015:
-            if k15.klass in ["D", "DS", "DL"]:
-                k15d_count += 1
-                break
-            elif k15.klass in ["B", "BS", "BL"]:
-                continue
-    bekar = cs16_count / len(ftmap_results) > 0.7 and k15d_count / len(ftmap_results) > 0.5
-    obj = SimpleNamespace()
-    obj_name = f"_BC25_{label}"
-    pm.pseudoatom(obj_name)
-    set_properties(
-        obj,
-        obj_name,
-        {
-            'Type': 'BC25',
-            'Total': len(ftmap_results),
-            'CS16': cs16_count,
-            'K15D': k15d_count,
-            'IsBekar': bekar,
-        }
-    )
-    return bekar, cs16_count, k15d_count
 
 
 def _load_ftmap(
@@ -1266,9 +1220,6 @@ class LoadWidget(QWidget):
         self.allowNested.setChecked(False)
         boxLayout.addRow("Allow nested hotspots", self.allowNested)
         
-        self.bekarLabel = QLineEdit()
-        boxLayout.addRow("Bekar-Cesaretli (2025) label:", self.bekarLabel)
-
     def pickFile(self):
         fileDIalog = QFileDialog()
         fileDIalog.setFileMode(QFileDialog.ExistingFiles)
@@ -1296,11 +1247,9 @@ class LoadWidget(QWidget):
 
     def clearInputs(self):
         self.table.setRowCount(0)
-        self.bekarLabel.setText("")
 
     def load(self):
         allow_nested = self.allowNested.isChecked()
-        bekar_label = self.bekarLabel.text().strip()
         try:
             filenames = []
             groups = []
@@ -1315,7 +1264,6 @@ class LoadWidget(QWidget):
         load_ftmap(
             filenames,
             groups=groups,
-            bekar_label=bekar_label,
             allow_nested=allow_nested,
         )
 
@@ -1380,7 +1328,7 @@ class TableWidget(QWidget):
         layout.addWidget(tab)
 
         self.hotspotsMap = {
-            ("Kozakov2015", "K15"): [
+            ("Hotspots", "K15"): [
                 "Class",
                 "ST",
                 "S0",
@@ -1393,7 +1341,6 @@ class TableWidget(QWidget):
             ],
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],
-            ("Bekar-Cesaretli2025", "BC25"): ["Total", "CS16", "K15D", "IsBekar"],
         }
 
         self.tables = {}

@@ -198,11 +198,11 @@ def test_load():
         pkg_data + "/1CKP.pdb",
         pkg_data + "/1IRK.pdb"
     ])
-    assert len(ftmap.results[0].kozakov2015) == 5
-    assert len(ftmap.results[1].kozakov2015) == 8
-    assert len(ftmap.results[2].kozakov2015) == 8
-    assert ftmap.results[2].kozakov2015[0].klass == 'D'
-    assert ftmap.results[2].kozakov2015[4].klass == 'DS'
+    assert len(ftmap[0].kozakov2015) == 5
+    assert len(ftmap[1].kozakov2015) == 8
+    assert len(ftmap[2].kozakov2015) == 8
+    assert ftmap[2].kozakov2015[0].klass == 'D'
+    assert ftmap[2].kozakov2015[4].klass == 'DS'
 
 
 def test_show_hs():
