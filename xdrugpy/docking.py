@@ -379,10 +379,12 @@ def new_load_results_widget():
 
 
 class VinaThread(QThread):
+
     vinaStarted = pyqtSignal()
     numSteps = pyqtSignal(int)
     setStep = pyqtSignal(int)
-    logEvent = pyqtSignal(str)
+    logHtml = pyqtSignal(str)
+    logText = pyqtSignal(str)
     finished = pyqtSignal()
 
     def __init__(self, run_implementation, parent=None):
@@ -434,7 +436,10 @@ class VinaThreadDialog(QDialog):
         self.text = QTextEdit(self)
         self.layout.addWidget(self.text)
         self.text.setReadOnly(True)
-        self.vina.logEvent.connect(self._appendHtml)
+        self.vina.logHtml.connect(self._appendHtml)
+
+        # Plain text output
+        self.vina.logText.connect(print)
 
         # Ok / Cancel buttons
         self.button_box = QDialogButtonBox(
@@ -451,10 +456,6 @@ class VinaThreadDialog(QDialog):
     def _appendHtml(self, html):
         self.text.moveCursor(QTextCursor.End)
         self.text.insertHtml(self._prepareHtml(html))
-
-    def _appendCodeHtml(self, html):
-        self.text.moveCursor(QTextCursor.End)
-        self.text.insertHtml("<pre>" + self._prepareHtml(html) + "</pre>")
 
     def _finished(self, status=False):
         self.is_finished = True
@@ -509,36 +510,24 @@ class VinaThreadDialog(QDialog):
 # Run docking software
 #
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Tuple, Optional
 
 
-@dataclass
-class DockingEngine:
-    project_dir: Path
-    manager: Optional[VinaThread] = None
+class VinaDockingEngine:
 
-    def __post_init__(self):
-        if not self.manager:
-            self.manager = MagicMock()
-            self.manager.logEvent.emit = print
+    def __init__(self, project_dir, manager):
+        self.project_dir = project_dir
+        self.manager = manager
         self.project_dir = Path(self.project_dir)
         if self.project_dir.is_dir():
             if len([*self.project_dir.iterdir()]) > 0:
-                self.log_html(
-                    f"""
-                    <font color="red">
-                        <b>The docking folder is not empty:</b> '{self.project_dir}'
-                    </font>
-                    """
-                )
+                self.log("DOCKING_FOLDER_NOT_EMPTY", dict(
+                    project_dir=self.project_dir
+                ))
         else:
-            self.log_html(
-                f"""
-                <br/><b>Starting new docking at:</b> '{self.project_dir}'
-            """
-            )
+            self.log('STARTING_NEW_DOCKING', dict(
+                project_dir=self.project_dir
+            ))
             self.project_dir.mkdir(parents=True, exist_ok=True)
 
         self.results_dir = self.project_dir / "results"
@@ -547,33 +536,60 @@ class DockingEngine:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.queue_dir.mkdir(parents=True, exist_ok=True)
 
-    def prepare_receptor(
-        self,
-        receptor_sele: str = "",
-        box_sele: str = "",
-        box_margin: float = 0.0,
-        allow_bad_res: bool = False,
-        from_lib: str = "",
-        save_lib: str = "",
-    ) -> bool:
-        raise NotImplementedError
+    def log(self, token, params=None):
+        params = params or {}
+        
+        html = "<hr>"
+        html += "<p>"
+        html += f"<b>{token}</b>"
+        html += "<ul>"
+        for key, value in params.items():
+            if key != 'output':
+                html += f"<li><b>{key}:</b> {value}</li>"
+        html += "</ul>"
+        html += "</p>"
+        
+        self.manager.logHtml.emit(html)
 
-    def prepare_ligands(
-        self,
-        ligands_path: str = "",
-        ph: float = 7.0,
-        cpu: int = 1,
-        seed: int = 1,
-        skip_protomers=True,
-        skip_tautomers=True,
-        from_lib: str = "",
-        save_lib: str = "",
-    ) -> bool:
-        raise NotImplementedError
+        text = f"[{token}]\n"
+        for key, value in params.items():
+            if key != 'output':
+                text += f"  {key}: {value}\n"
+        self.manager.logText.emit(text)
 
-    def log_html(self, message: str):
-        self.manager.logEvent.emit(message)
+    def run_cmd(self, token, command):
+        text = f"[{token}] command:\n\t{command}\n"
+        html = f"<hr><p><b>{token} command</b><br><pre>{command}</pre><br>"
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            text=True,
+        )
+        process.wait()
+        success = process.returncode == 0
+        output = "".join(process.stdout.readlines())
 
+        if not success:
+            text += f"[{token}] FAILED with return code {process.returncode}\n"
+            text += output
+            self.manager.logText.emit(text)
+
+            html += f"<b><font color=red>{token} FAILED</font></b> with return code {process.returncode}<br>"
+            html += f"<pre>{output}</pre></p>"
+            self.manager.logHtml.emit(html)
+        else:
+            text += f"[{token}] success\n"
+            text += output
+            self.manager.logText.emit(text)
+
+            html += f"<b><font color=green>{token} SUCCESS</font></b><br>"
+            html += f"<pre>{output}</pre></p>"
+            self.manager.logHtml.emit(html)
+        return success
+    
     def set_num_steps(self, n_ligands: int):
         self.current_step = 0
         self.manager.numSteps.emit(n_ligands)
@@ -584,9 +600,6 @@ class DockingEngine:
 
     def finished(self):
         self.manager.finished.emit()
-
-
-class VinaDockingEngine(DockingEngine):
 
     def prepare_receptor(
         self,
@@ -609,11 +622,11 @@ class VinaDockingEngine(DockingEngine):
                 box_data = json.load(f)
             self.box_size = tuple(box_data["size"])
             self.box_center = tuple(box_data["center"])
-            self.log_html(
-                f"""
-                <br/><b>Recovered stored receptor:</b> '{from_lib_pdbqt}'
-            """
-            )
+            self.log('RECOVERED_STORED_RECEPTOR', dict(
+                from_lib_pdbqt=from_lib_pdbqt,
+                box_size=self.box_size,
+                box_center=self.box_center,
+            ))
             return True
         else:
             assert receptor_sele, "Receptor selection must be provided."
@@ -641,19 +654,7 @@ class VinaDockingEngine(DockingEngine):
                 f'pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output "{receptor_pdb}" --with-ph {ph}'
                 f' "{receptor_pdb}" "{receptor_pqr}"'
             )
-            self.log_html(
-                f"""
-                    <br/><b>Adding receptor hydrogens.</b>
-                    <br/><b>Command:</b> {command}
-                    <br/>
-                """
-            )
-            output, success = run(command)
-            self.log_html(
-                f"""
-                <pre>{output}</pre>
-            """
-            )
+            success = self.run_cmd('ADDING_RECEPTOR_HYDROGENS', command)
             if not success:
                 return False
             
@@ -673,31 +674,20 @@ class VinaDockingEngine(DockingEngine):
                 f" --box_center {center_x:.2f} {center_y:.2f} {center_z:.2f}"
                 f" --box_size {size_x:.2f} {size_y:.2f} {size_z:.2f}"
             )
-            self.log_html(
-                f"""
-                <br/><b>Preparing receptor.</b>
-                <br/><b>Command:</b> {command}
-                <br/>
-            """
-            )
-            output, success = run(command)
-            self.log_html(
-                f"""
-                <pre>{output}</pre>
-            """
-            )
+            success = self.run_cmd('PREPARING_RECEPTOR', command)
             if not success:
                 return False
+
             if save_lib:
-                self.log_html(
-                    f"""
-                    <br/><b>Stored receptor at:</b> '{save_lib_pdbqt}'
-                """
-                )
                 shutil.copy(self.receptor_pdbqt, save_lib_pdbqt)
                 with open(save_lib_box, "w") as f:
                     box_data = {"size": self.box_size, "center": self.box_center}
                     json.dump(box_data, f, indent=4)
+                self.log('SAVED_STORED_RECEPTOR', dict(
+                    save_lib_pdbqt=save_lib_pdbqt,
+                    box_size=self.box_size,
+                    box_center=self.box_center,
+                ))
             return True
 
     def prepare_ligands(
@@ -717,11 +707,10 @@ class VinaDockingEngine(DockingEngine):
         if from_lib and from_lib_dir.exists():
             shutil.rmtree(self.queue_dir, ignore_errors=True)
             shutil.copytree(from_lib_dir, self.queue_dir)
-            self.log_html(
-                f"""
-                <br/><b>Recovered stored ligands:</b> '{from_lib_dir}'
-            """
-            )
+            os.listdir(from_lib_dir)
+            self.log('RECOVERED_STORED_LIGANDS', dict(
+                from_lib_dir=from_lib_dir
+            ))
             return True
         else:
             #
@@ -744,20 +733,10 @@ class VinaDockingEngine(DockingEngine):
                 f'python "{scrub_path}" -o "{ligands_sdf}" --cpu={cpu} --etkdg_rng_seed={seed} --ph={ph}'
                 f' {skip_protomers} {skip_tautomers} "{ligands_file}"'
             )
-            self.log_html(
-                f"""
-                <br/><b>Scrubbing ligands.</b>
-                <br/><b>Command:</b> {command}
-            """
-            )
-            output, success = run(command)
-            self.log_html(
-                f"""
-                <pre>{output}</pre>
-            """
-            )
+            success = self.run_cmd('SCRUBBING_LIGANDS', command)
             if not success:
                 return False
+            
             #
             # Converting to PDBQT
             #
@@ -766,30 +745,18 @@ class VinaDockingEngine(DockingEngine):
                 f"python -m meeko.cli.mk_prepare_ligand"
                 f' -i "{ligands_sdf}" --multimol_outdir "{self.queue_dir}"'
             )
-            self.log_html(
-                f"""
-                <br/><b>Converting ligands to PDBQT.</b>
-                <br/><b>Command:</b> {command}
-                <br/>
-            """
-            )
-            output, success = run(command)
-            self.log_html(
-                f"""
-                <pre>{output}</pre>
-            """
-            )
+            success = self.run_cmd('CONVERTING_LIGANDS_TO_PDBQT', command)
             if not success:
                 return False
+            
             if save_lib:
-                self.log_html(
-                    f"""
-                    <br/>
-                    <br/><b>Storing compound library at:</b> {save_lib_dir}
-                """
-                )
                 shutil.rmtree(save_lib_dir, ignore_errors=True)
                 shutil.copytree(self.queue_dir, save_lib_dir)
+                n_ligands = len(os.listdir(save_lib_dir))
+                self.log('SAVED_STORED_LIGANDS', dict(
+                    save_lib_dir=save_lib_dir,
+                    n_ligands=n_ligands,
+                ))
                 return True
 
     def run_docking(
@@ -804,13 +771,12 @@ class VinaDockingEngine(DockingEngine):
         continuation: bool = False,
     ) -> bool:
         if continuation:
-            self.log_html(
-                f"""
-                <br/><b>Continuating docking at:</b> '{self.project_dir}'
-            """
-            )
             with open(self.project_dir / "vina_args.txt", "r") as f:
                 vina_command = f.readline().strip()
+            self.log('RESUMING_DOCKING', dict(
+                project_dir=self.project_dir,
+                vina_command=vina_command,
+            ))
         else:
             vina_command = (
                 f"vina"
@@ -833,19 +799,14 @@ class VinaDockingEngine(DockingEngine):
             )
             with open(self.project_dir / "vina_args.txt", "w") as f:
                 f.write(vina_command + "\n")
+        
         if not continuation:
-            self.log_html(
-                "<br/><b>State checkpointed.</b>"
-                "<br/>Now is safe to do continuation runs."
-            )
-        self.log_html(
-            f"""
-            <br/>
-            <br/><b>Docking ligands.</b>
-            <br/><b>Command:</b> {vina_command}
-        """
-        )
+            self.log('STATE_CHECKPOINTED', dict())
 
+        self.log('RUNNING_DOCKING', dict(
+            vina_command=vina_command
+        ))
+        that = self
         class DockingProgressHandler(FileSystemEventHandler):
             def __init__(self, engine, queue_dir, results_dir):
                 super().__init__()
@@ -952,39 +913,26 @@ class VinaDockingEngine(DockingEngine):
             for line in iter(proc.stdout.readline, ''):
                 buffer.append(line)
             proc.wait()
-            output = '\n'.join(buffer)[:4096]
+            output = ''.join(buffer)[:4096]
             success = proc.returncode == 0
-            self.log_html(
-                f"""
-                <br/><b>Docking finished.</b>
-                """
-            )
-            if not success:
-                self.log_html(
-                    f"""
-                    <font color="red">
-                        <br/><b>Failure on docking. Outputing lastest bytes.</b>
-                        <br/><pre>{output[-2048:]}</pre>
-                    </font> 
-                    </br>
-                    """
-                )
+            that.log('DOCKING_FINISHED', dict(
+                success=success,
+                output=output,
+            ))
             event_handler.ensure_integrity()
 
             n_results = len([*self.results_dir.glob("*.pdbqt")])
             n_queue = len([*self.queue_dir.glob("*.pdbqt")])
             n_ligands = n_results + n_queue
-            self.log_html(
-                f"""
-                <hr/>
-                <br/><b>Summary totals</b>
-                <br/><b>Expected:</b> {n_ligands}
-                <br/><b>Results:</b> {n_results}
-                <br/><b>Failed:</b> {n_queue}
-            """
-            )
+            that.log('DOCKING_SUMMARY', dict(
+                n_ligands=n_ligands,
+                n_results=n_results,
+                n_queue=n_queue,
+            ))
         except Exception as exc:
-            self.log_html(f"<font color='red'><br/><b>Error:</b> {exc}</font>")
+            that.log('EXCEPTION', dict(
+                exception=str(exc)
+            ))
         finally:
             # SEMPRE(?) pare o observer ANTES de emitir finished
             event_handler.stop_monitoring()
@@ -992,9 +940,11 @@ class VinaDockingEngine(DockingEngine):
                 observer.stop()
                 observer.join(timeout=5)
                 if observer.is_alive():
-                    self.log_html("<br/><font color='orange'>Warning: Observer did not stop cleanly</font>")
+                    self.manager.finished.emit()
+                    raise Exception
             except Exception as e:
-                self.log_html(f"<br/><font color='orange'>Warning: Error stopping observer: {e}</font>")
+                self.manager.finished.emit()
+                raise Exception from e
             # Limpar referências
             self._current_observer = None
             self._current_handler = None
