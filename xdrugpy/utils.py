@@ -431,13 +431,20 @@ def get_residue_from_object(obj, idx):
 
 
 def clustal_omega(seles, conservation, titles=None):
+    replaced_dict = {}
+    replaced_list = []
     if not titles:
         titles = seles
     input_fasta = ''
     for sele, title in zip(seles, titles):
         query = f'({sele}) and present and guide and polymer'
+
+        title_replaced = title.replace(' ', '_')
+        replaced_dict[title_replaced] = title
+        replaced_list.append(title_replaced)
+
         input_fasta += (
-            ">" + title + 
+            ">" + title_replaced + 
             pm
             .get_fastastr(query, key='model')
             .removeprefix(f'>{sele}')
@@ -490,8 +497,8 @@ def clustal_omega(seles, conservation, titles=None):
                 local_ix += 1
     
     omega = {
-        title: omega[title]
-        for title in sorted(omega, key=titles.index)
+        replaced_dict[title]: omega[title]
+        for title in sorted(omega, key=replaced_list.index)
     }
     return omega
 

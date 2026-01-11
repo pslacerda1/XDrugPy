@@ -131,7 +131,7 @@ def test_fpt():
     img_ref1 = f"{pkg_data}/test_fpt1_ref.svg"
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
     fpt_sim(
-        "1dq8.D*|1dq8.B* / 1dq9.DS_00 / 1dqa.CS_00",
+        "1dq8.D* | 1dq8.B* / 1dq9.DS_00 / 1dqa.CS_00",
         site_radius=4.0,
         nbins=50,
         sharex=True,
