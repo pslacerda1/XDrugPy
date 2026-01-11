@@ -216,9 +216,9 @@ class Hotspot:
     CD: float
     MD: float
     length: int
-    isE19: bool
+    isComplex: bool
     nComponents: int
-    type: Literal["K15"] =  field(default="K15", repr=False)
+    type: Literal["HS"] =  field(default="HS", repr=False)
     
     def copy_into_properties(self):
         d = asdict(self)
@@ -229,7 +229,7 @@ class Hotspot:
             {
                 **d,
                 'Group': self.group,
-                'Type': 'K15',
+                'Type': 'HS',
                 'Class': self.klass,
                 'Length': self.length,
                 'cluster_list': self.cluster_list,
@@ -275,8 +275,8 @@ class Hotspot:
             CD=np.max(cd),
             MD=distance.euclidean(max_coord, min_coord),
             length=len(clusters),
-            isE19=len(clusters) >= 4 and clusters[1].ST >= 16,
-            nComponents=Hotspot.make_graph(group, clusters)
+            isComplex=len(clusters) >= 4 and clusters[1].ST >= 16,
+            nComponents=-1,
         )
         
         s0 = hs.S0
@@ -297,6 +297,7 @@ class Hotspot:
                 hs.klass = "BL" 
             if s0 >= 16 and cd >= 8 and md >= 10:
                 hs.klass = "DL"
+            hs.nComponents = Hotspot.make_graph(group, clusters)
         return hs
     
     @staticmethod
@@ -316,7 +317,7 @@ class Hotspot:
         pockets = find_occupied_pockets(group, pocket_residues, clusters)
         for hs_sele, pocket_clusters in pockets.items():
             hs = Hotspot.from_clusters(group, pocket_clusters)
-            if (hs.klass or hs.isE19) and hs.nComponents == 1:
+            if (hs.klass or hs.isComplex) and hs.nComponents == 1:
                     hs.selection = hs_sele
                     spots.append(hs)
         
@@ -325,7 +326,7 @@ class Hotspot:
             for comb in combinations(clusters, r):
                 comb = list(comb)
                 hs = Hotspot.from_clusters(group, comb, disable_L=True)
-                if (hs.klass or hs.isE19) and hs.nComponents == 1:
+                if hs.klass:
                     spots.append(hs)
         
         # remove hotspot objects when they totally fit inside another (and are of the same class)
@@ -430,7 +431,7 @@ class Hotspot:
                 atoms1_connected = np.any(~obstructions, axis=1) # Vetor (N,)
                 atoms2_connected = np.any(~obstructions, axis=0) # Vetor (M,)
                 
-                # Se mais de 40% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
+                # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
                 if np.mean(atoms1_connected) > 0.75 and np.mean(atoms2_connected) > 0.75:
                     g.add_edge(c1.selection, c2.selection)
         return nx.number_connected_components(g)
@@ -551,7 +552,7 @@ def _load_ftmap(
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
     pocket_residues = find_pykvf_pockets(f"{group}.protein")
-    k15_list = Hotspot.find_hotspots(group, pocket_residues, clusters, allow_nested)
+    hotspots = Hotspot.find_hotspots(group, pocket_residues, clusters, allow_nested)
 
     pm.hide("everything", f"{group}.*")
 
@@ -591,7 +592,7 @@ def _load_ftmap(
     ret = SimpleNamespace(
         clusters=clusters,
         eclusters=eclusters,
-        hotspots=k15_list
+        hotspots=hotspots
     )
     return ret
 
@@ -733,7 +734,7 @@ def fpt_sim(
     hide_threshold: bool = False,
     annotate: bool = True,
     plot_fingerprints: str = "",
-    same_ylim: bool = True,
+    share_ylim: bool = True,
     plot_hca: str = "",
     quiet: bool = True,
 ):
@@ -820,7 +821,7 @@ def fpt_sim(
                 ax.locator_params(axis="x", tight=True, nbins=nbins)
                 for label in ax.xaxis.get_majorticklabels():
                     label.set_verticalalignment("top")
-        if same_ylim:
+        if share_ylim:
             for ax in axs:
                 ax.set_ylim(0, max_val * 1.05)
         
@@ -1117,7 +1118,7 @@ def plot_euclidean_hca(
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots of the same type are allowed in the euclidean HCA."
 
     hs_type = pm.get_property("Type", object_list[0])
-    if hs_type == "K15":
+    if hs_type == "HS":
         n_props = 6
     elif hs_type == "CS":
         n_props = 1
@@ -1130,7 +1131,7 @@ def plot_euclidean_hca(
     for ix, obj in enumerate(object_list):
         labels.append(obj)
         x, y, z = np.mean(pm.get_coordset(obj), axis=0)
-        if hs_type == "K15":
+        if hs_type == "HS":
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
             S1 = pm.get_property("S1", obj)
@@ -1312,7 +1313,7 @@ class TableWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.selected_objs = set()
-        self.current_tab = "K15"
+        self.current_tab = "HS"
 
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -1330,7 +1331,7 @@ class TableWidget(QWidget):
         layout.addWidget(tab)
 
         self.hotspotsMap = {
-            ("Hotspots", "K15"): [
+            ("Hotspots", "HS"): [
                 "Class",
                 "ST",
                 "S0",
@@ -1339,7 +1340,7 @@ class TableWidget(QWidget):
                 "CD",
                 "MD",
                 "Length",
-                "isE19",
+                "isComplex",
             ],
             ("CS", "CS"): ["ST"],
             ("ACS", "ACS"): ["Class", "ST", "MD"],
@@ -1651,9 +1652,9 @@ class CountWidget(QWidget):
         self.nBinsSpin.setMaximum(500)
         fptLayout.addRow("Num bins:", self.nBinsSpin)
 
-        self.sameYLimCheck = QCheckBox()
-        self.sameYLimCheck.setChecked(True)
-        fptLayout.addRow("Same y limit:", self.sameYLimCheck)
+        self.shareYLimCheck = QCheckBox()
+        self.shareYLimCheck.setChecked(True)
+        fptLayout.addRow("Share y limit:", self.shareYLimCheck)
 
         self.sharexCheck = QCheckBox()
         self.sharexCheck.setChecked(True)
@@ -1718,7 +1719,7 @@ class CountWidget(QWidget):
         plot_fingerprints = self.fingerprintsCheck.isChecked()
         plot_hca = self.hcaCheck.isChecked()
         nbins = self.nBinsSpin.value()
-        same_ylim = self.sameYLimCheck.isChecked()
+        share_ylim = self.shareYLimCheck.isChecked()
         sharex = self.sharexCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
@@ -1733,7 +1734,7 @@ class CountWidget(QWidget):
             plot_fingerprints=plot_fingerprints,
             plot_hca=plot_hca,
             nbins=nbins,
-            same_ylim=same_ylim,
+            share_ylim=share_ylim,
             sharex=sharex,
             annotate=annotate,
             linkage_method=linkage_method,
