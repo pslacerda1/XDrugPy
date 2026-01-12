@@ -254,12 +254,11 @@ class Hotspot:
         
     @staticmethod
     def from_clusters(group: str, clusters: List[Cluster], disable_L: bool=False) -> Hotspot:
-        averages = [np.average(c.coords, axis=0) for c in clusters]
-        cd = [distance.euclidean(averages[0], avg) for avg in averages]
+        coms = [pm.centerofmass(c.selection) for c in clusters]
+        cd = [distance.euclidean(coms[0], com) for com in coms]
 
         coords = np.concatenate([c.coords for c in clusters])
-        max_coord = coords.max(axis=0)
-        min_coord = coords.min(axis=0)
+        max_dist = distance_matrix(coords, coords).max()
 
         selection = " ".join(c.selection for c in clusters)
         hs = Hotspot(
@@ -273,7 +272,7 @@ class Hotspot:
             S1=clusters[1].ST if len(clusters) >= 2 else 0,
             SZ=clusters[-1].ST if len(clusters) >= 3 else 0,
             CD=np.max(cd),
-            MD=distance.euclidean(max_coord, min_coord),
+            MD=max_dist,
             length=len(clusters),
             isComplex=len(clusters) >= 4 and clusters[1].ST >= 16,
             nComponents=-1,
