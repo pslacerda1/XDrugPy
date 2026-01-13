@@ -158,7 +158,7 @@ def find_pykvf_pockets(protein):
 
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
-        new_name = f"{group}.CS_{idx:02}"
+        new_name = f"{group}.CS.{idx:03}_{cs.ST:03}"
         pm.set_name(cs.selection, new_name)
         cs.selection = new_name
         pm.group(group, new_name)
@@ -178,7 +178,7 @@ def process_clusters(group, clusters):
 
 def process_eclusters(group, eclusters):
     for acs in eclusters:
-        new_name = f"{group}.ACS_{acs.probe_type}_{acs.idx:02}"
+        new_name = f"{group}.ACS.{acs.probe_type}.{acs.idx:02}"
         pm.set_name(acs.selection, new_name)
         acs.selection = new_name
         pm.group(group, new_name)
@@ -242,7 +242,7 @@ class Hotspot:
         objs = pm.get_object_list(' | '.join(selections))
         for obj in objs:
             group = obj.split('.')[0]
-            assert obj.startswith(f"{group}.CS_")
+            assert obj.startswith(f"{group}.CS.")
             clu = Cluster(
                 obj,
                 pm.get_coordset(obj),
@@ -361,7 +361,7 @@ class Hotspot:
             if hs.klass != last_class:
                 last_class = hs.klass
                 ix_class = 0
-            new_name = f"{group}.{hs.klass}_{ix_class:02}"
+            new_name = f"{group}.{hs.klass}.{ix_class:02}"
             pm.create(new_name, hs.selection)
             hs.selection = new_name
             ix_class += 1
@@ -559,35 +559,79 @@ def _load_ftmap(
     pm.show("cartoon", f"{group}.protein")
     pm.show("mesh", f"{group}.D* or {group}.B*")
 
-    pm.show("spheres", f"{group}.ACS_*")
-    pm.set("sphere_scale", 0.25, f"{group}.ACS_*")
+    pm.show("spheres", f"{group}.ACS.*")
+    pm.set("sphere_scale", 0.25, f"{group}.ACS.*")
 
     pm.color("red", f"{group}.D*")
     pm.color("salmon", f"{group}.B*")
 
-    pm.color("red", f"{group}.ACS_acceptor_*")
-    pm.color("blue", f"{group}.ACS_donor_*")
-    pm.color("green", f"{group}.ACS_halogen_*")
-    pm.color("orange", f"{group}.ACS_aromatic_*")
-    pm.color("yellow", f"{group}.ACS_apolar_*")
+    pm.color("red", f"{group}.ACS.acceptor.*")
+    pm.color("blue", f"{group}.ACS.donor.*")
+    pm.color("green", f"{group}.ACS.halogen.*")
+    pm.color("orange", f"{group}.ACS.aromatic.*")
+    pm.color("yellow", f"{group}.ACS.apolar.*")
 
-    pm.show("line", f"{group}.CS_*")
+    pm.show("line", f"{group}.CS.*")
 
-    pm.disable(f"{group}.CS_*")
+    pm.disable(f"{group}.CS.*")
 
     pm.set("mesh_mode", 1)
     pm.orient("all")
 
-    pm.order(f"{group}.CS_*", location="top")
+    pm.order(f"{group}.CS.*", location="top")
 
-    pm.order(f"{group}.BS_*", location="top")
-    pm.order(f"{group}.BL_*", location="top")
-    pm.order(f"{group}.B_*", location="top")
-    pm.order(f"{group}.DS_*", location="top")
-    pm.order(f"{group}.DL_*", location="top")
-    pm.order(f"{group}.D_*", location="top")
+    pm.order(f"{group}.BS.*", location="top")
+    pm.order(f"{group}.BL.*", location="top")
+    pm.order(f"{group}.B.*", location="top")
+    pm.order(f"{group}.DS.*", location="top")
+    pm.order(f"{group}.DL.*", location="top")
+    pm.order(f"{group}.D.*", location="top")
     
     pm.order(f"{group}.protein", location="top")
+
+    pm.group(group, f"{group}.*", 'add')
+    pm.group(group, f"{group}.protein", 'add')
+
+    pm.group(group, f"{group}.D")
+    pm.group(group, f"{group}.B")
+    pm.group(group, f"{group}.DS")
+    pm.group(group, f"{group}.BS")
+    pm.group(group, f"{group}.DL")
+    pm.group(group, f"{group}.BL")
+
+    pm.group(f"{group}.D", f"{group}.D.*")
+    pm.group(f"{group}.B", f"{group}.B.*")
+    pm.group(f"{group}.DS", f"{group}.DS.*")
+    pm.group(f"{group}.BS", f"{group}.BS.*")
+    pm.group(f"{group}.DL", f"{group}.DL.*")
+    pm.group(f"{group}.BL", f"{group}.BL.*")
+
+    pm.group(f"{group}.CS", f"{group}.CS.*")
+
+    pm.group(group, f"{group}.ACS", 'add')
+    pm.group(f"{group}.ACS", f"{group}.ACS.acceptor")
+    pm.group(f"{group}.ACS", f"{group}.ACS.donor")
+    pm.group(f"{group}.ACS", f"{group}.ACS.halogen")
+    pm.group(f"{group}.ACS", f"{group}.ACS.aromatic")
+    pm.group(f"{group}.ACS", f"{group}.ACS.apolar")
+
+    pm.group(f"{group}.ACS.acceptor", f"{group}.ACS.acceptor.*")
+    pm.group(f"{group}.ACS.donor", f"{group}.ACS.donor.*")
+    pm.group(f"{group}.ACS.halogen", f"{group}.ACS.halogen.*")
+    pm.group(f"{group}.ACS.aromatic", f"{group}.ACS.aromatic.*")
+    pm.group(f"{group}.ACS.apolar", f"{group}.ACS.apolar.*")
+
+    groups = [
+        name
+        for name in pm.get_names()
+        if pm.get_type(name) == 'object:group'
+            and name.startswith(f"{group}.")
+            and pm.count_atoms(f"%{name}") == 0
+    ]
+    for grp in groups:
+        if grp in pm.get_names():
+            pm.delete(grp)
+
 
     ret = SimpleNamespace(
         clusters=clusters,
