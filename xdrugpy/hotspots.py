@@ -858,7 +858,7 @@ def fpt_sim(
             annotate=annotate,
             axis=ax,
             vmin=0,
-            vmax=1,
+            vmax=2,
         )
         for label in ax.xaxis.get_majorticklabels():
             label.set_horizontalalignment("right")
