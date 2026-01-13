@@ -857,6 +857,8 @@ def fpt_sim(
             hide_threshold=hide_threshold,
             annotate=annotate,
             axis=ax,
+            vmin=0,
+            vmax=1,
         )
         for label in ax.xaxis.get_majorticklabels():
             label.set_horizontalalignment("right")
@@ -1038,7 +1040,7 @@ def plot_pairwise_hca(
                         seq_align=align,
                     )
             X.append(1 - ret)
-    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_threshold, annotate, plot)
+    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_threshold, annotate, plot, vmin=0, vmax=1)
     return X, objects, dendro, medoids
 
 

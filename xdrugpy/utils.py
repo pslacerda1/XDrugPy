@@ -303,7 +303,7 @@ def align_groups(
             pm.matrix_copy(f"{mobile}.protein", inner)
 
 
-def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold, annotate, axis):
+def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold, annotate, axis, vmin=None, vmax=None):
     if isinstance(axis, axes.Axes):
         fig = axis.get_figure()
         fig.clear()
@@ -340,16 +340,22 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
     ax_heat.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
     ax_heat.tick_params(axis="x", rotation=90)
     ax_heat.yaxis.tick_right()
-    ax_heat.imshow(1-X, aspect="auto", vmin=0, vmax=1)
+    ax_heat.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
 
     if annotate:
         for i1, x1 in enumerate(X):
             for i2, x2 in enumerate(X):
-                y = 1-X[i1, i2]
-                if y >= 0.5:
-                    color = "black"
+                y = X[i1, i2]
+                if vmin is not None and vmax is not None:
+                    if y > (vmax - vmin) / 2 + vmin:
+                        color = "black"
+                    else:
+                        color = "white"
                 else:
-                    color = "white"
+                    if y >= 0.5 * X.mean():
+                        color = "black"
+                    else:
+                        color = "white"
                 label = f"{y:.2f}"
                 ax_heat.text(i2, i1, label, color=color, ha="center", va="center")
 
