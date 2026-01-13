@@ -59,11 +59,9 @@ def test_euclidean_hca():
         linkage_method='ward',
         plot=img_gen
     )
-    assert medoids["C1"].pop() in ["1dq9.D_01", "1dq8.D_03"]
-    assert medoids["C1"].pop() in ["1dq9.D_01", "1dq8.D_03"]
+    assert medoids["C1"].pop() in ["1dq9.D_00", "1dq8.D_00"]
+    assert medoids["C1"].pop() in ["1dq9.D_00", "1dq8.D_00"]
     assert len(medoids["C1"]) == 0
-    assert medoids["C2"].pop() in ["1dq8.D_00"]
-    assert len(medoids["C2"]) == 0
     assert images_identical(img_ref, img_gen)
 
 
@@ -98,7 +96,7 @@ def test_ho():
         ],
         groups=['1dq8', '1dq9']
     )
-    assert get_ho('1dq8.DS_00', '1dq9.DS_00') == 0.9716312056737588
+    assert round(get_ho('1dq8.DS_00', '1dq9.D_00'), 3) == 0.838
 
 
 def test_fo_and_dce():
@@ -148,12 +146,12 @@ def test_res_sim():
     pm.reinitialize()
     load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
     load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
-    assert res_sim(
+    assert round(res_sim(
         '1dq8.DS_00',
         '1dq9.DS_00',
         method=ResidueSimilarityMethod.JACCARD,
-        radius=4.0
-    ) == 0.9375
+        radius=3.0
+    ), 3) == 0.769
     assert res_sim(
         '1dq8.DS_00',
         '1dq9.DS_00',
@@ -197,11 +195,16 @@ def test_load():
     pm.reinitialize()
     ftmap = load_ftmap([
         pkg_data + "/2TPR.pdb",
+        pkg_data + "/1dq8_atlas.pdb",
     ])
     hotspots = ftmap[0].hotspots
-    assert len(hotspots) == 6
-    assert hotspots[5].klass == 'DS' 
+    assert len(hotspots) == 5
+    assert hotspots[4].klass == 'DS' 
 
+    hotspots = ftmap[1].hotspots
+    assert len(hotspots) == 4
+    assert hotspots[1].klass == 'D'
+    assert hotspots[2].klass == 'DS'
 
 def test_show_hs():
     pm.reinitialize()

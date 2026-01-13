@@ -341,14 +341,11 @@ class Hotspot:
                         continue
                     if hs1.klass != hs2.klass:
                         continue
-                    if hs1.selection == hs2.selection:
-                        nested.add(hs1.selection)
-                        continue
                     if get_fo(hs1.selection, hs2.selection) == 1:
                         nested.add(hs1.selection)
                         continue
 
-            for hs in spots:
+            for hs in spots.copy():
                 if hs.selection in nested:
                     spots.remove(hs)
                 
@@ -1149,7 +1146,7 @@ def plot_euclidean_hca(
             ST = pm.get_property("ST", obj)
             MD = pm.get_property("MD", obj)
             p[ix, :] = np.array([ST, MD, x, y, z])
-    
+
     var = np.var(p, axis=0)
     var[var==0] = np.inf  # Avoid division by zero
     X = distance.pdist(p, metric='seuclidean', V=var)
