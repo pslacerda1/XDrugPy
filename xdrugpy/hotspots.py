@@ -1149,10 +1149,9 @@ def plot_euclidean_hca(
             MD = pm.get_property("MD", obj)
             p[ix, :] = np.array([ST, MD, x, y, z])
 
-    var = np.var(p, axis=0)
-    var[var==0] = np.inf  # Avoid division by zero
-    X = distance.pdist(p, metric='seuclidean', V=var)
-    X = (X-X.min()) / (X.max()-X.min())
+    
+    p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
+    X = distance.pdist(p)
     return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, plot)
 
 

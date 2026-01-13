@@ -54,7 +54,7 @@ def test_euclidean_hca():
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
     dendro, medoids = plot_euclidean_hca(
         expr,
-        color_threshold=0.7,
+        color_threshold=4,
         annotate=True,
         linkage_method='ward',
         plot=img_gen
