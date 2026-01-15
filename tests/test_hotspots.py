@@ -49,7 +49,7 @@ def test_euclidean_hca():
         ],
         groups=['1dq8', '1dq9'],
     )
-    expr = "*.D_*"
+    expr = "*.D.*"
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
     dendro, medoids = plot_euclidean_hca(
@@ -59,8 +59,8 @@ def test_euclidean_hca():
         linkage_method='ward',
         plot=img_gen
     )
-    assert medoids["C1"].pop() in ["1dq9.D_00", "1dq8.D_00"]
-    assert medoids["C1"].pop() in ["1dq9.D_00", "1dq8.D_00"]
+    assert medoids["C1"].pop() in ["1dq9.D.00", "1dq8.D.00"]
+    assert medoids["C1"].pop() in ["1dq9.D.00", "1dq8.D.00"]
     assert len(medoids["C1"]) == 0
     assert images_identical(img_ref, img_gen)
 
@@ -73,7 +73,7 @@ def test_pairwise_hca():
         ],
         groups=['1dq8', '1dq9'],
     )
-    expr = "*.DS* *.BS*"
+    expr = "*.DS.* *.BS.*"
     
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
@@ -96,7 +96,7 @@ def test_ho():
         ],
         groups=['1dq8', '1dq9']
     )
-    assert round(get_ho('1dq8.DS_00', '1dq9.D_00'), 3) == 0.838
+    assert round(get_ho('1dq8.DS.00', '1dq9.D.00'), 3) == 0.838
 
 
 def test_fo_and_dce():
@@ -117,8 +117,8 @@ def test_fpt():
     img_gen = f"{pkg_data}/test_fpt_gen.svg"
     img_ref = f"{pkg_data}/test_fpt_ref.svg"
     fpt_sim(
-        "1dqa.CS_00 / 1dqa.CS_01",
-        site="1dqa.CS_00 | 1dqa.CS_01",
+        "1dqa.CS.000_* / 1dqa.CS.001_*",
+        site="1dqa.CS.000_* | 1dqa.CS.001_*",
         site_radius=4,
         plot_fingerprints=img_gen,
         nbins=50,
@@ -130,7 +130,7 @@ def test_fpt():
     img_ref1 = f"{pkg_data}/test_fpt1_ref.svg"
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
     fpt_sim(
-        "1dq8.D* | 1dq8.B* / 1dq9.DS_00 / 1dqa.CS_00",
+        "1dq8.D* | 1dq8.B* / 1dq9.DS.00 / 1dqa.CS.000_*",
         site_radius=4.0,
         nbins=50,
         sharex=True,
@@ -147,14 +147,14 @@ def test_res_sim():
     load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
     load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
     assert round(res_sim(
-        '1dq8.DS_00',
-        '1dq9.DS_00',
+        '1dq8.DS.00',
+        '1dq9.DS.00',
         method=ResidueSimilarityMethod.JACCARD,
         radius=3.0
     ), 3) == 0.769
     assert res_sim(
-        '1dq8.DS_00',
-        '1dq9.DS_00',
+        '1dq8.DS.00',
+        '1dq9.DS.00',
         method=ResidueSimilarityMethod.OVERLAP,
         radius=4.0
     ) == 1.0
@@ -209,7 +209,7 @@ def test_load():
 def test_show_hs():
     pm.reinitialize()
     ftmap = load_ftmap(f"{pkg_data}/1BZL_atlas.pdb", "1BZL")
-    
-    hs = show_hs(['*.CS_00', '*.CS_02', "*.CS_04"])
+
+    hs = show_hs(['*.CS.000_*', '*.CS.002_*', "*.CS.004_*"])
     assert not hs.isComplex
     assert hs.nComponents == 1
