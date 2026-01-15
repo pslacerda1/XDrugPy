@@ -111,7 +111,7 @@ def find_occupied_pockets(
         p_sele += 'none'
         p_sele = f'{group}.protein & ({p_sele})'
 
-        hs_sele = f"{group}.CS_* near_to 4 of ({p_sele})"
+        hs_sele = f"{group}.CS.* near_to 4 of ({p_sele})"
         hs_objs = pm.get_object_list(hs_sele)
         if not hs_objs:
             continue
@@ -152,7 +152,7 @@ def find_pykvf_pockets(protein):
         atomic = pyKVFinder.read_pdb(protein_pdb)
         
     vertices = pyKVFinder.get_vertices(atomic)
-    _, cavities = pyKVFinder.detect(atomic, vertices, volume_cutoff=1000)
+    _, cavities = pyKVFinder.detect(atomic, vertices, volume_cutoff=750)
     residues = pyKVFinder.constitutional(cavities, atomic, vertices)
     return residues
 
