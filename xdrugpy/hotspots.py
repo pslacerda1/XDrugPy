@@ -1424,7 +1424,7 @@ class TableWidget(QWidget):
 
             # append new rows
             for obj in pm.get_names("objects"):
-                if '.' not in obj:
+                if pm.get_type(obj) in ['object:group', 'selection']:
                     continue
                 if not pm.get_property_list(obj):
                     continue
