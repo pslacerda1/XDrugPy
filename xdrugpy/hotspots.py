@@ -840,6 +840,7 @@ def fpt_sim(
     
     if plot_fingerprints:
         fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
+        fig.supylabel('Atom Counts')
         if not isinstance(axs, (np.ndarray, list)):
             axs = [axs]
         if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):

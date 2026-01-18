@@ -84,6 +84,10 @@ def __init_plugin__(app=None):
 
     pm.undo_disable()
     
+    import matplotlib.style
+    import matplotlib as mpl
+    mpl.style.use('default')
+
     from matplotlib import pyplot as plt
     plt.rcParams.update({
         'font.size': 14,

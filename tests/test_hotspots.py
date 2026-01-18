@@ -110,18 +110,19 @@ def test_fo_and_dce():
 def test_fpt():
     pm.reinitialize()
 
-    load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
-    load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
-    load_ftmap(f"{pkg_data}/1dqa_atlas.pdb", "1dqa")
+    load_ftmap(f"{pkg_data}/2JK6.pdb")
+    load_ftmap(f"{pkg_data}/2W0H.pdb")
+    load_ftmap(f"{pkg_data}/6BU7.pdb")
 
     img_gen = f"{pkg_data}/test_fpt_gen.svg"
     img_ref = f"{pkg_data}/test_fpt_ref.svg"
     fpt_sim(
-        "1dqa.CS.000_* / 1dqa.CS.001_*",
-        site="1dqa.CS.000_* | 1dqa.CS.001_*",
-        site_radius=4,
+        "2JK6.CS.000_* / 2W0H.CS.001_*",
+        site="2JK6.CS.000_* | 2W0H.CS.001_*",
+        site_radius=5,
+        contact_radius=10,
         plot_fingerprints=img_gen,
-        nbins=50,
+        nbins=15,
     )
     assert images_identical(img_ref, img_gen)
 
@@ -130,7 +131,7 @@ def test_fpt():
     img_ref1 = f"{pkg_data}/test_fpt1_ref.svg"
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
     fpt_sim(
-        "1dq8.D* | 1dq8.B* / 1dq9.DS.00 / 1dqa.CS.000_*",
+        "2JK6.DL.00 / 2W0H.BL.00 / 6BU7.CS.*",
         site_radius=4.0,
         nbins=50,
         sharex=True,
