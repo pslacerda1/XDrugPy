@@ -25,10 +25,12 @@ from .utils import (
     Selection,
     plot_hca_base,
     clustal_omega,
-    run
+    run,
+    Residue
 )
 
 from pymol import cmd as pm
+from pymol.exporting import _resn_to_aa as RESN_TO_AA
 
 
 matplotlib.use("Qt5Agg")
@@ -769,7 +771,8 @@ def fpt_sim(
     multi_seles: Selection,
     site: Selection = "*",
     site_radius: float = 4.0,
-    conservation: str = "*:.",
+    seq_align_omega: bool = False,
+    omega_conservation: str = "*:.",
     contact_radius: float = 3.0,
     nbins: int = 5,
     sharex: bool = True,
@@ -823,7 +826,23 @@ def fpt_sim(
     for at in pm.get_model(f"({site_sele}) & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    mapping = clustal_omega(polymers, conservation, titles=seles)
+    if seq_align_omega:
+        mapping = clustal_omega(polymers, omega_conservation, titles=seles)
+    else:
+        mapping = {}
+        for poly, sele in zip(polymers, seles):
+            model = pm.get_model(f"{poly} & present & guide & polymer")
+            ref_model = pm.get_model(f"{ref_polymer} & present & guide & polymer")
+            map = []
+            for at in model.atom:
+                for ref_at in ref_model.atom:
+                    if (at.resi == ref_at.resi and at.chain == ref_at.chain):
+                        map.append(Residue(
+                            at.model, at.index, int(at.resi), at.chain, at.resn, RESN_TO_AA[at.resn], ''
+                        ))
+                        break
+            mapping[sele] = map
+
     ref_map = mapping[ref_sele]
     fpts = []
     for poly, (hs, map) in zip(polymers, mapping.items()):
@@ -1660,20 +1679,42 @@ class CountWidget(QWidget):
         boxLayout.addRow("Focus site:", self.siteSelectionLine)
 
         self.siteRadiusSpin = QDoubleSpinBox()
-        self.siteRadiusSpin.setValue(3)
-        self.siteRadiusSpin.setDecimals(2)
-        self.siteRadiusSpin.setSingleStep(0.5)
+        self.siteRadiusSpin.setValue(5)
+        self.siteRadiusSpin.setDecimals(1)
+        self.siteRadiusSpin.setSingleStep(1)
         self.siteRadiusSpin.setMinimum(0)
         self.siteRadiusSpin.setMaximum(10)
         boxLayout.addRow("Site radius:", self.siteRadiusSpin)
 
         self.contactRadiusSpin = QDoubleSpinBox()
-        self.contactRadiusSpin.setValue(3)
-        self.contactRadiusSpin.setDecimals(3)
+        self.contactRadiusSpin.setValue(4)
+        self.contactRadiusSpin.setDecimals(1)
         self.contactRadiusSpin.setSingleStep(0.5)
-        self.contactRadiusSpin.setMinimum(1)
-        self.contactRadiusSpin.setMaximum(10)
+        self.contactRadiusSpin.setMinimum(3)
+        self.contactRadiusSpin.setMaximum(6)
         boxLayout.addRow("Contact radius:", self.contactRadiusSpin)
+
+        self.omegaCheck = QCheckBox()
+        self.omegaCheck.setChecked(False)
+        boxLayout.addRow("Clustal Omega:", self.omegaCheck)
+
+        @self.omegaCheck.stateChanged.connect
+        def stateChanged(checkState):
+            if checkState == QtCore.Qt.Checked:
+                omegaBox.setEnabled(True)
+            else:
+                omegaBox.setEnabled(False)
+
+        omegaBox = QGroupBox()
+        boxLayout.addRow(omegaBox)
+        boxLayout.setWidget(boxLayout.rowCount(), QFormLayout.SpanningRole, omegaBox)
+        omegaLayout = QFormLayout()
+        omegaBox.setLayout(omegaLayout)
+        omegaBox.setEnabled(False)
+
+        self.omegaConservation = QLineEdit()
+        self.omegaConservation.setText("*:.")
+        omegaLayout.addRow("Conservation symbols:", self.omegaConservation)
 
         self.fingerprintsCheck = QCheckBox()
         self.fingerprintsCheck.setChecked(False)
@@ -1764,6 +1805,8 @@ class CountWidget(QWidget):
         contact_radius = self.contactRadiusSpin.value()
         plot_fingerprints = self.fingerprintsCheck.isChecked()
         plot_hca = self.hcaCheck.isChecked()
+        seq_align_omega = self.omegaCheck.isChecked()
+        omega_conservation = self.omegaConservation.text()
         nbins = self.nBinsSpin.value()
         share_ylim = self.shareYLimCheck.isChecked()
         sharex = self.sharexCheck.isChecked()
@@ -1779,6 +1822,8 @@ class CountWidget(QWidget):
             contact_radius=contact_radius,
             plot_fingerprints=plot_fingerprints,
             plot_hca=plot_hca,
+            seq_align_omega=seq_align_omega,
+            omega_conservation=omega_conservation,
             nbins=nbins,
             share_ylim=share_ylim,
             sharex=sharex,
@@ -1804,7 +1849,7 @@ class MainDialog(QDialog):
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
         tab.addTab(SimilarityWidget(), "HCA")
-        tab.addTab(CountWidget(), "Fingerprinting")
+        tab.addTab(CountWidget(), "Fingerprints")
 
         layout.addWidget(tab)
 

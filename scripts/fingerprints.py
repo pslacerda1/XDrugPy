@@ -57,9 +57,9 @@ _, _, dendro, _ = fpt_sim(
     # How many angstroms will be given around the
     # site? It can be 0, 5, any value.
     site_radius=5,
-    # Minimum accepted conservation to sequence
-    # align.
-    conservation='*:.',
+    # Apply multiple sequence alignment
+    seq_align_omega=True,
+    omega_conservation='*:.',
     # How far from residues to look for probes.
     contact_radius=3.0,
     # Do plot fingerprints.
