@@ -138,9 +138,23 @@ def test_fpt():
         share_ylim=False,
         plot_fingerprints=img_gen1,
         plot_hca=img_gen2,
+        seq_align_omega=True,
     )
     assert images_identical(img_ref1, img_gen1)
     assert images_identical(img_ref2, img_gen2)
+
+    img_gen3 = f"{pkg_data}/test_fpt3_gen.svg"
+    img_ref3 = f"{pkg_data}/test_fpt3_ref.svg"
+    fpt_sim(
+        "2JK6.DL.00 / 2W0H.BL.00",
+        site="2JK6.DL.00",
+        nbins=50,
+        sharex=False,
+        share_ylim=True,
+        plot_fingerprints=img_gen3,
+        seq_align_omega=False,
+    )
+    assert images_identical(img_ref3, img_gen3)
 
 
 def test_res_sim():

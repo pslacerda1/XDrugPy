@@ -770,10 +770,10 @@ class LinkageMethod(StrEnum):
 def fpt_sim(
     multi_seles: Selection,
     site: Selection = "*",
-    site_radius: float = 4.0,
+    site_radius: float = 5.0,
     seq_align_omega: bool = False,
     omega_conservation: str = "*:.",
-    contact_radius: float = 3.0,
+    contact_radius: float = 4.0,
     nbins: int = 5,
     sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
@@ -823,25 +823,41 @@ def fpt_sim(
     ref_sele = seles[0]
     site_sele = f"{ref_polymer} & ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
-    for at in pm.get_model(f"({site_sele}) & guide & polymer").atom:
+    for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
     if seq_align_omega:
-        mapping = clustal_omega(polymers, omega_conservation, titles=seles)
+        mapping = clustal_omega(polymers, omega_conservation.strip(), titles=seles)
     else:
         mapping = {}
+        ref_model = pm.get_model(f"{ref_polymer} & present & guide & polymer")
+        ref_map = []
+        for at in ref_model.atom:
+            ref_map.append(Residue(
+                at.model, at.index, int(at.resi), at.chain,
+                at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
+            ))
+        mapping[ref_sele] = ref_map
         for poly, sele in zip(polymers, seles):
-            model = pm.get_model(f"{poly} & present & guide & polymer")
-            ref_model = pm.get_model(f"{ref_polymer} & present & guide & polymer")
-            map = []
-            for at in model.atom:
-                for ref_at in ref_model.atom:
-                    if (at.resi == ref_at.resi and at.chain == ref_at.chain):
-                        map.append(Residue(
-                            at.model, at.index, int(at.resi), at.chain, at.resn, RESN_TO_AA[at.resn], ''
-                        ))
-                        break
-            mapping[sele] = map
+            if sele == ref_sele:
+                continue
+            current_model = pm.get_model(f"{poly} & present & guide & polymer")
+            lookup = {(int(at.resi), at.chain): at for at in current_model.atom}
+            current_map = []
+            for ref_res in ref_map:
+                match = lookup.get((int(ref_res.resi), ref_res.chain))
+                if match:
+                    at = match
+                    current_map.append(
+                        Residue(
+                            at.model, at.index, int(at.resi), at.chain,
+                            at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
+                        )
+                    )
+                else:
+                    current_map.append(
+                        Residue(None, -1, int(ref_res.resi), ref_res.chain, 'GAP', '-', ''))
+            mapping[sele] = current_map
 
     ref_map = mapping[ref_sele]
     fpts = []
@@ -1806,7 +1822,7 @@ class CountWidget(QWidget):
         plot_fingerprints = self.fingerprintsCheck.isChecked()
         plot_hca = self.hcaCheck.isChecked()
         seq_align_omega = self.omegaCheck.isChecked()
-        omega_conservation = self.omegaConservation.text()
+        omega_conservation = self.omegaConservation.text().strip()
         nbins = self.nBinsSpin.value()
         share_ylim = self.shareYLimCheck.isChecked()
         sharex = self.sharexCheck.isChecked()
