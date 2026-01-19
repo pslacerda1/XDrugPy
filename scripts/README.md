@@ -6,7 +6,7 @@ Welcome to the XDrugPy/scripts directory
 
         pip install -U https://github.com/pslacerda1/XDrugPy/archive/refs/heads/master.zip
 
-3. Copy the script to a folder you own and edit the script to your needs then open the PyMOL's console, navigate to there and run it like:
+3. Copy the script you want to a folder you own and edit it to your needs then open the terminal or PyMOL's console, navigate to there and run it like:
    
         pymol -c hca.py
 

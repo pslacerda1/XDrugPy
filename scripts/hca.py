@@ -23,7 +23,7 @@ pm.undo_disable()
 
 # List the FTMap PDB files but limits arbitrarily to the first 25 entries.
 # This glob ???? match four chars (like a PDB id), but could be replaced by:
-#                                   ~/Desktop/PEPTI/atlas/*_atlas.pdb
+#                        ~/Desktop/PEPTI/atlas/*_atlas.pdb
 files = glob(expanduser("~/Desktop/PEPTI/atlas/????_atlas.pdb"))
 for file in files[:25]:
     
@@ -34,8 +34,8 @@ for file in files[:25]:
     # plotting criteria. It also deletes the *.protein structures. This
     # optimization reduces the number of PyMOL objects irrelevant to our
     # analysis improving the performance at high loads.
-    #                             "NOT (*.K15_* AND p.S0>20 OR *.protein)"
-    for obj in pm.get_object_list("NOT (*.K15_* AND p.S0>20)"):
+    #                             "NOT ((*.D* OR *.B*) AND p.S0>20 OR *.protein)"
+    for obj in pm.get_object_list("NOT ((*.D* OR *.B*) AND p.S0>20)"):
         pm.delete(obj)
 
 # If you don't delete protein structures you can have a nice session!
@@ -45,10 +45,9 @@ for file in files[:25]:
 # function. Only strong Kozakov2015 hotspots with at least p.S0>20 that remained
 # from the previous successive loading and deletions.
 plot_pairwise_hca(
-    '*.K15_* AND p.S0>20',
+    '(*.D* OR *.B*) AND p.S0>20',
     function=SimilarityFunc.HO,
-    radius=1.5,
-    align=False,             # suposes previously aligned structures (FTMove?)
+    radius=2.0,
     linkage_method=LinkageMethod.WARD,
     color_threshold=1.5,     # probably you'll need to adjust this variable
     hide_threshold=True,     # hide every hotspot except the medoid
@@ -59,7 +58,7 @@ plot_pairwise_hca(
 # This ones calculates the distance over the aggregation of all hotspot
 # properties, including coordinates of center-of-mass.
 plot_euclidean_hca(
-    '*.K15_* AND p.S0>20',
+    '(*.D* OR *.B*) AND p.S0>20',
     linkage_method=LinkageMethod.WARD,
     color_threshold=1.5,
     hide_threshold=True,
