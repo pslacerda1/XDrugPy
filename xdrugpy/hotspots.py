@@ -1058,7 +1058,7 @@ def res_sim(
     return ret
 
 
-class SimilarityFunc(StrEnum):
+class PairwiseFunction(StrEnum):
     HO = "ho"
     RESIDUE_JACCARD = "residue_jaccard"
     RESIDUE_OVERLAP = "residue_overlap"
@@ -1067,7 +1067,7 @@ class SimilarityFunc(StrEnum):
 @new_command
 def plot_pairwise_hca(
     sele: Selection,
-    function: SimilarityFunc = SimilarityFunc.HO,
+    function: PairwiseFunction = PairwiseFunction.HO,
     radius: float = 2.0,
     align: bool = False,
     annotate: bool = False,
@@ -1101,9 +1101,9 @@ def plot_pairwise_hca(
             if idx1 >= idx2:
                 continue
             match function:
-                case SimilarityFunc.HO:
+                case PairwiseFunction.HO:
                     ret = get_ho(obj1, obj2, radius=radius)
-                case SimilarityFunc.RESIDUE_JACCARD:
+                case PairwiseFunction.RESIDUE_JACCARD:
                     ret = res_sim(
                         obj1,
                         obj2,
@@ -1111,7 +1111,7 @@ def plot_pairwise_hca(
                         method=ResidueSimilarityMethod.JACCARD,
                         seq_align=align,
                     )
-                case SimilarityFunc.RESIDUE_OVERLAP:
+                case PairwiseFunction.RESIDUE_OVERLAP:
                     ret = res_sim(
                         obj1,
                         obj2,
@@ -1580,7 +1580,7 @@ class SimilarityWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.functionCombo = QComboBox()
-        self.functionCombo.addItems([e.value for e in SimilarityFunc])
+        self.functionCombo.addItems([e.value for e in PairwiseFunction])
         boxLayout.addRow("Function:", self.functionCombo)
 
         self.radiusSpin = QDoubleSpinBox()

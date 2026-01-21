@@ -4,7 +4,7 @@
 
 from os.path import expanduser
 from glob import glob
-from xdrugpy.hotspots import load_ftmap, plot_pairwise_hca, plot_euclidean_hca, SimilarityFunc, LinkageMethod
+from xdrugpy.hotspots import load_ftmap, plot_pairwise_hca, plot_euclidean_hca, PairwiseFunction, LinkageMethod
 
 from pymol import cmd as pm
 from matplotlib import pyplot as plt
@@ -46,7 +46,7 @@ for file in files[:25]:
 # from the previous successive loading and deletions.
 plot_pairwise_hca(
     '(*.D* OR *.B*) AND p.S0>20',
-    function=SimilarityFunc.HO,
+    function=PairwiseFunction.HO,
     radius=2.0,
     linkage_method=LinkageMethod.WARD,
     color_threshold=1.5,     # probably you'll need to adjust this variable

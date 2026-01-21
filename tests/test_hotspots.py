@@ -7,7 +7,7 @@ from xdrugpy.hotspots import (
     load_ftmap,
     plot_euclidean_hca,
     plot_pairwise_hca,
-    SimilarityFunc,
+    PairwiseFunction,
     fpt_sim,
     res_sim,
     get_ho,
@@ -79,7 +79,7 @@ def test_pairwise_hca():
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
     plot_pairwise_hca(
         expr,
-        function=SimilarityFunc.RESIDUE_JACCARD,
+        function=PairwiseFunction.RESIDUE_JACCARD,
         radius=4,
         annotate=True,
         plot=img_gen,
