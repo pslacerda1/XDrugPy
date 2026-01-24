@@ -1,7 +1,6 @@
 import time
 import logging
 from pymol import cmd as pm
-from functools import lru_cache
 import pandas as pd
 import numpy as np
 from fnmatch import fnmatch
@@ -17,7 +16,13 @@ from rich.console import Console
 from rich.table import Table
 from strenum import StrEnum
 
-from .utils import new_command, mpl_axis, PyMOLComboObjectBox, AligMethod
+from .utils import (
+    new_command,
+    mpl_axis,
+    PyMOLComboObjectBox,
+    AligMethod,
+    clustal_omega
+)
 
 
 logging.getLogger("rcsbapi").setLevel(logging.CRITICAL)
@@ -183,8 +188,9 @@ def fetch_similar(
 def rmsf(
     prot_expr: str,
     ref_site: str = "*",
-    site_margin: float = 3.0,
+    site_radius: float = 4.0,
     qualifier: str = RMSF_DEFAULT_QUALIFIER,
+    omega_conservation: str = "*:.",
     pretty: bool = True,
     axis: str = "",
 ):
@@ -198,102 +204,64 @@ def rmsf(
         the RMSF must also be supplied.
 
     OPTIONS
-        prot_expr: str
+        prot_expr:
             An expression to select the structures to calculate the RMSF.
-        ref_site: str
+        ref_site:
             A site expression to focus the RMSF calculation.
-        site_margin: float = 3.0
+        site_radius:
             The margin to consider the site around the ref_site.
-        qualifier: str = 'name CA'
+        qualifier:
             A qualifier to select the atoms to calculate the RMSF.
-        pretty: bool = True
+        pretty:
             If True, it will show the RMSF in a pretty way.
-
-
-    EXAMPLES
-        # Calculate RMSF of site residues 10-150 for all proteins in the
-        # session.
-        rmsf resi 10-150, *.protein, pretty=False
-
-
-        # Calculate RMSF of the full protein considering 1ABC and 2XYZ.
-        rmsf *, 1ABC.protein 2XYZ.protein
-
-        # Use all atoms instead of only alpha carbons.
-        rmsf *, *.protein, qualifier=*
-
     """
     frames = []
     for obj in pm.get_object_list():
         if fnmatch(obj, prot_expr):
             frames.append(obj)
-
+    
     f0 = frames[0]
-    site = set()
-    pm.iterate(
-        f"(%{f0} & polymer) within {site_margin} of ({ref_site})",
-        "site.add((resn,int(resi),chain))",
-        space={"site": site},
-    )
-
-    @lru_cache(25000)
-    def get_residues(frame):
-        residues = []
-        coords = np.empty((0, 3))
-        chains = pm.get_chains(f"{frame} & polymer")
-        sele = f"{frame} & {qualifier} & ("
-
-        for i, chain in enumerate(chains):
-            if i == 0:
-                sele += f"(c. {chain} &"
-            else:
-                sele += f" | (c. {chain} &"
-            idx_resids = "+".join(str(r[1]) for r in site)  # if r[2] == chain)
-            sele += f" i. {idx_resids}"
-            sele += ") "
-        sele += ")"
-
-        for a in pm.get_model(sele).atom:
-            resi = (a.resn, int(a.resi), a.chain)
-            if resi in site:
-                residues.append(resi)
-                coords = np.vstack([coords, a.coord])
-        return residues, coords
-
-    # Aggregate coords from all frames
+    site_sele = f"{f0} near_to {site_radius} of ({ref_site})"
+    site_resis = []
+    for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
+        site_resis.append((at.model, at.index))
+    
+    mapping = clustal_omega(frames, omega_conservation)
+    f0_map = mapping[f0]
     X = {}
-    for fr in frames:
-        resis, coordinates = get_residues(fr)
-        for resi, coords in zip(resis, coordinates):
-            if resi not in X:
-                X[resi] = np.empty((0, 3))
-            X[resi] = np.vstack([X[resi], coords])
-
+    for frame, map in zip(frames, mapping.values()):
+        for ref_res, res in zip(f0_map, map):
+            if (f0, ref_res.index) not in site_resis:
+                continue
+            lbl = (ref_res.resn, ref_res.conservation, ref_res.resi, ref_res.chain)
+            coords = pm.get_coords(
+                f"({qualifier}) & (byres %{frame} & index {res.index})"
+            )
+            if lbl not in X:
+                X[lbl] = []
+            X[lbl].extend(coords)
+    
     # Sort residues
-    X = {k: X[k] for k in sorted(X, key=lambda z: (z[2], z[1]))}
-
-    # Find mean positions for each residue
-    means = {}
-    for resi in X:
-        means[resi] = np.mean(X[resi], axis=0)
+    X = {k: np.array(X[k]) for k in sorted(X, key=lambda z: (z[3], z[2]))}
 
     # Calculate RMSF
     RMSF = []
     LABELS = []
     pm.alter(f"{f0} & polymer", "p.rmsf=0.0")
     for resi, coords in X.items():
-        rmsf = np.sum((coords - means[resi]) ** 2) / coords.shape[0]
-        rmsf = np.sqrt(rmsf)
-        label = "%s %s:%s" % resi
-        pm.alter(f"{f0} & i. {resi[1]} & c. {resi[2]}", f"p.rmsf={rmsf}")
+        diff = coords - np.mean(coords, axis=0)
+        squared_dist = np.sum(diff**2, axis=1)
+        rmsf = np.sqrt(np.mean(squared_dist, axis=0))
+        label = "%s%s %s:%s" % resi
+        pm.alter(f"{f0} & i. {resi[2]} & c. {resi[3]}", f"p.rmsf={rmsf}")
         LABELS.append(label)
         RMSF.append(rmsf)
 
     # Show data
     if pretty:
-        pm.hide("everything", f"{f0} & polymer")
-        pm.show_as("line", f"{f0} & polymer")
-        pm.spectrum("p.rmsf", "rainbow", f"{f0} & polymer")
+        pm.hide("everything", site_sele)
+        pm.show_as("line", site_sele)
+        pm.spectrum("p.rmsf", "rainbow", site_sele)
 
     with mpl_axis(axis, constrained_layout=True) as ax:
         ax.bar(LABELS, RMSF)
@@ -706,13 +674,16 @@ class RmsfWidget(QWidget):
         self.refSiteLine = QLineEdit("*")
         layout.addRow("Reference site:", self.refSiteLine)
 
-        self.siteMarginSpin = QDoubleSpinBox()
-        self.siteMarginSpin.setMinimum(1.0)
-        self.siteMarginSpin.setMaximum(10.0)
-        self.siteMarginSpin.setValue(3.0)
-        self.siteMarginSpin.setSingleStep(0.5)
-        self.siteMarginSpin.setDecimals(1)
-        layout.addRow("Site margin:", self.siteMarginSpin)
+        self.siteRadiusSpin = QDoubleSpinBox()
+        self.siteRadiusSpin.setMinimum(1.0)
+        self.siteRadiusSpin.setMaximum(10.0)
+        self.siteRadiusSpin.setValue(3.0)
+        self.siteRadiusSpin.setSingleStep(0.5)
+        self.siteRadiusSpin.setDecimals(1)
+        layout.addRow("Site margin:", self.siteRadiusSpin)
+
+        self.omegaSymbols = QLineEdit("*:.")
+        layout.addRow("Clustal Omega", self.omegaSymbols)
 
         self.qualifierLine = QLineEdit(RMSF_DEFAULT_QUALIFIER)
         layout.addRow("Qualifier:", self.qualifierLine)
@@ -728,7 +699,8 @@ class RmsfWidget(QWidget):
         rmsf(
             prot_expr=self.proteinExprLine.text().strip(),
             ref_site=self.refSiteLine.text().strip(),
-            site_margin=self.siteMarginSpin.value(),
+            site_radius=self.siteRadiusSpin.value(),
+            omega_conservation=self.omegaSymbols.text().strip(),
             qualifier=self.qualifierLine.text().strip(),
             pretty=self.prettyCheck.isChecked(),
         )

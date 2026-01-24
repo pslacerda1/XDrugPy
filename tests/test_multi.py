@@ -34,13 +34,31 @@ def images_identical(img1_path, img2_path):
 
 def test_rmsf():
     pm.reinitialize()
-    load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
-    load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
-    load_ftmap(f"{pkg_data}/1dqa_atlas.pdb", "1dqa")
-    img_ref = f"{pkg_data}/test_rmsf_ref.svg"
-    img_gen = f"{pkg_data}/test_rmsf_gen.svg"
-    rmsf("*.protein", "*.K15_D_00", site_margin=5, axis=img_gen)
-    assert images_identical(img_ref, img_gen)
+    load_ftmap(f"{pkg_data}/dimero/2JK6.pdb")
+    load_ftmap(f"{pkg_data}/dimero/1BZL.pdb")
+
+    img_ref1 = f"{pkg_data}/test_rmsf1_ref.svg"
+    img_gen1 = f"{pkg_data}/test_rmsf1_gen.svg"
+    rmsf(
+        "*.protein",
+        ref_site="2JK6.DL.00",
+        site_radius=4,
+        qualifier='guide or sidechain',
+        axis=img_gen1
+    )
+    assert images_identical(img_ref1, img_gen1)
+
+    img_ref2 = f"{pkg_data}/test_rmsf2_ref.svg"
+    img_gen2 = f"{pkg_data}/test_rmsf2_gen.svg"
+    rmsf(
+        "*.protein",
+        ref_site="2JK6.DL.00",
+        site_radius=4,
+        qualifier='name CA',
+        omega_conservation='*',
+        axis=img_gen2
+    )
+    assert images_identical(img_ref2, img_gen2)
 
 
 def test_fetch_similar_0():
