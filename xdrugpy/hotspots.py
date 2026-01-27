@@ -1675,12 +1675,12 @@ class CountWidget(QWidget):
         boxLayout.addRow("Protein:", self.proteinExpressionLine)
 
         self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(3)
+        self.radiusSpin.setValue(4)
         self.radiusSpin.setDecimals(2)
         self.radiusSpin.setSingleStep(0.5)
         self.radiusSpin.setMinimum(2)
         self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Site radius:", self.radiusSpin)
+        boxLayout.addRow("Contact radius:", self.radiusSpin)
 
         self.typeCombo = QComboBox()
         self.typeCombo.addItems([e.value for e in PrioritizationType])
