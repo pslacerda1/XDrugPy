@@ -113,13 +113,23 @@ def find_occupied_pockets(
         p_sele += 'none'
         p_sele = f'{group}.protein & ({p_sele})'
 
+        
         hs_sele = f"{group}.CS.* near_to 4 of ({p_sele})"
+        sele_cnt = 0
+        while True:
+            new_sele_cnt = pm.count_atoms(hs_sele)
+            if new_sele_cnt != sele_cnt:
+                sele_cnt = new_sele_cnt
+            else:
+                break
+            hs_sele = f"{group}.CS.* within 4 of ({hs_sele})"
+        
         hs_objs = pm.get_object_list(hs_sele)
         if not hs_objs:
             continue
                 
         pocket_clusters = [c for c in clusters if c.selection in hs_objs]
-        ix_ignore = next((i for i, c in enumerate(pocket_clusters) if c.ST<5), -1)
+        ix_ignore = next((i for i, c in enumerate(pocket_clusters) if c.ST<5), len(pocket_clusters))
         pocket_clusters = pocket_clusters[:ix_ignore]
 
         if not pocket_clusters:
