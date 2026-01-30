@@ -937,7 +937,7 @@ def fpt_sim(
     dendro, medoids = None, None
     if plot_hca:
         fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=True)
-        assert len(fpts) > 1, "HCA requires multiple fingerprints, please add more selections."
+        assert len(fpts) > 1, "Clustering requires multiple fingerprints, please add more selections."
         
         dendro, medoids = plot_hca_base(
             corrs,
@@ -955,7 +955,7 @@ def fpt_sim(
         if isinstance(plot_hca, (str, Path)):
             fig.savefig(plot_hca, dpi=300)
             if not quiet:
-                print(f"HCA figure saved to {plot_hca}")
+                print(f"Clusters figure saved to {plot_hca}")
     
     return fpts, corrs, dendro, medoids
 
@@ -1075,7 +1075,7 @@ class PairwiseFunction(StrEnum):
 
 
 @new_command
-def plot_pairwise_hca(
+def plot_pairwise_clustering(
     sele: Selection,
     function: PairwiseFunction = PairwiseFunction.HO,
     radius: float = 2.0,
@@ -1207,11 +1207,11 @@ def plot_euclidean_hca(
 
     object_list = pm.get_object_list(exprs)
     assert object_list is not None and len(object_list) >= 2, "At least two hotspots are required for comparison."
-    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots of the same type are allowed in the euclidean HCA."
+    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots of the same type are allowed in the HCA."
 
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "HS":
-        n_props = 6
+        n_props = 4
     elif hs_type == "CS":
         n_props = 1
     elif hs_type == "ACS":
@@ -1226,11 +1226,9 @@ def plot_euclidean_hca(
         if hs_type == "HS":
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
-            S1 = pm.get_property("S1", obj)
-            SZ = pm.get_property("SZ", obj)
             CD = pm.get_property("CD", obj)
             MD = pm.get_property("MD", obj)
-            p[ix, :] = np.array([ST, S0, S1, SZ, CD, MD, x, y, z])
+            p[ix, :] = np.array([ST, S0, CD, MD, x, y, z])
         elif hs_type == "CS":
             ST = pm.get_property("ST", obj)
             p[ix, :] = np.array([ST, x, y, z])
@@ -1609,7 +1607,7 @@ class SimilarityWidget(QWidget):
         plotButton.clicked.connect(self.plot_pairwise)
         boxLayout.addWidget(plotButton)
 
-        groupBox = QGroupBox("N-dimensional euclidean")
+        groupBox = QGroupBox("Hierarchical Cluster Analysis")
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
@@ -1628,7 +1626,7 @@ class SimilarityWidget(QWidget):
         hide_threshold = self.hideThresholdCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
 
-        plot_pairwise_hca(
+        plot_pairwise_clustering(
             sele,
             function,
             radius,
@@ -1776,7 +1774,7 @@ class CountWidget(QWidget):
         self.hcaCheck = QCheckBox()
         self.hcaCheck.setChecked(False)
 
-        boxLayout.addRow("HCA:", self.hcaCheck)
+        boxLayout.addRow("Clustering:", self.hcaCheck)
         @self.hcaCheck.stateChanged.connect
         def stateChanged(checkState):
             if checkState == QtCore.Qt.Checked:
@@ -1874,7 +1872,7 @@ class MainDialog(QDialog):
         tab = QTabWidget()
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
-        tab.addTab(SimilarityWidget(), "HCA")
+        tab.addTab(SimilarityWidget(), "Similarity")
         tab.addTab(CountWidget(), "Fingerprints")
 
         layout.addWidget(tab)

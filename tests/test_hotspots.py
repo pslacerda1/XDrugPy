@@ -6,7 +6,7 @@ import matplotlib as mpl
 from xdrugpy.hotspots import (
     load_ftmap,
     plot_euclidean_hca,
-    plot_pairwise_hca,
+    plot_pairwise_clustering,
     PairwiseFunction,
     fpt_sim,
     res_sim,
@@ -65,7 +65,7 @@ def test_euclidean_hca():
     assert images_identical(img_ref, img_gen)
 
 
-def test_pairwise_hca():
+def test_pairwise_clustering():
     pm.reinitialize()
     ftmap = load_ftmap([
             f"{pkg_data}/1dq8_atlas.pdb",
@@ -77,7 +77,7 @@ def test_pairwise_hca():
     
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
-    plot_pairwise_hca(
+    plot_pairwise_clustering(
         expr,
         function=PairwiseFunction.RESIDUE_JACCARD,
         radius=4,

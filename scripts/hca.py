@@ -4,7 +4,13 @@
 
 from os.path import expanduser
 from glob import glob
-from xdrugpy.hotspots import load_ftmap, plot_pairwise_hca, plot_euclidean_hca, PairwiseFunction, LinkageMethod
+from xdrugpy.hotspots import (
+    load_ftmap,
+    plot_pairwise_clustering,
+    plot_euclidean_hca,
+    PairwiseFunction,
+    LinkageMethod
+)
 
 from pymol import cmd as pm
 from matplotlib import pyplot as plt
@@ -41,10 +47,10 @@ for file in files[:25]:
 # If you don't delete protein structures you can have a nice session!
 # pm.save("~/My Folder/nice_session.pze")
 
-# Does the actual hierarchical cluster analysis (HCA) with hotspot overlap (HO)
-# function. Only strong Kozakov2015 hotspots with at least p.S0>20 that remained
+# Does the similarity cluster analysis with hotspot overlap (HO)
+# function. Only strong hotspots with at least p.S0>20 that remained
 # from the previous successive loading and deletions.
-plot_pairwise_hca(
+plot_pairwise_clustering(
     '(*.D* OR *.B*) AND p.S0>20',
     function=PairwiseFunction.HO,
     radius=2.0,
@@ -54,9 +60,9 @@ plot_pairwise_hca(
     annotate=False,          # is desirable the value at each cell?
 )
 
-# A more standard type of HCA over the same hotspots of the previous analysis.
-# This ones calculates the distance over the aggregation of all hotspot
-# properties, including coordinates of center-of-mass.
+# The standard HCA over the same hotspots of the previous analysis. This one
+# calculates the distance over the aggregation of hotspot properties, including
+# coordinates of center-of-mass.
 plot_euclidean_hca(
     '(*.D* OR *.B*) AND p.S0>20',
     linkage_method=LinkageMethod.WARD,
