@@ -14,6 +14,7 @@ import shutil
 import textwrap
 import json
 import sys
+import textwrap
 from unittest.mock import MagicMock
 
 import pymol
@@ -538,23 +539,26 @@ class VinaDockingEngine:
 
     def log(self, token, params=None):
         params = params or {}
-        
+        output = params.get('output')
+
         html = "<hr>"
         html += "<p>"
         html += f"<b>{token}</b>"
         html += "<ul>"
         for key, value in params.items():
-            if key != 'output':
                 html += f"<li><b>{key}:</b> {value}</li>"
         html += "</ul>"
+        if output:
+            html += f"<pre>{output}</pre>"
         html += "</p>"
-        
         self.manager.logHtml.emit(html)
 
         text = f"[{token}]\n"
         for key, value in params.items():
             if key != 'output':
-                text += f"  {key}: {value}\n"
+                text += f"  {key}: {value}\n"        
+        if output:
+            text += "\n" + textwrap.indent(output, '  ')
         self.manager.logText.emit(text)
 
     def run_cmd(self, token, command):
@@ -1209,7 +1213,7 @@ def docking_gui():
     cpu_count = QThread.idealThreadCount()
     cpu_spin = QSpinBox()
     cpu_spin.setRange(1, cpu_count)
-    cpu_spin.setValue(cpu_count)
+    cpu_spin.setValue(cpu_count - 1)
     options_group_layout.addRow("Number of CPUs:", cpu_spin)
 
     vina_seed_spin = QSpinBox()
