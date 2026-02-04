@@ -11,9 +11,6 @@ from sklearn.cluster import OPTICS
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from collections import Counter
-from rich import print as rprint
-from rich.console import Console
-from rich.table import Table
 from strenum import StrEnum
 
 from .utils import (

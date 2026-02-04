@@ -12,11 +12,11 @@ SYSTEM = platform.system().lower()
 @pm.extend
 def install_xdrugpy_requirements():
     try:
-        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, rich, watchdog, molscrub, rdkit, pdb2pqr, propka, sklearn, networkx
+        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, watchdog, molscrub, rdkit, pdb2pqr, propka, sklearn, networkx
     except:
         os.system(
             "pip install --upgrade"
-            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api rich watchdog molscrub pdb2pqr propka scikit-learn networkx"
+            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api watchdog molscrub pdb2pqr propka scikit-learn networkx"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
 

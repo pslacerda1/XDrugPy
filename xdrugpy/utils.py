@@ -25,9 +25,6 @@ from scipy.spatial import distance
 from scipy.cluster.hierarchy import linkage
 from collections import namedtuple
 from functools import lru_cache
-from rich.console import Console
-from rich.traceback import Traceback
-from rich import terminal_theme
 from strenum import StrEnum
 from enum import Enum
 

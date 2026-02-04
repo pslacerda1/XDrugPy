@@ -40,22 +40,23 @@ for file in files[:25]:
     # plotting criteria. It also deletes the *.protein structures. This
     # optimization reduces the number of PyMOL objects irrelevant to our
     # analysis improving the performance at high loads.
-    #                             "NOT ((*.D* OR *.B*) AND p.S0>20 OR *.protein)"
-    for obj in pm.get_object_list("NOT ((*.D* OR *.B*) AND p.S0>20)"):
+    #                             "NOT (*.D* AND p.S0>20 OR *.protein)"
+    for obj in pm.get_object_list("NOT (*.D* AND p.S0>20)"):
         pm.delete(obj)
 
 # If you don't delete protein structures you can have a nice session!
 # pm.save("~/My Folder/nice_session.pze")
 
-# Does the similarity cluster analysis with hotspot overlap (HO)
-# function. Only strong hotspots with at least p.S0>20 that remained
-# from the previous successive loading and deletions.
+# Does the similarity cluster analysis with hotspot overlap (HO) function. Only
+# strong hotspots with at least p.S0>20 that remained from the previous successive
+# loading and deletions. You can think this as univariate HCA or no HCA at all,
+# just a simple way to cluster hotspots.
 plot_pairwise_clustering(
-    '(*.D* OR *.B*) AND p.S0>20',
+    '*.D* AND p.S0>20',
     function=PairwiseFunction.HO,
     radius=2.0,
-    linkage_method=LinkageMethod.WARD,
-    color_threshold=1.5,     # probably you'll need to adjust this variable
+    linkage_method=LinkageMethod.AVERAGE,
+    color_threshold=2.5,     # probably you'll need to adjust this variable
     hide_threshold=True,     # hide every hotspot except the medoid
     annotate=False,          # is desirable the value at each cell?
 )
@@ -64,11 +65,11 @@ plot_pairwise_clustering(
 # calculates the distance over the aggregation of hotspot properties, including
 # coordinates of center-of-mass.
 plot_euclidean_hca(
-    '(*.D* OR *.B*) AND p.S0>20',
-    linkage_method=LinkageMethod.WARD,
+    '*.D* AND p.S0>20',
+    linkage_method=LinkageMethod.AVERAGE,
     color_threshold=1.5,
     hide_threshold=True,
     annotate=False,
 )
 
-plt.show()  # displays the HCA
+plt.show()  # displays both plots!

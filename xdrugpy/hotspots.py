@@ -1222,7 +1222,7 @@ def plot_euclidean_hca(
 
     for ix, obj in enumerate(object_list):
         labels.append(obj)
-        x, y, z = np.mean(pm.get_coordset(obj), axis=0)
+        x, y, z = pm.centerofmass(obj)
         if hs_type == "HS":
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
