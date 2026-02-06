@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from collections import Counter
 from strenum import StrEnum
+from pymol import CmdException
 
 from .utils import (
     new_command,
@@ -108,7 +109,7 @@ def fetch_similar(
             
             try:
                 pm.fetch(pdb_id, obj, type="pdb%s" % asm_id)
-            except Exception as exc:
+            except (Exception, CmdException) as exc:
                 print(f'Failed to download PDB entry {pdb_id} with Assembly {asm_id}: {exc}')
                 continue
 
@@ -151,7 +152,7 @@ def fetch_similar(
                 for chain in this_peptides:
                     if length := pm.count_atoms(f"name CA & (bymolecule (%{obj} & chain {chain}))") < max_peptide_length:
                         peptides.add((chain, length))
-    pm.order(assembly_ids, True)  # XXX segfaults
+    # pm.order(assembly_ids, True)  # XXX segfaults
     # Fetch extra data
     if fetch_extra:
         from rcsbapi.data import DataQuery
@@ -186,10 +187,12 @@ def rmsf(
     prot_expr: str,
     ref_site: str = "*",
     site_radius: float = 4.0,
+    align_method: AligMethod = AligMethod.CEALIGN,
     qualifier: str = RMSF_DEFAULT_QUALIFIER,
     omega_conservation: str = "*:.",
     pretty: bool = True,
     axis: str = "",
+    quiet: bool = False,
 ):
     """
     DESCRIPTION
@@ -213,16 +216,28 @@ def rmsf(
             If True, it will show the RMSF in a pretty way.
     """
     frames = []
-    for obj in pm.get_object_list():
-        if fnmatch(obj, prot_expr):
+    for obj in pm.get_object_list(prot_expr):
             frames.append(obj)
     
     f0 = frames[0]
-    site_sele = f"{f0} near_to {site_radius} of ({ref_site})"
+    site_sele = f"{f0} & polymer & ({f0} within {site_radius} of ({ref_site}))"
+    if not quiet:
+        print(f'Reference selection: "{site_sele}"')
     site_resis = []
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
-    
+    if not quiet:
+        print(f"Aligning structures to {f0} with method {align_method}...")
+    try:
+        pm.extra_fit(
+            selection=' '.join(frames[1:]),
+            reference=site_sele,
+            method=str(align_method),
+            quiet=False
+        )
+    except (Exception, CmdException) as exc:
+        raise Exception(f"Failed to align objects to {f0}.") from exc
+
     mapping = clustal_omega(frames, omega_conservation)
     f0_map = mapping[f0]
     X = {}
@@ -236,8 +251,11 @@ def rmsf(
             )
             if lbl not in X:
                 X[lbl] = []
+            if coords is None or len(coords) == 0:
+                print(f"Warning: no coordinates found for {frame} residue {res.resn} {res.resi}_{res.chain}")
+                continue
             X[lbl].extend(coords)
-    
+
     # Sort residues
     X = {k: np.array(X[k]) for k in sorted(X, key=lambda z: (z[3], z[2]))}
 
@@ -268,198 +286,6 @@ def rmsf(
     return RMSF, LABELS
 
     
-@new_command
-def pca(
-    prots_sele: str,
-    site_sele: str = '*',
-    site_radius: float = 4.0,
-    min_explained_variance: float = 0.9,
-    axis: str = '',
-):
-    objects = []
-    for obj in pm.get_object_list(f'({prots_sele}) & polymer'):
-        objects.append(obj)
-    assert len(objects) > 0, "Please review your selections"
-    
-    mappings = np.empty((0, 7))
-    site = []
-    
-    # Take first object as reference
-    for at in pm.get_model(f'{objects[0]} & ({site_sele}) & name CA').atom:
-        site.append(at.index)
-        mappings = np.vstack([
-            mappings,
-            (at.index, at.model, at.chain, at.resi, *at.coord)
-        ])
-    # Iter objects
-    for obj in objects[1:]:
-        try:
-            # Align (without fit transform) objects into reference
-            aln_obj = pm.get_unused_name()
-            pm.extra_fit(
-                f"({obj}) & polymer & name CA",
-                f"({objects[0]}) & polymer & name CA",
-                method="cealign",
-                transform=0,
-                object=aln_obj,
-            )
-            aln = pm.get_raw_alignment(aln_obj)
-        finally:
-            pm.delete(aln_obj)
-        
-        # Map bijections from object to reference
-        for (obj1, idx1), (obj2, idx2) in aln:
-            if idx1 not in site:
-                continue
-            for at in pm.get_model(f"%{obj2} & index {idx2} & name CA").atom:
-                mappings = np.vstack([
-                    mappings,
-                    (idx1, at.model, at.chain, at.resi, *at.coord)
-                ])
-    
-    dtypes = {
-        "index": int,
-        "model": str,
-        "chain": str,
-        "resi": int,
-        "x": float,
-        "y": float,
-        "z": float
-    }
-    mappings = pd.DataFrame(mappings, columns=list(dtypes)).astype(dtypes)
-    
-    rprint("\n**Principal Component Analisys**\n")
-
-    rprint(f"Num of models: {len(mappings['model'].unique())}")
-    rprint(f"Total mapped residues: {len(site)}")
-    rprint()
-
-    table = Table(title="Num of Cα per model")
-    table.add_column("Model", justify="right")
-    table.add_column("Num of Cα", justify="center")
-    index_counts = mappings.groupby('model')['index'].nunique()
-    for model, num_ca in index_counts.items():
-        table.add_row(model, str(num_ca))
-
-    console = Console()
-    console.print(table)
-    
-    # Extract C-alpha XYZ vector of full mapped sequences
-    vectors = []
-    for model, group in mappings.sort_values('index').groupby('model'):
-        vectors.append(
-            group
-            .set_index("index")
-            .reindex(site)
-            [['x', 'y', 'z']]
-            .to_numpy()
-            .ravel()
-        )
-    
-    # Preprocessing
-    X = np.array(vectors)
-    print(X)
-    missing_ca = np.isnan(X[:,1]).sum() / len(X[:,1])
-    rprint(f"\nPercent of unmatched Cα: {missing_ca:.2f}%")
-
-    X = SimpleImputer(strategy="mean").fit_transform(X)
-    X = StandardScaler().fit_transform(X)
-    
-    pca = PCA().fit(X)
-    evr = pca.explained_variance_ratio_
-    cum = np.cumsum(evr)
-    
-    n_pc = np.argmax(cum >= min_explained_variance)+1
-    rprint(f"Num of PCs to explain {min_explained_variance*100:.2f}% of variance: {n_pc}")
-    rprint()
-
-    pca = PCA(n_components=n_pc)
-    X_pca = pca.fit_transform(X)
-    
-    opt = OPTICS(cluster_method='xi')
-    labels = opt.fit_predict(X_pca)
-
-    uniq_labels = list(sorted(set(labels)))
-    cmap = plt.cm.nipy_spectral
-    colors = cmap(np.linspace(0, 1, len(uniq_labels)))
-    cmap = ListedColormap(colors)
-    
-    fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2, constrained_layout=True)
-
-    if X_pca.shape[1] >= 2:
-        ax0.scatter(X_pca[:, 0], X_pca[:, 1], c=labels, cmap=cmap)
-        ax0.set_xlabel("PC1")
-        ax0.set_ylabel("PC2")
-    else:
-        ax0.text(s="Not enought PCs.", ha="center")
-
-    if X_pca.shape[1] >= 3:
-        ax1.scatter(X_pca[:, 0], X_pca[:, 2], c=labels, cmap=cmap)
-        ax1.set_xlabel("PC1")
-        ax1.set_ylabel("PC3")
-    else:
-        ax1.text(s="Not enought PCs.", ha="center")
-
-    if X_pca.shape[1] >= 3:
-        ax2.scatter(X_pca[:, 1], X_pca[:, 2], c=labels, cmap=cmap)
-        ax2.set_xlabel("PC2")
-        ax2.set_ylabel("PC3")
-    else:
-        ax2.text(s="Not enought PCs.", ha="center")
-    
-    handles = []
-    for value, color in zip(uniq_labels, cmap.colors):
-        handles.append(plt.Line2D(
-            [], [], marker="o", linestyle="", color=color,
-            label=str(value)
-        ))
-
-    plt.legend(handles=handles, title="Cluster")
-    
-    ax3.plot(range(1, len(evr)+1), cum)
-    ax3.axhline(y=0.9, c='red', ls='--')
-    ax3.set_xlabel("Number of PCs")
-    ax3.set_ylabel("Cumulative Explained Variance")
-
-
-    if axis and isinstance(axis, (str)):
-        fig.savefig(axis)
-    else:
-        fig.show()
-
-
-# Uniprot = namedtuple(
-#     'Uniprot',
-#     'pdb_id uniprot_id chain_id uniprot_name length'
-# )
-# @cache
-# def get_uniprot_from_pdbe(pdb_id: str):
-#     """
-#     Retrieves UniProt ID(s) for a given PDB ID using the PDBe API.
-#     """
-#     session = requests.Session()
-#     pdb_id = pdb_id.lower()
-#     url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{pdb_id}"
-#     response = session.get(url)
-#     data = response.json()
-#     ret = []
-#     if pdb_id in data and "UniProt" in data[pdb_id]:
-#         done = set()
-#         for uniprot_id, mappings in data[pdb_id]['UniProt'].items():
-#             uniprot_name = mappings['name']
-#             for mapping in mappings['mappings']:
-#                 start = mapping['unp_start']
-#                 end = mapping['unp_end']
-#                 length = end - start + 1
-#                 chain_id = mapping['chain_id']
-#                 entry =  Uniprot(pdb_id, uniprot_id, chain_id, uniprot_name, length)
-#                 if entry in done:
-#                     continue
-#                 done.add(entry)
-#                 ret.append(entry)
-#     return ret
-
-
 # @declare_command
 # def rmsd_hca(
 #     ref_site: str,
@@ -679,6 +505,11 @@ class RmsfWidget(QWidget):
         self.siteRadiusSpin.setDecimals(1)
         layout.addRow("Site margin:", self.siteRadiusSpin)
 
+        self.alignMethodCombo = QComboBox()
+        self.alignMethodCombo.addItems(list(map(str, AligMethod)))
+        self.alignMethodCombo.setCurrentText(AligMethod.CEALIGN)
+        layout.addRow("Align method:", self.alignMethodCombo)
+
         self.omegaSymbols = QLineEdit("*:.")
         layout.addRow("Clustal Omega", self.omegaSymbols)
 
@@ -697,9 +528,11 @@ class RmsfWidget(QWidget):
             prot_expr=self.proteinExprLine.text().strip(),
             ref_site=self.refSiteLine.text().strip(),
             site_radius=self.siteRadiusSpin.value(),
+            align_method=self.alignMethodCombo.currentText(),
             omega_conservation=self.omegaSymbols.text().strip(),
             qualifier=self.qualifierLine.text().strip(),
             pretty=self.prettyCheck.isChecked(),
+            quiet=False,
         )
 
 
