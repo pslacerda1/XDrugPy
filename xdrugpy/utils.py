@@ -506,19 +506,6 @@ def clustal_omega(seles, conservation, titles=None):
     return omega
 
 
-@new_command
-def super_clustal_align(mobile: str, target: str, conservation: str = '*:.'):
-    omega = clustal_omega(f"{mobile} | {target}", conservation)
-    target_sele = None
-    for obj, (atoms) in omega.items():
-        ixs = '+'.join(str(at.index) for at in atoms)
-        sele = f"%{obj} & index {ixs}"
-        if not target_sele:
-            target_sele = sele
-            continue 
-        pm.super(sele, target_sele)
-
-
 from pymol import Qt
 
 QWidget = Qt.QtWidgets.QWidget
