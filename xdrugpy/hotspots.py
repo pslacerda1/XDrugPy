@@ -170,7 +170,7 @@ def find_pykvf_pockets(protein):
 
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
-        new_name = f"{group}.CS.{idx:03}_{cs.ST:03}"
+        new_name = f"{group}.CS.{idx:02}"
         pm.set_name(cs.selection, new_name)
         cs.selection = new_name
         pm.group(group, new_name)

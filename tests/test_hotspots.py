@@ -117,8 +117,8 @@ def test_fpt():
     img_gen = f"{pkg_data}/test_fpt_gen.svg"
     img_ref = f"{pkg_data}/test_fpt_ref.svg"
     fpt_sim(
-        "2JK6.CS.000_* / 2W0H.CS.001_*",
-        site="2JK6.CS.000_* | 2W0H.CS.001_*",
+        "2JK6.CS.00 / 2W0H.CS.01",
+        site="2JK6.CS.00 | 2W0H.CS.01",
         site_radius=5,
         contact_radius=10,
         plot_fingerprints=img_gen,
@@ -236,6 +236,6 @@ def test_show_hs():
     pm.reinitialize()
     ftmap = load_ftmap(f"{pkg_data}/1BZL_atlas.pdb", "1BZL")
 
-    hs = show_hs(['*.CS.000_*', '*.CS.002_*', "*.CS.004_*"])
+    hs = show_hs(['*.CS.00', '*.CS.02', "*.CS.04"])
     assert not hs.isComplex
     assert hs.nComponents == 1
