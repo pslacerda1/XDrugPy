@@ -249,7 +249,7 @@ class Hotspot:
         )
     
     @staticmethod
-    def from_cluster_selections(selections: List[str]) -> Hotspot:
+    def from_cluster_selections(selections: List[str], max_collisions: float=0.25) -> Hotspot:
         clusters = []
         objs = pm.get_object_list(' | '.join(selections))
         for obj in objs:
@@ -262,10 +262,10 @@ class Hotspot:
             )
             pm.group(group, obj, action='add')
             clusters.append(clu)
-        return Hotspot.from_clusters(group, clusters)
+        return Hotspot.from_clusters(group, clusters, max_collisions=max_collisions)
         
     @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], disable_L: bool=False) -> Hotspot:
+    def from_clusters(group: str, clusters: List[Cluster], max_collisions: float=0.25) -> Hotspot:
         coms = [pm.centerofmass(c.selection) for c in clusters]
         cd = [distance.euclidean(coms[0], com) for com in coms]
 
@@ -303,16 +303,15 @@ class Hotspot:
             hs.klass = "B"
         if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
             hs.klass = "BS"
-        if not disable_L:
-            if 13 <= s0 < 16 and cd >= 8 and md >= 10:
-                hs.klass = "BL" 
-            if s0 >= 16 and cd >= 8 and md >= 10:
-                hs.klass = "DL"
-            # out-of-order optimization
-            if hs.klass:
-                hs.nComponents = Hotspot.make_graph(group, clusters)
-                if hs.nComponents > 1:
-                    hs.klass = None
+        if 13 <= s0 < 16 and cd >= 8 and md >= 10:
+            hs.klass = "BL" 
+        if s0 >= 16 and cd >= 8 and md >= 10:
+            hs.klass = "DL"
+        
+        if hs.klass:
+            hs.nComponents = Hotspot.make_graph(group, clusters, max_collisions=max_collisions)
+            if hs.nComponents > 1:
+                hs.klass = None
         return hs
     
     @staticmethod
@@ -320,7 +319,8 @@ class Hotspot:
         group: str,
         pocket_residues: Dict[str, Any],
         clusters: List[Cluster],
-        allow_nested: bool
+        allow_nested: bool,
+        max_collisions: float=0.25
     ) -> List[Hotspot]:
         
         # filter out weak clusters
@@ -331,7 +331,7 @@ class Hotspot:
         spots = []
         pockets = find_occupied_pockets(group, pocket_residues, clusters)
         for hs_sele, pocket_clusters in pockets.items():
-            hs = Hotspot.from_clusters(group, pocket_clusters)
+            hs = Hotspot.from_clusters(group, pocket_clusters, max_collisions=max_collisions)
             if hs.klass:
                 hs.selection = hs_sele
                 spots.append(hs)
@@ -340,7 +340,7 @@ class Hotspot:
         for r in range(1, 4):
             for comb in combinations(clusters, r):
                 comb = list(comb)
-                hs = Hotspot.from_clusters(group, comb, disable_L=True)
+                hs = Hotspot.from_clusters(group, comb, max_collisions=max_collisions)
                 if hs.klass:
                     spots.append(hs)
         
@@ -428,7 +428,7 @@ class Hotspot:
                             pm.distance(measure_name, e[0], e[1], mode=4)
                             pm.color('cyan', measure_name)
 
-    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=50) -> int:
+    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=50, max_collisions: float=0.25) -> int:
         g = nx.Graph()
         # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
         g.add_nodes_from([c.selection for c in clusters])
@@ -444,7 +444,7 @@ class Hotspot:
                 atoms2_collided = np.any(collision, axis=0) # Vetor (M,)
                 
                 # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
-                if np.mean(atoms1_collided) < 0.25 and np.mean(atoms2_collided) < 0.25:
+                if np.mean(atoms1_collided) < max_collisions and np.mean(atoms2_collided) < max_collisions:
                     g.add_edge(c1.selection, c2.selection)
         return nx.number_connected_components(g)
 
@@ -484,7 +484,7 @@ class Hotspot:
     
 @new_command
 def show_hs(selections: List[str]) -> Hotspot:
-    hs = Hotspot.from_cluster_selections(selections)
+    hs = Hotspot.from_cluster_selections(selections, max_collisions=0.20)
     hs.show()
     print(hs)
     return hs
@@ -498,6 +498,7 @@ def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
     allow_nested: bool = False,
+    max_collisions: float = 0.20,
 ):
     try:
         pm.set('defer_updates', 1)
@@ -530,7 +531,8 @@ def load_ftmap(
 def _load_ftmap(
     filename: Path,
     group: str = "",
-    allow_nested: bool = False
+    allow_nested: bool = False,
+    max_collisions: float = 0.20,
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -564,7 +566,7 @@ def _load_ftmap(
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
     pocket_residues = find_pykvf_pockets(f"{group}.protein")
-    hotspots = Hotspot.find_hotspots(group, pocket_residues, clusters, allow_nested)
+    hotspots = Hotspot.find_hotspots(group, pocket_residues, clusters, allow_nested, max_collisions=max_collisions)
 
     pm.hide("everything", f"{group}.*")
 
@@ -1311,6 +1313,12 @@ class LoadWidget(QWidget):
         self.allowNested = QCheckBox()
         self.allowNested.setChecked(False)
         boxLayout.addRow("Allow nested hotspots", self.allowNested)
+
+        self.maxCollisions = QDoubleSpinBox()
+        self.maxCollisions.setRange(0.0, 1.0)
+        self.maxCollisions.setSingleStep(0.05)
+        self.maxCollisions.setValue(0.25)
+        boxLayout.addRow("Max collisions", self.maxCollisions)
         
     def pickFile(self):
         fileDIalog = QFileDialog()
@@ -1342,6 +1350,7 @@ class LoadWidget(QWidget):
 
     def load(self):
         allow_nested = self.allowNested.isChecked()
+        max_collisions = self.maxCollisions.value()
         try:
             filenames = []
             groups = []
@@ -1357,6 +1366,7 @@ class LoadWidget(QWidget):
             filenames,
             groups=groups,
             allow_nested=allow_nested,
+            max_collisions=max_collisions,
         )
 
 
