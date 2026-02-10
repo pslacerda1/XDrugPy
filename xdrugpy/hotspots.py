@@ -517,9 +517,9 @@ def load_ftmap(
                 iter.append((filename, os.path.splitext(os.path.basename(filename))[0]))
         for fnames, groups in iter:
             try:
-                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested))
+                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested, max_collisions=max_collisions))
             except:
-                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested))
+                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested, max_collisions=max_collisions))
         if single:
             return rets[0]
         else:
