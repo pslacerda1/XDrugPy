@@ -552,7 +552,7 @@ def _load_ftmap(
     group = pm.get_legal_name(group)
     
     pm.delete(f"%{group}")
-    pm.load(filename, quiet=1)
+    pm.load(str(filename), quiet=1)
 
     if objs := pm.get_object_list("*_protein"):
         assert len(objs) == 1
@@ -695,11 +695,13 @@ def get_fo(
     """
     xyz1 = pm.get_coords(sel1)
     xyz2 = pm.get_coords(sel2)
-
-    dist = distance_matrix(xyz1, xyz2) <= radius
-    nc = np.sum(np.any(dist, axis=1))
-    nt = len(xyz1)
-    fo = nc / nt
+    if xyz1 is None or xyz2 is None:
+        fo = 0
+    else:
+        dist = distance_matrix(xyz1, xyz2) <= radius
+        nc = np.sum(np.any(dist, axis=1))
+        nt = len(xyz1)
+        fo = nc / nt
     if not quiet:
         print(f"FO: {fo:.2f}")
     return fo
@@ -733,8 +735,10 @@ def get_dc(
     """
     xyz1 = pm.get_coords(sel1)
     xyz2 = pm.get_coords(sel2)
-    
-    dc = (distance_matrix(xyz1, xyz2) < radius).sum()
+    if xyz1 is None or xyz2 is None:
+        dc = 0
+    else:
+        dc = (distance_matrix(xyz1, xyz2) < radius).sum()
     if not quiet:
         print(f"DC: {dc:.2f}")
     return dc
@@ -1252,6 +1256,7 @@ def plot_euclidean_hca(
 from pymol import Qt
 
 QWidget = Qt.QtWidgets.QWidget
+QScrollArea = Qt.QtWidgets.QScrollArea
 QFileDialog = Qt.QtWidgets.QFileDialog
 QFormLayout = Qt.QtWidgets.QFormLayout
 QPushButton = Qt.QtWidgets.QPushButton
@@ -1592,7 +1597,7 @@ class SimilarityWidget(QWidget):
         layout = QHBoxLayout()
         mainLayout.addLayout(layout)
 
-        groupBox = QGroupBox("Pairwise similarity")
+        groupBox = QGroupBox("Univariate analysis")
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
@@ -1617,7 +1622,7 @@ class SimilarityWidget(QWidget):
         plotButton.clicked.connect(self.plot_pairwise)
         boxLayout.addWidget(plotButton)
 
-        groupBox = QGroupBox("Hierarchical Cluster Analysis")
+        groupBox = QGroupBox("Multivariate analysis")
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
@@ -1701,16 +1706,27 @@ class CountWidget(QWidget):
         drawButton.clicked.connect(self.draw_projection)
         boxLayout.addWidget(drawButton)
 
-        groupBox = QGroupBox("Fingerprint vector")
-        layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
+        fptBox = QGroupBox("Fingerprint vector")
+        layout.addWidget(fptBox)
+
+        fptLayout = QVBoxLayout(fptBox)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        fptLayout.addWidget(scroll)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        
+        scrollLayout = QFormLayout(container)
+        
+        
 
         self.multiSelesLine = QLineEdit("")
-        boxLayout.addRow("Multi sele:", self.multiSelesLine)
+        scrollLayout.addRow("Multi sele:", self.multiSelesLine)
 
         self.siteSelectionLine = QLineEdit("*")
-        boxLayout.addRow("Focus site:", self.siteSelectionLine)
+        scrollLayout.addRow("Focus site:", self.siteSelectionLine)
 
         self.siteRadiusSpin = QDoubleSpinBox()
         self.siteRadiusSpin.setValue(5)
@@ -1718,7 +1734,7 @@ class CountWidget(QWidget):
         self.siteRadiusSpin.setSingleStep(1)
         self.siteRadiusSpin.setMinimum(0)
         self.siteRadiusSpin.setMaximum(10)
-        boxLayout.addRow("Site radius:", self.siteRadiusSpin)
+        scrollLayout.addRow("Site radius:", self.siteRadiusSpin)
 
         self.contactRadiusSpin = QDoubleSpinBox()
         self.contactRadiusSpin.setValue(4)
@@ -1726,11 +1742,11 @@ class CountWidget(QWidget):
         self.contactRadiusSpin.setSingleStep(0.5)
         self.contactRadiusSpin.setMinimum(3)
         self.contactRadiusSpin.setMaximum(6)
-        boxLayout.addRow("Contact radius:", self.contactRadiusSpin)
+        scrollLayout.addRow("Contact radius:", self.contactRadiusSpin)
 
         self.omegaCheck = QCheckBox()
         self.omegaCheck.setChecked(False)
-        boxLayout.addRow("Clustal Omega:", self.omegaCheck)
+        scrollLayout.addRow("Clustal Omega:", self.omegaCheck)
 
         @self.omegaCheck.stateChanged.connect
         def stateChanged(checkState):
@@ -1740,8 +1756,8 @@ class CountWidget(QWidget):
                 omegaBox.setEnabled(False)
 
         omegaBox = QGroupBox()
-        boxLayout.addRow(omegaBox)
-        boxLayout.setWidget(boxLayout.rowCount(), QFormLayout.SpanningRole, omegaBox)
+        scrollLayout.addRow(omegaBox)
+        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, omegaBox)
         omegaLayout = QFormLayout()
         omegaBox.setLayout(omegaLayout)
         omegaBox.setEnabled(False)
@@ -1752,7 +1768,7 @@ class CountWidget(QWidget):
 
         self.fingerprintsCheck = QCheckBox()
         self.fingerprintsCheck.setChecked(False)
-        boxLayout.addRow("Fingerprints:", self.fingerprintsCheck)
+        scrollLayout.addRow("Fingerprints:", self.fingerprintsCheck)
         @self.fingerprintsCheck.stateChanged.connect
         def stateChanged(checkState):
             if checkState == QtCore.Qt.Checked:
@@ -1761,8 +1777,8 @@ class CountWidget(QWidget):
                 fptBox.setEnabled(False)
 
         fptBox = QGroupBox()
-        boxLayout.addRow(fptBox)
-        boxLayout.setWidget(boxLayout.rowCount(), QFormLayout.SpanningRole, fptBox)
+        scrollLayout.addRow(fptBox)
+        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, fptBox)
         fptLayout = QFormLayout()
         fptBox.setLayout(fptLayout)
         fptBox.setEnabled(False)
@@ -1784,7 +1800,7 @@ class CountWidget(QWidget):
         self.hcaCheck = QCheckBox()
         self.hcaCheck.setChecked(False)
 
-        boxLayout.addRow("Clustering:", self.hcaCheck)
+        scrollLayout.addRow("Clustering:", self.hcaCheck)
         @self.hcaCheck.stateChanged.connect
         def stateChanged(checkState):
             if checkState == QtCore.Qt.Checked:
@@ -1793,8 +1809,8 @@ class CountWidget(QWidget):
                 hcaBox.setEnabled(False)
 
         hcaBox = QGroupBox()
-        boxLayout.addRow(hcaBox)
-        boxLayout.setWidget(boxLayout.rowCount(), QFormLayout.SpanningRole, hcaBox)
+        scrollLayout.addRow(hcaBox)
+        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, hcaBox)
         hcaLayout = QFormLayout()
         hcaBox.setLayout(hcaLayout)
         hcaBox.setEnabled(False)
