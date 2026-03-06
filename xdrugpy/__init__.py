@@ -8,6 +8,10 @@ from .utils import RESOURCES_DIR
 
 SYSTEM = platform.system().lower()
 
+if 'XDRUGPY_EXPERIMENTAL' in os.environ:
+    XDRUGPY_EXPERIMENTAL_VERSION = True
+else:
+    XDRUGPY_EXPERIMENTAL_VERSION = False
 
 @pm.extend
 def install_xdrugpy_requirements():
@@ -79,8 +83,9 @@ def __init_plugin__(app=None):
     from .multi import __init_plugin__ as __init_multi__
 
     __init_hotspots__()
-    __init_docking__()
-    __init_multi__()
+    if XDRUGPY_EXPERIMENTAL_VERSION:
+        __init_docking__()
+        __init_multi__()
 
     pm.undo_disable()
     

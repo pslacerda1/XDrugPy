@@ -20,6 +20,7 @@ from strenum import StrEnum
 import networkx as nx
 import pyKVFinder
 
+from . import XDRUGPY_EXPERIMENTAL_VERSION
 from .utils import (
     new_command,
     Selection,
@@ -1444,11 +1445,12 @@ class TableWidget(QWidget):
                 "CD",
                 "MD",
                 "Length",
-                "isComplex",
             ],
             ("CS", "CS"): ["ST"],
-            ("ACS", "ACS"): ["Class", "ST", "MD"],
         }
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            self.hotspotsMap[("Hotspots", "Hs")].append("isComplex")
+            self.hotspotsMap[("ACS", "ACS")] = ["Class", "ST", "MD"]
 
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
@@ -1899,7 +1901,8 @@ class MainDialog(QDialog):
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
         tab.addTab(SimilarityWidget(), "Similarity")
-        tab.addTab(CountWidget(), "Fingerprints")
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            tab.addTab(CountWidget(), "Fingerprints")
 
         layout.addWidget(tab)
 
