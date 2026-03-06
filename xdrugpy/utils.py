@@ -401,17 +401,19 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
                     medoids[color] = set()
                 medoids[color].add(leaf_label1)
 
+    medoid_labels = set(itertools.chain.from_iterable(medoids.values()))
+    label_to_color = dict(zip(dendro["ivl"], dendro["leaves_color_list"]))
     ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
-    for color in colors:
-        for label in ticklabels:
-            if label.get_text() in medoids[color]:
-                label.set_color(color)
-                label.set_fontstyle("italic")
     
-    if hide_threshold and color_threshold > 0.0:
-        visible_labels = set(itertools.chain.from_iterable(medoids.values()))
-        for label in ticklabels:
-            if label.get_text() not in visible_labels:
+    for label in ticklabels:
+        color = label_to_color[label.get_text()]
+        label.set_color(color)
+        if color in medoids and label.get_text() in medoids[color]:
+            label.set_fontstyle("italic")
+            label.set_fontweight('bold')
+    
+        if hide_threshold and color_threshold > 0.0:
+            if label.get_text() not in medoid_labels:
                 label.set_visible(False)
     
     if not axis:
