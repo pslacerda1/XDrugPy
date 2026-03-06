@@ -96,7 +96,7 @@ def get_clusters():
 def set_properties(obj, obj_name, properties):
     for prop, value in properties.items():
         pm.set_property(prop, value, obj_name)
-        pm.set_atom_property(prop, value, obj_name)
+        # pm.set_atom_property(prop, value, obj_name)
         setattr(obj, prop, value)
 
 

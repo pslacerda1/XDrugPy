@@ -23,7 +23,7 @@ def install_xdrugpy_requirements():
     try:
         import pyKVFinder
     except:
-        os.system("pip install --no-deps pyKVFinder")
+        os.system("pip install --no-deps pykvfinder")
 
     #
     # Install Vina
