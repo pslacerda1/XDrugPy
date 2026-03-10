@@ -783,6 +783,11 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
+class DistanceMethod(StrEnum):
+    EUCLIDEAN = "euclidean"
+    CITYBLOCK = "cityblock"
+    DICE = "dice"
+
 @new_command
 def fpt_sim(
     multi_seles: Selection,
@@ -795,7 +800,7 @@ def fpt_sim(
     sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = 0.0,
-    hide_threshold: bool = False,
+    keep_repr: bool = False,
     annotate: bool = True,
     plot_fingerprints: str = "",
     share_ylim: bool = True,
@@ -951,7 +956,7 @@ def fpt_sim(
             labels,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
-            hide_threshold=hide_threshold,
+            keep_repr=keep_repr,
             annotate=annotate,
             axis=ax,
             vmin=0,
@@ -1197,6 +1202,8 @@ def plot_euclidean_hca(
     hide_threshold: bool = False,
     annotate: bool = False,
     plot: str = None,
+    dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
+    enable_heatmap: bool = False,
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1246,8 +1253,8 @@ def plot_euclidean_hca(
 
     
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
-    X = distance.pdist(p)
-    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, plot)
+    X = distance.pdist(p, dist_method)
+    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, plot, enable_heatmap=enable_heatmap)
 
 
 #
@@ -1441,7 +1448,6 @@ class TableWidget(QWidget):
                 "ST",
                 "S0",
                 "S1",
-                "SZ",
                 "CD",
                 "MD",
                 "Length",
@@ -1568,21 +1574,21 @@ class SimilarityWidget(QWidget):
         mainLayout = QVBoxLayout()
         self.setLayout(mainLayout)
 
-        groupBox = QGroupBox("General")
+        self.hotspotSeleLine = QLineEdit("*")
+        mainLayout.addWidget(self.hotspotSeleLine)
+
+        groupBox = QGroupBox("Parameters")
         mainLayout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.hotspotSeleLine = QLineEdit()
-        boxLayout.addRow("Hotspots:", self.hotspotSeleLine)
-
-        self.annotateCheck = QCheckBox()
-        self.annotateCheck.setChecked(True)
-        boxLayout.addRow("Annotate:", self.annotateCheck)
-
         self.linkageMethodCombo = QComboBox()
         self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
         boxLayout.addRow("Linkage:", self.linkageMethodCombo)
+
+        self.distanceMethodCombo = QComboBox()
+        self.distanceMethodCombo.addItems([e.value for e in DistanceMethod])
+        boxLayout.addRow("Distance:", self.distanceMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
         self.colorThresholdSpin.setMinimum(0)
@@ -1592,81 +1598,43 @@ class SimilarityWidget(QWidget):
         self.colorThresholdSpin.setDecimals(2)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
-        self.hideThresholdCheck = QCheckBox()
-        self.hideThresholdCheck.setChecked(False)
-        boxLayout.addRow("Hide threshold:", self.hideThresholdCheck)
+        outlookBox = QGroupBox("Outlook")
+        mainLayout.addWidget(outlookBox)
+        outlookLayout = QFormLayout()
+        outlookBox.setLayout(outlookLayout)
 
-        layout = QHBoxLayout()
-        mainLayout.addLayout(layout)
+        self.annotateCheck = QCheckBox()
+        self.annotateCheck.setChecked(True)
+        outlookLayout.addRow("Annotate:", self.annotateCheck)
 
-        groupBox = QGroupBox("Univariate analysis")
-        layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
+        self.enableHeatmapCheck = QCheckBox()
+        outlookLayout.addRow("Heatmap:", self.enableHeatmapCheck)
 
-        self.functionCombo = QComboBox()
-        self.functionCombo.addItems([e.value for e in PairwiseFunction])
-        boxLayout.addRow("Function:", self.functionCombo)
-
-        self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(4)
-        self.radiusSpin.setSingleStep(0.5)
-        self.radiusSpin.setDecimals(2)
-        self.radiusSpin.setMinimum(1)
-        self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Radius:", self.radiusSpin)
-
-        self.pairwiseSeqAlignCheck = QCheckBox()
-        self.pairwiseSeqAlignCheck.setChecked(False)
-        boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
-
+        self.keepReprCheck = QCheckBox()
+        self.keepReprCheck.setChecked(False)
+        outlookLayout.addRow("Representative hotspot:", self.keepReprCheck)     
         plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_pairwise)
-        boxLayout.addWidget(plotButton)
-
-        groupBox = QGroupBox("Multivariate analysis")
-        layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
-
-        plotButton = QPushButton("Plot")
+        
         plotButton.clicked.connect(self.plot_euclidean_hca)
-        boxLayout.addWidget(plotButton)
-
-    def plot_pairwise(self):
-        sele = self.hotspotSeleLine.text()
-        function = self.functionCombo.currentText()
-        radius = self.radiusSpin.value()
-        align = self.pairwiseSeqAlignCheck.isChecked()
-        linkage_method = self.linkageMethodCombo.currentText()
-        color_threshold = self.colorThresholdSpin.value()
-        hide_threshold = self.hideThresholdCheck.isChecked()
-        annotate = self.annotateCheck.isChecked()
-
-        plot_pairwise_clustering(
-            sele,
-            function,
-            radius,
-            align,
-            annotate,
-            linkage_method,
-            color_threshold,
-            hide_threshold,
-        )
+        mainLayout.addWidget(plotButton)
 
     def plot_euclidean_hca(self):
         sele = self.hotspotSeleLine.text()
         linkage_method = self.linkageMethodCombo.currentText()
+        dist_method = self.distanceMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
-        hide_threshold = self.hideThresholdCheck.isChecked()
+        keep_repr = self.keepReprCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
+        enable_heatmap = self.enableHeatmapCheck.isChecked()
 
         return plot_euclidean_hca(
             sele,
             linkage_method,
             color_threshold,
-            hide_threshold,
+            keep_repr,
             annotate,
+            dist_method=dist_method,
+            enable_heatmap=enable_heatmap,
         )
 
 
@@ -1833,9 +1801,9 @@ class CountWidget(QWidget):
         self.colorThresholdSpin.setDecimals(2)
         hcaLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
-        self.hideThresholdCheck = QCheckBox()
-        self.hideThresholdCheck.setChecked(False)
-        hcaLayout.addRow("Hide threshold:", self.hideThresholdCheck)
+        self.keepReprCheck = QCheckBox()
+        self.keepReprCheck.setChecked(False)
+        hcaLayout.addRow("Representative hotspots:", self.keepReprCheck)
         
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_fingerprint)
@@ -1865,7 +1833,7 @@ class CountWidget(QWidget):
         annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
-        hide_threshold = self.hideThresholdCheck.isChecked()
+        keepRepr = self.keepReprCheck.isChecked()
 
         fpt_sim(
             multi_seles,
@@ -1882,7 +1850,7 @@ class CountWidget(QWidget):
             annotate=annotate,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
-            hide_threshold=hide_threshold,
+            keep_repr=keepRepr,
         )
         plt.show()
 
@@ -1900,7 +1868,7 @@ class MainDialog(QDialog):
         tab = QTabWidget()
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
-        tab.addTab(SimilarityWidget(), "Similarity")
+        tab.addTab(SimilarityWidget(), "HCA")
         if XDRUGPY_EXPERIMENTAL_VERSION:
             tab.addTab(CountWidget(), "Fingerprints")
 
