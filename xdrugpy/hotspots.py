@@ -795,7 +795,7 @@ def fpt_sim(
     sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = 0.0,
-    hide_threshold: bool = False,
+    only_medoids: bool = False,
     annotate: bool = True,
     plot_fingerprints: str = "",
     share_ylim: bool = True,
@@ -951,7 +951,7 @@ def fpt_sim(
             labels,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
-            hide_threshold=hide_threshold,
+            only_medoids=only_medoids,
             annotate=annotate,
             axis=ax,
             vmin=0,
@@ -1082,7 +1082,7 @@ class PairwiseFunction(StrEnum):
 
 
 @new_command
-def plot_pairwise_clustering(
+def plot_univariate_hca(
     sele: Selection,
     function: PairwiseFunction = PairwiseFunction.HO,
     radius: float = 2.0,
@@ -1090,8 +1090,9 @@ def plot_pairwise_clustering(
     annotate: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
-    hide_threshold: bool = False,
+    only_medoids: bool = False,
     plot: str = "",
+    enable_heatmap: bool = False,
 ):
     """
     Compute the similarity between matching objects using a similarity function.
@@ -1137,7 +1138,7 @@ def plot_pairwise_clustering(
                         seq_align=align,
                     )
             X.append(1 - ret)
-    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, hide_threshold, annotate, plot, vmin=0, vmax=1)
+    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, only_medoids, annotate, plot, vmin=0, vmax=1, enable_heatmap=enable_heatmap)
     return X, objects, dendro, medoids
 
 
@@ -1189,14 +1190,22 @@ def hs_proj(
     pm.spectrum("q", palette=palette, selection=protein)
 
 
+class DistanceMethod(StrEnum):
+    EUCLIDEAN = "euclidean"
+    CITYBLOCK = "cityblock"
+    DICE = "dice"
+
+
 @new_command
-def plot_euclidean_hca(
+def plot_multivariate_hca(
     exprs: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
-    hide_threshold: bool = False,
+    only_medoids: bool = False,
     annotate: bool = False,
     plot: str = None,
+    dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
+    enable_heatmap: bool = False,
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1246,9 +1255,111 @@ def plot_euclidean_hca(
 
     
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
-    X = distance.pdist(p)
-    return plot_hca_base(X, labels, linkage_method, color_threshold, hide_threshold, annotate, plot)
+    X = distance.pdist(p, dist_method)
+    return plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap)
 
+
+class OccupancyFunction(StrEnum):
+    FO = "fo"
+    DC = "dc"
+    DCE = "dce"
+
+
+class OccupancyTriangle(StrEnum):
+    BOTH = "both"
+    LOWER = "lower"
+    UPPER = "upper"
+
+
+@new_command
+def plot_occupancy_matrix(
+    sele_a: str,
+    sele_b: Optional[str] = None,
+    function: OccupancyFunction = OccupancyFunction.FO,
+    radius: float = 2.0,
+    triangle: OccupancyTriangle = OccupancyTriangle.BOTH,
+    annotate: bool = False
+
+):
+    objs_a = pm.get_object_list(sele_a)
+    if sele_b.strip():
+        objs_b = pm.get_object_list(sele_b)
+    else:
+        objs_b = objs_a
+    
+    match function:
+        case OccupancyFunction.FO:
+            get_value = get_fo
+        case OccupancyFunction.DC:
+            get_value = get_dc
+        case OccupancyFunction.DCE:
+            get_value = get_dce
+
+    ret = []
+    X = []
+    for i1, a in enumerate(objs_a):
+        row = []
+        for i2, b in enumerate(objs_b):
+            value = float('nan')
+            match triangle:
+                case OccupancyTriangle.BOTH:
+                    value = get_value(a, b, radius=radius)
+                case OccupancyTriangle.LOWER:
+                    if i1 >= i2:
+                        value = get_value(a, b, radius=radius)
+                case OccupancyTriangle.UPPER:
+                    if i1 <= i2:
+                        value = get_value(a, b, radius=radius)
+            row.append(value)
+            ret.append([a, b, value])
+        X.append(row)
+    
+    X = np.array(X)
+    fig, ax = plt.subplots(constrained_layout=True)
+    
+    ax.set_yticks(range(len(objs_a)), objs_a)
+    ax.set_xticks(range(len(objs_b)), objs_b)
+
+    match triangle:
+        case OccupancyTriangle.BOTH:
+            pass
+        case OccupancyTriangle.LOWER:
+            ax.xaxis.tick_bottom()
+            ax.yaxis.tick_left()
+        case OccupancyTriangle.UPPER:
+            ax.xaxis.tick_top()
+            ax.yaxis.tick_right()
+
+    ax.tick_params(axis="x", rotation=90)
+    if function == OccupancyFunction.FO:
+        vmin = 0.0
+        vmax = 1.0
+    else:
+        vmin = None
+        vmax = None
+    image = ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
+    if not annotate:
+        fig.colorbar(image, ax=ax, shrink=0.8)
+
+    if annotate:
+        nan_mask = np.isnan(X)
+        xmax = vmax or X[~nan_mask].max()
+        xmin = vmin or X[~nan_mask].min()
+        for i1, a in enumerate(objs_a):
+            for i2, b in enumerate(objs_b):
+                y = X[i1, i2]
+                if np.isnan(y):
+                    continue
+                if (y - xmin)/(xmax - xmin) >= 0.5:
+                    color = "black"
+                else:
+                    color = "white"
+                if function == OccupancyFunction.DC:
+                    label = f"{y}"
+                else:
+                    label = f"{y:.2f}"
+                ax.text(i2, i1, label, color=color, ha="center", va="center")
+    return pd.DataFrame.from_records(ret, columns=['a', 'b', 'value'])
 
 #
 # GRAPHICAL USER INTERFACE
@@ -1441,7 +1552,6 @@ class TableWidget(QWidget):
                 "ST",
                 "S0",
                 "S1",
-                "SZ",
                 "CD",
                 "MD",
                 "Length",
@@ -1449,7 +1559,8 @@ class TableWidget(QWidget):
             ("CS", "CS"): ["ST"],
         }
         if XDRUGPY_EXPERIMENTAL_VERSION:
-            self.hotspotsMap[("Hotspots", "Hs")].append("isComplex")
+            self.hotspotsMap[("Hotspots", "HS")].insert(4, "SZ")
+            self.hotspotsMap[("Hotspots", "HS")].append("isComplex")
             self.hotspotsMap[("ACS", "ACS")] = ["Class", "ST", "MD"]
 
         self.tables = {}
@@ -1560,7 +1671,7 @@ class TableWidget(QWidget):
         return item
 
 
-class SimilarityWidget(QWidget):
+class HcaWidget(QWidget):
 
     def __init__(self):
         super().__init__()
@@ -1568,17 +1679,13 @@ class SimilarityWidget(QWidget):
         mainLayout = QVBoxLayout()
         self.setLayout(mainLayout)
 
-        groupBox = QGroupBox("General")
+        self.hotspotSeleLine = QLineEdit("*")
+        mainLayout.addWidget(self.hotspotSeleLine)
+
+        groupBox = QGroupBox("Parameters")
         mainLayout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
-
-        self.hotspotSeleLine = QLineEdit()
-        boxLayout.addRow("Hotspots:", self.hotspotSeleLine)
-
-        self.annotateCheck = QCheckBox()
-        self.annotateCheck.setChecked(True)
-        boxLayout.addRow("Annotate:", self.annotateCheck)
 
         self.linkageMethodCombo = QComboBox()
         self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
@@ -1586,15 +1693,21 @@ class SimilarityWidget(QWidget):
 
         self.colorThresholdSpin = QDoubleSpinBox()
         self.colorThresholdSpin.setMinimum(0)
-        self.colorThresholdSpin.setMaximum(10)
+        self.colorThresholdSpin.setMaximum(100)
         self.colorThresholdSpin.setValue(0)
         self.colorThresholdSpin.setSingleStep(0.1)
         self.colorThresholdSpin.setDecimals(2)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
-        self.hideThresholdCheck = QCheckBox()
-        self.hideThresholdCheck.setChecked(False)
-        boxLayout.addRow("Hide threshold:", self.hideThresholdCheck)
+        self.enableHeatmapCheck = QCheckBox()
+        boxLayout.addRow("Heatmap:", self.enableHeatmapCheck)
+
+        self.annotateCheck = QCheckBox()
+        boxLayout.addRow("Annotate:", self.annotateCheck)
+
+        self.onlyMedoidsCheck = QCheckBox()
+        self.onlyMedoidsCheck.setChecked(False)
+        boxLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
 
         layout = QHBoxLayout()
         mainLayout.addLayout(layout)
@@ -1604,9 +1717,9 @@ class SimilarityWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.functionCombo = QComboBox()
-        self.functionCombo.addItems([e.value for e in PairwiseFunction])
-        boxLayout.addRow("Function:", self.functionCombo)
+        self.univariateFunctionCombo = QComboBox()
+        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+        boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(4)
@@ -1621,7 +1734,7 @@ class SimilarityWidget(QWidget):
         boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
 
         plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_pairwise)
+        plotButton.clicked.connect(self.plot_univariate)
         boxLayout.addWidget(plotButton)
 
         groupBox = QGroupBox("Multivariate analysis")
@@ -1629,45 +1742,164 @@ class SimilarityWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
+        self.multivariateFunctionCombo = QComboBox()
+        self.multivariateFunctionCombo.addItems([e.value for e in DistanceMethod])
+        boxLayout.addRow("Distance:", self.multivariateFunctionCombo)
+
         plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_euclidean_hca)
+        plotButton.clicked.connect(self.plot_multivariate_hca)
         boxLayout.addWidget(plotButton)
 
-    def plot_pairwise(self):
+    def plot_univariate(self):
         sele = self.hotspotSeleLine.text()
-        function = self.functionCombo.currentText()
+        function = self.univariateFunctionCombo.currentText()
         radius = self.radiusSpin.value()
         align = self.pairwiseSeqAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
-        hide_threshold = self.hideThresholdCheck.isChecked()
+        only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
+        enable_heatmap = self.enableHeatmapCheck.isChecked()
 
-        plot_pairwise_clustering(
-            sele,
-            function,
-            radius,
-            align,
-            annotate,
-            linkage_method,
-            color_threshold,
-            hide_threshold,
+        plot_univariate_hca(
+            sele=sele,
+            function=function,
+            radius=radius,
+            align=align,
+            annotate=annotate,
+            linkage_method=linkage_method,
+            color_threshold=color_threshold,
+            only_medoids=only_medoids,
+            enable_heatmap=enable_heatmap,
         )
 
-    def plot_euclidean_hca(self):
+    def plot_multivariate_hca(self):
         sele = self.hotspotSeleLine.text()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
-        hide_threshold = self.hideThresholdCheck.isChecked()
+        only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
+        dist_method = self.multivariateFunctionCombo.currentText()
+        enable_heatmap = self.enableHeatmapCheck.isChecked()
 
-        return plot_euclidean_hca(
-            sele,
-            linkage_method,
-            color_threshold,
-            hide_threshold,
-            annotate,
+        plot_multivariate_hca(
+            exprs=sele,
+            linkage_method=linkage_method,
+            color_threshold=color_threshold,
+            only_medoids=only_medoids,
+            annotate=annotate,
+            dist_method=dist_method,
+            enable_heatmap=enable_heatmap,
         )
+
+class OccupancyWidget(QWidget):
+
+    def __init__(self):
+        super().__init__()
+        
+        layout = QFormLayout()
+        self.setLayout(layout)
+
+        seleContainer = QWidget()
+        seleLayout = QHBoxLayout(seleContainer)
+        seleLayout.setContentsMargins(0, 0, 0 , 0)
+        
+        layout.addRow("Selections:", seleContainer)
+        
+        self.aSeleLine = QLineEdit()
+        self.aSeleLine.setPlaceholderText("Selection A...")
+        seleLayout.addWidget(self.aSeleLine)
+        @self.aSeleLine.textChanged.connect
+        def textChanged(text):
+            a_text = text.strip()
+            b_ph = "Selection B..."
+            if a_text != "":
+                b_ph = a_text
+            self.bSeleLine.setPlaceholderText(b_ph)
+
+        self.bSeleLine = QLineEdit()
+        self.bSeleLine.setPlaceholderText("Selection B...")
+        seleLayout.addWidget(self.bSeleLine)
+        
+        self.functionCombo = QComboBox()
+        self.functionCombo.addItems([e.value for e in OccupancyFunction])
+        layout.addRow("Function:", self.functionCombo)
+
+        self.radiusSpin = QDoubleSpinBox()
+        self.radiusSpin.setValue(2)
+        self.radiusSpin.setSingleStep(0.5)
+        self.radiusSpin.setDecimals(2)
+        self.radiusSpin.setMinimum(1)
+        self.radiusSpin.setMaximum(10)
+        layout.addRow("Radius:", self.radiusSpin)
+
+        self.triangleCombo = QComboBox()
+        self.triangleCombo.addItems([e.value for e in OccupancyTriangle])
+        layout.addRow("Triangle:", self.triangleCombo)
+        
+        self.annotateCheck = QCheckBox()
+        self.annotateCheck.setChecked(True)
+        layout.addRow("Annotate:", self.annotateCheck)
+
+        hContainer = QWidget()
+        hLayout = QHBoxLayout(hContainer)
+        layout.addRow(hContainer)
+
+        plotButton = QPushButton("Plot")
+        plotButton.clicked.connect(self.plot_occupancy)
+        hLayout.addWidget(plotButton)
+
+        exportButton = QPushButton("Export")
+        exportButton.clicked.connect(self.export_occupancy)
+        hLayout.addWidget(exportButton)
+        
+    def plot_occupancy(self):
+        sele_a = self.aSeleLine.text().strip()
+        sele_b = self.bSeleLine.text().strip()
+        function = self.functionCombo.currentText()
+        radius = self.radiusSpin.value()
+        triangle = self.triangleCombo.currentText()
+        annotate = self.annotateCheck.isChecked()
+        
+        plot_occupancy_matrix(
+            sele_a=sele_a,
+            sele_b=sele_b,
+            function=function,
+            radius=radius,
+            triangle=triangle,
+            annotate=annotate
+        )
+        plt.show()
+    
+    def export_occupancy(self):
+        sele_a = self.aSeleLine.text().strip()
+        sele_b = self.bSeleLine.text().strip()
+        function = self.functionCombo.currentText()
+        radius = self.radiusSpin.value()
+        triangle = self.triangleCombo.currentText()
+        annotate = self.annotateCheck.isChecked()
+        
+        table_df = plot_occupancy_matrix(
+            sele_a=sele_a,
+            sele_b=sele_b,
+            function=function,
+            radius=radius,
+            triangle=triangle,
+            annotate=annotate
+        )
+        plt.close()
+
+        fileDialog = QFileDialog()
+        fileDialog.setNameFilter("Excel file (*.xlsx)")
+        fileDialog.setViewMode(QFileDialog.Detail)
+        fileDialog.setAcceptMode(QFileDialog.AcceptSave)
+        fileDialog.setDefaultSuffix(".xlsx")
+
+        if fileDialog.exec_():
+            filename = fileDialog.selectedFiles()[0]
+            # ext = os.path.splitext(filename)[1]
+            with pd.ExcelWriter(filename) as xlsx_writer:
+                table_df.to_excel(xlsx_writer, sheet_name='Occupancy', index=False)
 
 
 class CountWidget(QWidget):
@@ -1833,9 +2065,9 @@ class CountWidget(QWidget):
         self.colorThresholdSpin.setDecimals(2)
         hcaLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
-        self.hideThresholdCheck = QCheckBox()
-        self.hideThresholdCheck.setChecked(False)
-        hcaLayout.addRow("Hide threshold:", self.hideThresholdCheck)
+        self.onlyMedoidsCheck = QCheckBox()
+        self.onlyMedoidsCheck.setChecked(False)
+        hcaLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
         
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_fingerprint)
@@ -1865,7 +2097,7 @@ class CountWidget(QWidget):
         annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
-        hide_threshold = self.hideThresholdCheck.isChecked()
+        only_medoids = self.onlyMedoidsCheck.isChecked()
 
         fpt_sim(
             multi_seles,
@@ -1882,7 +2114,7 @@ class CountWidget(QWidget):
             annotate=annotate,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
-            hide_threshold=hide_threshold,
+            only_medoids=only_medoids,
         )
         plt.show()
 
@@ -1900,7 +2132,8 @@ class MainDialog(QDialog):
         tab = QTabWidget()
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
-        tab.addTab(SimilarityWidget(), "Similarity")
+        tab.addTab(HcaWidget(), "HCA")
+        tab.addTab(OccupancyWidget(), "Occupancy")
         if XDRUGPY_EXPERIMENTAL_VERSION:
             tab.addTab(CountWidget(), "Fingerprints")
 

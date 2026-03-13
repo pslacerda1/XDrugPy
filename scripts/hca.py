@@ -6,8 +6,8 @@ from os.path import expanduser
 from glob import glob
 from xdrugpy.hotspots import (
     load_ftmap,
-    plot_pairwise_clustering,
-    plot_euclidean_hca,
+    plot_univariate_hca,
+    plot_multivariate_hca,
     PairwiseFunction,
     LinkageMethod
 )
@@ -51,24 +51,24 @@ for file in files[:25]:
 # strong hotspots with at least p.S0>20 that remained from the previous successive
 # loading and deletions. You can think this as univariate HCA or no HCA at all,
 # just a simple way to cluster hotspots.
-plot_pairwise_clustering(
+plot_univariate_hca(
     '*.D* AND p.S0>20',
     function=PairwiseFunction.HO,
     radius=2.0,
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=2.5,     # probably you'll need to adjust this variable
-    hide_threshold=True,     # hide every hotspot except the medoid
+    only_medoids=True,       # hide every hotspot except the medoid
     annotate=False,          # is desirable the value at each cell?
 )
 
 # The standard HCA over the same hotspots of the previous analysis. This one
 # calculates the distance over the aggregation of hotspot properties, including
 # coordinates of center-of-mass.
-plot_euclidean_hca(
+plot_multivariate_hca(
     '*.D* AND p.S0>20',
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=1.5,
-    hide_threshold=True,
+    only_medoids=True,
     annotate=False,
 )
 

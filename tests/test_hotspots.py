@@ -5,8 +5,8 @@ import numpy as np
 import matplotlib as mpl
 from xdrugpy.hotspots import (
     load_ftmap,
-    plot_euclidean_hca,
-    plot_pairwise_clustering,
+    plot_multivariate_hca,
+    plot_univariate_hca,
     PairwiseFunction,
     fpt_sim,
     res_sim,
@@ -52,7 +52,7 @@ def test_euclidean_hca():
     expr = "*.D.*"
     img_ref = f"{pkg_data}/test_euclidean_hca_ref.svg"
     img_gen = f"{pkg_data}/test_euclidean_hca_gen.svg"
-    dendro, medoids = plot_euclidean_hca(
+    dendro, medoids = plot_multivariate_hca(
         expr,
         color_threshold=4,
         annotate=True,
@@ -77,7 +77,7 @@ def test_pairwise_clustering():
     
     img_ref = f"{pkg_data}/test_pairwise_hca_ref.svg"
     img_gen = f"{pkg_data}/test_pairwise_hca_gen.svg"
-    plot_pairwise_clustering(
+    plot_univariate_hca(
         expr,
         function=PairwiseFunction.RESIDUE_JACCARD,
         radius=4,

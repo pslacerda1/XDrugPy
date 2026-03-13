@@ -300,17 +300,21 @@ def align_groups(
             pm.matrix_copy(f"{mobile}.protein", inner)
 
 
-def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold, annotate, axis, vmin=None, vmax=None):
+def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, annotate, axis, vmin=None, vmax=None, enable_heatmap=False):
     if isinstance(axis, axes.Axes):
         fig = axis.get_figure()
         fig.clear()
     else:
         fig, ax = plt.subplots(constrained_layout=True)
         ax.remove()
-    
-    gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
-    ax_dend_top = fig.add_subplot(gs[0])
-    ax_heat = fig.add_subplot(gs[1])
+
+    if enable_heatmap:
+        gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
+        ax_dend_top = fig.add_subplot(gs[0])
+        ax_heat = fig.add_subplot(gs[1])
+    else:
+        gs = fig.add_gridspec(1, 1, height_ratios=[1], wspace=0.01, hspace=0.01)
+        ax_dend_top = fig.add_subplot(gs[0])
     
     Z = linkage(dists, method=linkage_method, optimal_ordering=True)
     dendro = sch.dendrogram(
@@ -321,40 +325,39 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
         distance_sort=True,
         leaf_rotation=90,
         ax=ax_dend_top,
-        no_labels=True,
+        no_labels=enable_heatmap,
     )
     if color_threshold > 0:
         ax_dend_top.axhline(color_threshold, color="gray", ls="--")
-    ax_dend_top.set_ylim(bottom=-0.005)
+        ax_dend_top.set_ylim(bottom=-0.005)
 
     dists = distance.squareform(dists)
-
     X = dists
     X = X[dendro["leaves"], :]
     X = X[:, dendro["leaves"]]
 
-    ax_heat.set_xticks(range(len(dendro["ivl"])), dendro["ivl"])
-    ax_heat.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
-    ax_heat.tick_params(axis="x", rotation=90)
-    ax_heat.yaxis.tick_right()
-    ax_heat.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
-
-    if annotate:
-        for i1, x1 in enumerate(X):
-            for i2, x2 in enumerate(X):
-                y = X[i1, i2]
-                if vmin is not None and vmax is not None:
-                    if y > (vmax - vmin) / 2 + vmin:
+    if enable_heatmap:
+        ax_heat.set_xticks(range(len(dendro["ivl"])), dendro["ivl"])
+        ax_heat.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
+        ax_heat.tick_params(axis="x", rotation=90)
+        ax_heat.yaxis.tick_right()
+        image = ax_heat.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
+        
+        if not annotate:
+            fig.colorbar(image, ax=ax_heat, shrink=0.8)
+        if annotate:
+            xmin = vmin or X.min()
+            xmax = vmax or X.max()
+            
+            for i1, x1 in enumerate(X):
+                for i2, x2 in enumerate(X):
+                    y = X[i1, i2]
+                    if (y - xmin)/(xmax - xmin) >= 0.5:
                         color = "black"
                     else:
                         color = "white"
-                else:
-                    if y >= 0.5 * X.mean():
-                        color = "black"
-                    else:
-                        color = "white"
-                label = f"{y:.2f}"
-                ax_heat.text(i2, i1, label, color=color, ha="center", va="center")
+                    label = f"{y:.2f}"
+                    ax_heat.text(i2, i1, label, color=color, ha="center", va="center")
 
     # Calcular a soma das distâncias para cada ponto do cluster
     cl_d_sums = defaultdict(float)
@@ -400,11 +403,15 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
                 if color not in medoids:
                     medoids[color] = set()
                 medoids[color].add(leaf_label1)
-
-    medoid_labels = set(itertools.chain.from_iterable(medoids.values()))
-    label_to_color = dict(zip(dendro["ivl"], dendro["leaves_color_list"]))
-    ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
     
+    medoids_labels = set(itertools.chain.from_iterable(medoids.values()))
+    label_to_color = dict(zip(dendro["ivl"], dendro["leaves_color_list"]))
+    if enable_heatmap:
+        ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
+    else:
+        ticklabels = ax_dend_top.get_xticklabels()
+    
+
     for label in ticklabels:
         color = label_to_color[label.get_text()]
         label.set_color(color)
@@ -412,10 +419,10 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, hide_threshold
             label.set_fontstyle("italic")
             label.set_fontweight('bold')
     
-        if hide_threshold and color_threshold > 0.0:
-            if label.get_text() not in medoid_labels:
+        if only_medoids and color_threshold > 0.0:
+            if label.get_text() not in medoids_labels:
                 label.set_visible(False)
-    
+        
     if not axis:
         fig.show()
     elif isinstance(axis, (str, Path)):
@@ -533,54 +540,6 @@ QTextEdit = Qt.QtWidgets.QTextEdit
 QtCore = Qt.QtCore
 QIcon = Qt.QtGui.QIcon
 QTextCursor = Qt.QtGui.QTextCursor
-
-
-def display_exception():
-    """Display exception with Rich formatting on GUI."""
-    
-    if pm.gui.get_qtwindow():
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        traceback = Traceback.from_exception(
-            exc_type,
-            exc_value, 
-            exc_traceback,
-            show_locals=True,
-            width=120,
-            extra_lines=3,
-            word_wrap=True,
-        )
-        console = Console(
-            record=True,
-            file=io.StringIO(),  # null handler
-            width=120,
-            tab_size=4,
-        )
-        console.print(traceback)
-
-    
-        dialog = QDialog()
-        dialog.setWindowTitle("Error Display")
-        dialog.setGeometry(100, 100, 900, 700)
-        dialog.setWindowModality(QtCore.Qt.ApplicationModal)
-
-        layout = QVBoxLayout(dialog)
-        
-        text_edit = QTextEdit()
-        layout.addWidget(text_edit)
-        
-        # Export to HTML with inline styles
-        html = console.export_html(
-            inline_styles=True,
-            code_format="<pre>{code}</pre>",
-            theme=terminal_theme.NIGHT_OWLISH
-        )
-        text_edit.setHtml(html)
-        text_edit.setReadOnly(True)
-        text_edit.moveCursor(QTextCursor.End)
-
-        dialog.exec_()
-    else:
-        raise
 
 
 
