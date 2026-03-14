@@ -1265,19 +1265,12 @@ class OccupancyFunction(StrEnum):
     DCE = "dce"
 
 
-class OccupancyTriangle(StrEnum):
-    BOTH = "both"
-    LOWER = "lower"
-    UPPER = "upper"
-
-
 @new_command
 def plot_occupancy_matrix(
     sele_a: str,
     sele_b: Optional[str] = None,
     function: OccupancyFunction = OccupancyFunction.FO,
     radius: float = 2.0,
-    triangle: OccupancyTriangle = OccupancyTriangle.BOTH,
     annotate: bool = False
 
 ):
@@ -1300,16 +1293,7 @@ def plot_occupancy_matrix(
     for i1, a in enumerate(objs_a):
         row = []
         for i2, b in enumerate(objs_b):
-            value = float('nan')
-            match triangle:
-                case OccupancyTriangle.BOTH:
-                    value = get_value(a, b, radius=radius)
-                case OccupancyTriangle.LOWER:
-                    if i1 >= i2:
-                        value = get_value(a, b, radius=radius)
-                case OccupancyTriangle.UPPER:
-                    if i1 <= i2:
-                        value = get_value(a, b, radius=radius)
+            value = get_value(a, b, radius=radius)
             row.append(value)
             ret.append([a, b, value])
         X.append(row)
@@ -1319,16 +1303,6 @@ def plot_occupancy_matrix(
     
     ax.set_yticks(range(len(objs_a)), objs_a)
     ax.set_xticks(range(len(objs_b)), objs_b)
-
-    match triangle:
-        case OccupancyTriangle.BOTH:
-            pass
-        case OccupancyTriangle.LOWER:
-            ax.xaxis.tick_bottom()
-            ax.yaxis.tick_left()
-        case OccupancyTriangle.UPPER:
-            ax.xaxis.tick_top()
-            ax.yaxis.tick_right()
 
     ax.tick_params(axis="x", rotation=90)
     if function == OccupancyFunction.FO:
@@ -1833,10 +1807,6 @@ class OccupancyWidget(QWidget):
         self.radiusSpin.setMaximum(10)
         layout.addRow("Radius:", self.radiusSpin)
 
-        self.triangleCombo = QComboBox()
-        self.triangleCombo.addItems([e.value for e in OccupancyTriangle])
-        layout.addRow("Triangle:", self.triangleCombo)
-        
         self.annotateCheck = QCheckBox()
         self.annotateCheck.setChecked(True)
         layout.addRow("Annotate:", self.annotateCheck)
@@ -1858,7 +1828,6 @@ class OccupancyWidget(QWidget):
         sele_b = self.bSeleLine.text().strip()
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
-        triangle = self.triangleCombo.currentText()
         annotate = self.annotateCheck.isChecked()
         
         plot_occupancy_matrix(
@@ -1866,7 +1835,6 @@ class OccupancyWidget(QWidget):
             sele_b=sele_b,
             function=function,
             radius=radius,
-            triangle=triangle,
             annotate=annotate
         )
         plt.show()
@@ -1876,7 +1844,6 @@ class OccupancyWidget(QWidget):
         sele_b = self.bSeleLine.text().strip()
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
-        triangle = self.triangleCombo.currentText()
         annotate = self.annotateCheck.isChecked()
         
         table_df = plot_occupancy_matrix(
@@ -1884,7 +1851,6 @@ class OccupancyWidget(QWidget):
             sele_b=sele_b,
             function=function,
             radius=radius,
-            triangle=triangle,
             annotate=annotate
         )
         plt.close()
