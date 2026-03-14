@@ -1359,7 +1359,7 @@ def plot_occupancy_matrix(
                 else:
                     label = f"{y:.2f}"
                 ax.text(i2, i1, label, color=color, ha="center", va="center")
-    return pd.DataFrame.from_records(ret, columns=['a', 'b', 'value'])
+    return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
 
 #
 # GRAPHICAL USER INTERFACE
