@@ -1878,14 +1878,14 @@ class CountWidget(QWidget):
 
         groupBox = QGroupBox("Color projection")
         layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
+        projBox = QFormLayout()
+        groupBox.setLayout(projBox)
 
         self.multiSeleLine = QLineEdit()
-        boxLayout.addRow("Expressions:", self.multiSeleLine)
+        projBox.addRow("Expressions:", self.multiSeleLine)
 
         self.proteinExpressionLine = QLineEdit()
-        boxLayout.addRow("Protein:", self.proteinExpressionLine)
+        projBox.addRow("Protein:", self.proteinExpressionLine)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(4)
@@ -1893,18 +1893,18 @@ class CountWidget(QWidget):
         self.radiusSpin.setSingleStep(0.5)
         self.radiusSpin.setMinimum(2)
         self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Contact radius:", self.radiusSpin)
+        projBox.addRow("Contact radius:", self.radiusSpin)
 
         self.typeCombo = QComboBox()
         self.typeCombo.addItems([e.value for e in PrioritizationType])
-        boxLayout.addRow("Type:", self.typeCombo)
+        projBox.addRow("Type:", self.typeCombo)
 
         self.paletteLine = QLineEdit("rainbow")
-        boxLayout.addRow("Palette:", self.paletteLine)
+        projBox.addRow("Palette:", self.paletteLine)
 
         drawButton = QPushButton("Draw")
         drawButton.clicked.connect(self.draw_projection)
-        boxLayout.addWidget(drawButton)
+        projBox.addWidget(drawButton)
 
         fptBox = QGroupBox("Fingerprint vector")
         layout.addWidget(fptBox)
@@ -2037,7 +2037,7 @@ class CountWidget(QWidget):
         
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_fingerprint)
-        boxLayout.addWidget(plotButton)
+        scrollLayout.addWidget(plotButton)
 
     def draw_projection(self):
         hotspots = self.multiSeleLine.text()
