@@ -1266,7 +1266,7 @@ class OccupancyFunction(StrEnum):
 
 
 @new_command
-def plot_occupancy_matrix(
+def plot_overlap_matrix(
     sele_a: str,
     sele_b: Optional[str] = None,
     function: OccupancyFunction = OccupancyFunction.FO,
@@ -1766,7 +1766,7 @@ class HcaWidget(QWidget):
             enable_heatmap=enable_heatmap,
         )
 
-class OccupancyWidget(QWidget):
+class OverlapWidget(QWidget):
 
     def __init__(self):
         super().__init__()
@@ -1820,7 +1820,7 @@ class OccupancyWidget(QWidget):
         hLayout.addWidget(plotButton)
 
         exportButton = QPushButton("Export")
-        exportButton.clicked.connect(self.export_occupancy)
+        exportButton.clicked.connect(self.export_overlap)
         hLayout.addWidget(exportButton)
         
     def plot_occupancy(self):
@@ -1830,7 +1830,7 @@ class OccupancyWidget(QWidget):
         radius = self.radiusSpin.value()
         annotate = self.annotateCheck.isChecked()
         
-        plot_occupancy_matrix(
+        plot_overlap_matrix(
             sele_a=sele_a,
             sele_b=sele_b,
             function=function,
@@ -1839,14 +1839,14 @@ class OccupancyWidget(QWidget):
         )
         plt.show()
     
-    def export_occupancy(self):
+    def export_overlap(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
         annotate = self.annotateCheck.isChecked()
         
-        table_df = plot_occupancy_matrix(
+        table_df = plot_overlap_matrix(
             sele_a=sele_a,
             sele_b=sele_b,
             function=function,
@@ -1854,7 +1854,7 @@ class OccupancyWidget(QWidget):
             annotate=annotate
         )
         plt.close()
-
+        
         fileDialog = QFileDialog()
         fileDialog.setNameFilter("Excel file (*.xlsx)")
         fileDialog.setViewMode(QFileDialog.Detail)
@@ -2099,7 +2099,7 @@ class MainDialog(QDialog):
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
         tab.addTab(HcaWidget(), "HCA")
-        tab.addTab(OccupancyWidget(), "Occupancy")
+        tab.addTab(OverlapWidget(), "Overlap")
         if XDRUGPY_EXPERIMENTAL_VERSION:
             tab.addTab(CountWidget(), "Fingerprints")
 
