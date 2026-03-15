@@ -1360,10 +1360,12 @@ QTableWidget = Qt.QtWidgets.QTableWidget
 QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
 QGroupBox = Qt.QtWidgets.QGroupBox
 QHeaderView = Qt.QtWidgets.QHeaderView
+QStyledItemDelegate = Qt.QtWidgets.QStyledItemDelegate
 
 QtCore = Qt.QtCore
+QLocale = Qt.QtCore.QLocale
 QIcon = Qt.QtGui.QIcon
-
+QDoubleValidator = Qt.QtGui.QDoubleValidator
 
 class LoadWidget(QWidget):
 
@@ -1473,6 +1475,17 @@ class SortableItem(QTableWidgetItem):
             self.setData(QtCore.Qt.ItemDataRole.DisplayRole, f"{obj:.2f}")
         except (ValueError, TypeError):
             self.setData(QtCore.Qt.ItemDataRole.DisplayRole, str(obj))
+
+
+class FloatDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = QLineEdit(parent)
+        
+        validator = QDoubleValidator(editor)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        
+        editor.setValidator(validator)
+        return editor
 
 
 class TableWidget(QWidget):
@@ -1766,6 +1779,53 @@ class HcaWidget(QWidget):
             enable_heatmap=enable_heatmap,
         )
 
+class LigandTableWidget(QTableWidget):
+    def __init__(self):
+        super().__init__()
+        self.setSelectionBehavior(QTableWidget.SelectRows)
+        self.setSelectionMode(QTableWidget.SingleSelection)
+        self.setColumnCount(2)
+        self.setHorizontalHeaderLabels(["Object", "Activity"])
+        header = self.horizontalHeader()
+        for idx in range(2):
+            header.setSectionResizeMode(
+                idx, QHeaderView.ResizeMode.ResizeToContents
+            )
+        self.setItemDelegateForColumn(1, FloatDelegate())
+        self.selection = None
+
+    def refresh(self, objects):
+        self.setSortingEnabled(False)
+        while self.rowCount() > 0:
+            self.removeRow(0)
+        for obj in objects:
+            self.insertRow(self.rowCount())
+            line = self.rowCount() - 1
+
+            item = QTableWidgetItem(obj)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+
+            self.setItem(line, 0, item)
+            self.setItem(line, 1, QTableWidgetItem(""))
+        self.setSortingEnabled(True)
+    
+    def getDataFrame(self):
+        rows = self.rowCount()
+        cols = 2        
+        headers = [
+            self.horizontalHeaderItem(c).text()
+            for c in range(cols)
+        ]
+        data = []
+        for r in range(rows):
+            obj = self.item(r, 0).text()
+            value = self.item(r, 1).text()
+            if not value:
+                continue
+            data.append([obj, float(value.replace(",", "."))])
+        return pd.DataFrame(data, columns=headers)
+
+
 class OverlapWidget(QWidget):
 
     def __init__(self):
@@ -1776,7 +1836,7 @@ class OverlapWidget(QWidget):
 
         seleContainer = QWidget()
         seleLayout = QHBoxLayout(seleContainer)
-        seleLayout.setContentsMargins(0, 0, 0 , 0)
+        seleLayout.setContentsMargins(0, 0, 0, 0)
         
         layout.addRow("Selections:", seleContainer)
         
@@ -1793,6 +1853,18 @@ class OverlapWidget(QWidget):
 
         self.bSeleLine = QLineEdit()
         self.bSeleLine.setPlaceholderText("Selection B...")
+        @self.bSeleLine.textChanged.connect
+        def textChanged(sele):
+            objs = pm.get_object_list(sele)
+            if objs is None:
+                objs = []
+            self.table.refresh(objs)
+            if objs:
+                self.table.setEnabled(True)
+                plotButton.setEnabled(True)
+            else:
+                self.table.setEnabled(False)
+                plotButton.setEnabled(False)
         seleLayout.addWidget(self.bSeleLine)
         
         self.functionCombo = QComboBox()
@@ -1816,14 +1888,28 @@ class OverlapWidget(QWidget):
         layout.addRow(hContainer)
 
         plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_occupancy)
+        plotButton.clicked.connect(self.plot_overlap)
         hLayout.addWidget(plotButton)
 
         exportButton = QPushButton("Export")
         exportButton.clicked.connect(self.export_overlap)
         hLayout.addWidget(exportButton)
-        
-    def plot_occupancy(self):
+
+        self.table = LigandTableWidget()
+        self.table.setEnabled(False)
+        layout.addRow(self.table)
+
+        hContainer = QWidget()
+        hLayout = QHBoxLayout(hContainer)
+        layout.addRow(hContainer)
+
+        plotButton = QPushButton("Plot")
+        plotButton.setEnabled(False)
+        plotButton.clicked.connect(self.plot_overlap_scatter)
+        hLayout.addWidget(plotButton)
+
+
+    def plot_overlap(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
         function = self.functionCombo.currentText()
@@ -1854,7 +1940,7 @@ class OverlapWidget(QWidget):
             annotate=annotate
         )
         plt.close()
-        
+
         fileDialog = QFileDialog()
         fileDialog.setNameFilter("Excel file (*.xlsx)")
         fileDialog.setViewMode(QFileDialog.Detail)
@@ -1866,6 +1952,52 @@ class OverlapWidget(QWidget):
             # ext = os.path.splitext(filename)[1]
             with pd.ExcelWriter(filename) as xlsx_writer:
                 table_df.to_excel(xlsx_writer, sheet_name='Occupancy', index=False)
+
+    def plot_overlap_scatter(self):
+        sele_a = self.aSeleLine.text().strip()
+        sele_b = self.bSeleLine.text().strip()
+        function = self.functionCombo.currentText()
+        radius = self.radiusSpin.value()
+        annotate = self.annotateCheck.isChecked()
+        
+        overlap_df = plot_overlap_matrix(
+            sele_a=sele_a,
+            sele_b=sele_b,
+            function=function,
+            radius=radius,
+            annotate=annotate
+        ).rename(columns={'B': 'Ligand'})
+        plt.close()
+
+        affinity_df = self.table.getDataFrame()
+        affinity_df = affinity_df.rename(columns={'Object': 'Ligand'})
+        affinity_df = affinity_df.set_index('Ligand')
+
+        df = overlap_df.join(affinity_df, on='Ligand', how='left')
+        function_col = function.upper()
+
+        fig, ax = plt.subplots(constrained_layout=True)
+        for label, subset_df in df.groupby('A'):
+            subset_df = subset_df.sort_values(by=[function_col, 'Activity'])
+            ax.plot(
+                subset_df[function_col],
+                subset_df['Activity'],
+                label=label
+            )
+            rows = zip(subset_df[function_col], subset_df['Activity'], subset_df['Ligand'])
+            for x, y, s in rows:
+                ax.text(x, y, s)
+        
+        ax.set_xlabel(function_col)
+        ax.set_ylabel('Activity')
+
+        if len(set(overlap_df['A'])) > 1:
+            ax.legend(
+                loc='best',
+                fontsize='small',
+                ncol=3,
+            )
+        plt.show()
 
 
 class CountWidget(QWidget):
@@ -2108,10 +2240,13 @@ class MainDialog(QDialog):
 
 dialog = None
 
-
 def run_plugin_gui():
     global dialog
     if dialog is None:
+        
+        locale = QLocale(QLocale.English, QLocale.UnitedStates)
+        QLocale.setDefault(locale)
+
         dialog = MainDialog()
     dialog.show()
 
