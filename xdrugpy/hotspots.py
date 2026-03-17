@@ -1335,6 +1335,69 @@ def plot_overlap_matrix(
                 ax.text(i2, i1, label, color=color, ha="center", va="center")
     return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
 
+
+def calc_medchem_bind_metrics(lig_sele, pki):
+    mw = 0
+    for at in pm.get_model(lig_sele).atom:
+        mw += at.get_mass()
+    ha = pm.count_atoms(f"({lig_sele}) and !elem H")
+    bei = pki / mw
+    le = pki / ha
+    fq = le / (0.0715 + 7.5328/ha + 25.7079/ha**2 - 361.4722/ha**3)
+    return {
+        'sele': lig_sele,
+        'ha': ha,
+        'mw': mw,
+        'pki': pki,
+        'bei': bei,
+        'le': le,
+        'fq': fq
+    }
+
+def plot_overlap_activity_scatter(hs_sele, sele_b, function, radius, annotate, bind_df):
+    if len(pm.get_object_list(hs_sele)) != 1:
+        raise ValueError("Only one hotspot can be analyzed at time.")
+    overlap_df = plot_overlap_matrix(
+        sele_a=hs_sele,
+        sele_b=sele_b,
+        function=function,
+        radius=radius,
+        annotate=annotate
+    ).rename(columns={'B': 'Ligand'})
+    plt.close()
+
+    # identify the fragment
+    ix_frag = np.argmin(bind_df['HA'])
+    
+    # merge dataframes
+    bind_df.rename(columns={'sele': 'Ligand'})
+    df = overlap_df.join(bind_df, on='Ligand', how='left')
+    function_col = function.upper()
+
+    # do the actual plot
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, constrained_layout=True)
+    for ax, metric in [
+        (ax1, 'PKI'),
+        (ax2, 'LE'),
+        (ax3, 'BEI'),
+        (ax4, 'FQ'),
+    ]:
+        for label, subset_df in df.groupby('A'):
+            x = subset_df[function_col] / subset_df[function_col].iloc[ix_frag]
+            y = subset_df[metric] / subset_df[metric].iloc[ix_frag]
+            ax.scatter(x, y, label=label)
+            rows = zip(x, y, subset_df['Ligand'], subset_df['Label'])
+            for x, y, obj, label in rows:
+                s = label.strip() or obj
+                ax.text(x, y, s)
+        ax.set_xlabel(function_col)
+        ax.set_ylabel(metric)
+    fig.legend(
+        loc='lower center',
+        bbox_to_anchor=(1, 1.02),
+        fontsize='small',
+        ncol=3,
+    )
 #
 # GRAPHICAL USER INTERFACE
 #
@@ -1780,19 +1843,19 @@ class HcaWidget(QWidget):
         )
 
 class LigandTableWidget(QTableWidget):
+    COLUMNS = ["Ligand", "PKI", "LE", "BEI", "FQ", "HA", "MW", "Label"]
     def __init__(self):
         super().__init__()
         self.setSelectionBehavior(QTableWidget.SelectRows)
         self.setSelectionMode(QTableWidget.SingleSelection)
-        self.setColumnCount(2)
-        self.setHorizontalHeaderLabels(["Object", "Activity"])
+        self.setColumnCount(len(self.COLUMNS))
+        self.setHorizontalHeaderLabels(self.COLUMNS)
         header = self.horizontalHeader()
-        for idx in range(2):
+        for idx in range(len(self.COLUMNS)):
             header.setSectionResizeMode(
                 idx, QHeaderView.ResizeMode.ResizeToContents
             )
         self.setItemDelegateForColumn(1, FloatDelegate())
-        self.selection = None
 
     def refresh(self, objects):
         self.setSortingEnabled(False)
@@ -1804,14 +1867,21 @@ class LigandTableWidget(QTableWidget):
 
             item = QTableWidgetItem(obj)
             item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-
             self.setItem(line, 0, item)
+
             self.setItem(line, 1, QTableWidgetItem(""))
+            for ix in range(2, 7):
+                item = QTableWidgetItem("")
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.setItem(line, ix, item)
+            
+            self.setItem(line, 7, QTableWidgetItem(""))
+                
         self.setSortingEnabled(True)
     
     def getDataFrame(self):
         rows = self.rowCount()
-        cols = 2        
+        cols = len(self.COLUMNS)
         headers = [
             self.horizontalHeaderItem(c).text()
             for c in range(cols)
@@ -1819,10 +1889,25 @@ class LigandTableWidget(QTableWidget):
         data = []
         for r in range(rows):
             obj = self.item(r, 0).text()
-            value = self.item(r, 1).text()
-            if not value:
+            pki = self.item(r, 1).text()
+            if not pki:
                 continue
-            data.append([obj, float(value.replace(",", "."))])
+            le = self.item(r, 2).text()
+            bei = self.item(r, 3).text()
+            fq = self.item(r, 4).text()
+            ha = self.item(r, 5).text()
+            mw = self.item(r, 6).text()
+            label = self.item(r, 7).text()
+            data.append([
+                obj,
+                float(pki.replace(",", ".")),
+                float(le.replace(",", ".")),
+                float(bei.replace(",", ".")),
+                float(fq.replace(",", ".")),
+                int(ha),
+                float(mw.replace(",", ".")),
+                label,
+            ])
         return pd.DataFrame(data, columns=headers)
 
 
@@ -1898,6 +1983,23 @@ class OverlapWidget(QWidget):
         self.table = LigandTableWidget()
         self.table.setEnabled(False)
         layout.addRow(self.table)
+        @self.table.itemChanged.connect
+        def itemChanged(item):
+            if item.column() == 1 and item.text() != "":
+                row = item.row()
+                lig_obj = self.table.item(row, 0).text()
+                pki = float(self.table.item(row, 1).text() or 'nan')
+                bind = calc_medchem_bind_metrics(lig_obj, pki)
+                le = bind['le']
+                bei = bind['bei']
+                fq = bind['fq']
+                ha = bind['ha']
+                mw = bind['mw']
+                self.table.item(row, 2).setText(f"{le:.3f}")
+                self.table.item(row, 3).setText(f"{bei:.3f}")
+                self.table.item(row, 4).setText(f"{fq:.3f}")
+                self.table.item(row, 5).setText(f"{ha}")
+                self.table.item(row, 6).setText(f"{mw:.2f}")
 
         hContainer = QWidget()
         hLayout = QHBoxLayout(hContainer)
@@ -1905,7 +2007,7 @@ class OverlapWidget(QWidget):
 
         plotButton = QPushButton("Plot")
         plotButton.setEnabled(False)
-        plotButton.clicked.connect(self.plot_overlap_scatter)
+        plotButton.clicked.connect(self.plot_overlap_activity_scatter)
         hLayout.addWidget(plotButton)
 
 
@@ -1953,50 +2055,24 @@ class OverlapWidget(QWidget):
             with pd.ExcelWriter(filename) as xlsx_writer:
                 table_df.to_excel(xlsx_writer, sheet_name='Occupancy', index=False)
 
-    def plot_overlap_scatter(self):
+    def plot_overlap_activity_scatter(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
         annotate = self.annotateCheck.isChecked()
-        
-        overlap_df = plot_overlap_matrix(
-            sele_a=sele_a,
+
+        bind_df = self.table.getDataFrame()
+        bind_df = bind_df.set_index('Ligand')
+
+        plot_overlap_activity_scatter(
+            hs_sele=sele_a,
             sele_b=sele_b,
             function=function,
             radius=radius,
-            annotate=annotate
-        ).rename(columns={'B': 'Ligand'})
-        plt.close()
-
-        affinity_df = self.table.getDataFrame()
-        affinity_df = affinity_df.rename(columns={'Object': 'Ligand'})
-        affinity_df = affinity_df.set_index('Ligand')
-
-        df = overlap_df.join(affinity_df, on='Ligand', how='left')
-        function_col = function.upper()
-
-        fig, ax = plt.subplots(constrained_layout=True)
-        for label, subset_df in df.groupby('A'):
-            subset_df = subset_df.sort_values(by=[function_col, 'Activity'])
-            ax.plot(
-                subset_df[function_col],
-                subset_df['Activity'],
-                label=label
-            )
-            rows = zip(subset_df[function_col], subset_df['Activity'], subset_df['Ligand'])
-            for x, y, s in rows:
-                ax.text(x, y, s)
-        
-        ax.set_xlabel(function_col)
-        ax.set_ylabel('Activity')
-
-        if len(set(overlap_df['A'])) > 1:
-            ax.legend(
-                loc='best',
-                fontsize='small',
-                ncol=3,
-            )
+            annotate=annotate,
+            bind_df=bind_df
+        )
         plt.show()
 
 
