@@ -1259,7 +1259,7 @@ def plot_multivariate_hca(
     return plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap)
 
 
-class OccupancyFunction(StrEnum):
+class OverlapFunction(StrEnum):
     FO = "fo"
     DC = "dc"
     DCE = "dce"
@@ -1269,7 +1269,7 @@ class OccupancyFunction(StrEnum):
 def plot_overlap_matrix(
     sele_a: str,
     sele_b: Optional[str] = None,
-    function: OccupancyFunction = OccupancyFunction.FO,
+    function: OverlapFunction = OverlapFunction.FO,
     radius: float = 2.0,
     annotate: bool = False
 
@@ -1281,11 +1281,11 @@ def plot_overlap_matrix(
         objs_b = objs_a
     
     match function:
-        case OccupancyFunction.FO:
+        case OverlapFunction.FO:
             get_value = get_fo
-        case OccupancyFunction.DC:
+        case OverlapFunction.DC:
             get_value = get_dc
-        case OccupancyFunction.DCE:
+        case OverlapFunction.DCE:
             get_value = get_dce
 
     ret = []
@@ -1305,7 +1305,7 @@ def plot_overlap_matrix(
     ax.set_xticks(range(len(objs_b)), objs_b)
 
     ax.tick_params(axis="x", rotation=90)
-    if function == OccupancyFunction.FO:
+    if function == OverlapFunction.FO:
         vmin = 0.0
         vmax = 1.0
     else:
@@ -1328,7 +1328,7 @@ def plot_overlap_matrix(
                     color = "black"
                 else:
                     color = "white"
-                if function == OccupancyFunction.DC:
+                if function == OverlapFunction.DC:
                     label = f"{y}"
                 else:
                     label = f"{y:.2f}"
@@ -1429,6 +1429,8 @@ QtCore = Qt.QtCore
 QLocale = Qt.QtCore.QLocale
 QIcon = Qt.QtGui.QIcon
 QDoubleValidator = Qt.QtGui.QDoubleValidator
+QValidator = Qt.QtGui.QValidator
+
 
 class LoadWidget(QWidget):
 
@@ -1540,16 +1542,33 @@ class SortableItem(QTableWidgetItem):
             self.setData(QtCore.Qt.ItemDataRole.DisplayRole, str(obj))
 
 
-class FloatDelegate(QStyledItemDelegate):
+class OptionalPositiveDoubleDelegate(QStyledItemDelegate):
+    class Validator(QDoubleValidator):
+        def validate(self, string, pos):
+            # Se a string estiver vazia, permitimos (retornamos Acceptable)
+            if not string:
+                return QValidator.Acceptable, string, pos
+            
+            # Caso contrário, usamos a validação padrão de números
+            try:
+                float(string) > 0
+                return QValidator.Acceptable, string, pos
+            except ValueError:
+                return super().validate(string, pos)
+            
+    
     def createEditor(self, parent, option, index):
         editor = QLineEdit(parent)
         
-        validator = QDoubleValidator(editor)
+        validator = self.Validator(editor)
         validator.setNotation(QDoubleValidator.Notation.StandardNotation)
         
         editor.setValidator(validator)
         return editor
 
+
+
+    
 
 class TableWidget(QWidget):
 
@@ -1572,6 +1591,7 @@ class TableWidget(QWidget):
                     obj = self.item(item.row(), 0).text()
                     pm.select(obj)
                     pm.enable("sele")
+                    break
 
         def hideEvent(self, evt):
             self.clearSelection()
@@ -1855,7 +1875,16 @@ class LigandTableWidget(QTableWidget):
             header.setSectionResizeMode(
                 idx, QHeaderView.ResizeMode.ResizeToContents
             )
-        self.setItemDelegateForColumn(1, FloatDelegate())
+        self.setItemDelegateForColumn(1, OptionalPositiveDoubleDelegate())
+
+        @self.itemSelectionChanged.connect
+        def itemSelectionChanged():
+            for item in self.selectedItems():
+                obj = self.item(item.row(), 0).text()
+                pm.select(obj)
+                pm.enable("sele")
+                break
+    
 
     def refresh(self, objects):
         self.setSortingEnabled(False)
@@ -1928,32 +1957,15 @@ class OverlapWidget(QWidget):
         self.aSeleLine = QLineEdit()
         self.aSeleLine.setPlaceholderText("Selection A...")
         seleLayout.addWidget(self.aSeleLine)
-        @self.aSeleLine.textChanged.connect
-        def textChanged(text):
-            a_text = text.strip()
-            b_ph = "Selection B..."
-            if a_text != "":
-                b_ph = a_text
-            self.bSeleLine.setPlaceholderText(b_ph)
+        self.aSeleLine.textChanged.connect(self.validateUpdateWidget)
 
         self.bSeleLine = QLineEdit()
         self.bSeleLine.setPlaceholderText("Selection B...")
-        @self.bSeleLine.textChanged.connect
-        def textChanged(sele):
-            objs = pm.get_object_list(sele)
-            if objs is None:
-                objs = []
-            self.table.refresh(objs)
-            if objs:
-                self.table.setEnabled(True)
-                plotButton.setEnabled(True)
-            else:
-                self.table.setEnabled(False)
-                plotButton.setEnabled(False)
+        self.bSeleLine.textChanged.connect(self.validateUpdateWidget)
         seleLayout.addWidget(self.bSeleLine)
         
         self.functionCombo = QComboBox()
-        self.functionCombo.addItems([e.value for e in OccupancyFunction])
+        self.functionCombo.addItems([e.value for e in OverlapFunction])
         layout.addRow("Function:", self.functionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
@@ -1968,49 +1980,95 @@ class OverlapWidget(QWidget):
         self.annotateCheck.setChecked(True)
         layout.addRow("Annotate:", self.annotateCheck)
 
-        hContainer = QWidget()
-        hLayout = QHBoxLayout(hContainer)
-        layout.addRow(hContainer)
+        self.container1 = QWidget()
+        hLayout1 = QHBoxLayout(self.container1)
+        layout.addRow(self.container1)
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_overlap)
-        hLayout.addWidget(plotButton)
+        hLayout1.addWidget(plotButton)
 
         exportButton = QPushButton("Export")
         exportButton.clicked.connect(self.export_overlap)
-        hLayout.addWidget(exportButton)
+        hLayout1.addWidget(exportButton)
 
         self.table = LigandTableWidget()
         self.table.setEnabled(False)
         layout.addRow(self.table)
         @self.table.itemChanged.connect
         def itemChanged(item):
-            if item.column() == 1 and item.text() != "":
-                row = item.row()
-                lig_obj = self.table.item(row, 0).text()
-                pki = float(self.table.item(row, 1).text() or 'nan')
-                bind = calc_medchem_bind_metrics(lig_obj, pki)
-                le = bind['le']
-                bei = bind['bei']
-                fq = bind['fq']
-                ha = bind['ha']
-                mw = bind['mw']
-                self.table.item(row, 2).setText(f"{le:.3f}")
-                self.table.item(row, 3).setText(f"{bei:.3f}")
-                self.table.item(row, 4).setText(f"{fq:.3f}")
-                self.table.item(row, 5).setText(f"{ha}")
-                self.table.item(row, 6).setText(f"{mw:.2f}")
+            self.table.setSortingEnabled(False)
+            row = item.row()
 
-        hContainer = QWidget()
-        hLayout = QHBoxLayout(hContainer)
-        layout.addRow(hContainer)
+            if item.column() == 1:
+                if item.text() == "":
+                    le = ""
+                    bei = ""
+                    fq = ""
+                    ha = ""
+                    mw = ""
+                else:
+                    lig_obj = self.table.item(row, 0).text()
+                    pki = float(self.table.item(row, 1).text())
+                    bind = calc_medchem_bind_metrics(lig_obj, pki)
+                    le = bind['le']
+                    bei = bind['bei']
+                    fq = bind['fq']
+                    ha = bind['ha']
+                    mw = bind['mw']
+                
+                if self.table.item(row, 2):
+                    self.table.item(row, 2).setText(f"{le:.3f}")
+                    self.table.item(row, 3).setText(f"{bei:.3f}")
+                    self.table.item(row, 4).setText(f"{fq:.3f}")
+                    self.table.item(row, 5).setText(f"{ha}")
+                    self.table.item(row, 6).setText(f"{mw:.2f}")
+            self.table.setSortingEnabled(True)
+
+        self.container2 = QWidget()
+        hLayout2 = QHBoxLayout(self.container2)
+        layout.addRow(self.container2)
 
         plotButton = QPushButton("Plot")
-        plotButton.setEnabled(False)
         plotButton.clicked.connect(self.plot_overlap_activity_scatter)
-        hLayout.addWidget(plotButton)
+        hLayout2.addWidget(plotButton)
 
+        exportButton = QPushButton("Export")
+        exportButton.clicked.connect(self.export_ligand_data)
+        hLayout2.addWidget(exportButton)
 
+    def validateUpdateWidget(self):
+        a_sele = self.aSeleLine.text().strip()
+        b_ph = "Selection B..."
+        if a_sele != "":
+            b_ph = a_sele
+        self.bSeleLine.setPlaceholderText(b_ph)
+        objs_a = pm.get_object_list(a_sele)
+        if objs_a is None:
+            objs_a = []
+        if len(objs_a) == 0:
+            self.container1.setEnabled(False)
+        else:
+            self.container1.setEnabled(True)
+
+        b_sele = self.bSeleLine.text().strip()
+        objs_b = pm.get_object_list(b_sele)
+        if objs_b is None:
+            objs_b = []
+        self.table.refresh(objs_b)
+        if len(objs_b) > 0:
+            self.table.setEnabled(True)
+            self.container2.children()[2].setEnabled(True)
+            if len(objs_a) == 1:
+                self.container2.children()[1].setEnabled(True)
+        else:
+            self.table.setEnabled(False)
+            self.container2.children()[1].setEnabled(False)
+            self.container2.children()[2].setEnabled(False)
+        if len(objs_a) != 1:
+            self.container2.children()[1].setEnabled(False)
+            
+    
     def plot_overlap(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
@@ -2053,7 +2111,7 @@ class OverlapWidget(QWidget):
             filename = fileDialog.selectedFiles()[0]
             # ext = os.path.splitext(filename)[1]
             with pd.ExcelWriter(filename) as xlsx_writer:
-                table_df.to_excel(xlsx_writer, sheet_name='Occupancy', index=False)
+                table_df.to_excel(xlsx_writer, sheet_name='Overlap', index=False)
 
     def plot_overlap_activity_scatter(self):
         sele_a = self.aSeleLine.text().strip()
@@ -2074,7 +2132,21 @@ class OverlapWidget(QWidget):
             bind_df=bind_df
         )
         plt.show()
+    
+    def export_ligand_data(self):
+        ligand_df = self.table.getDataFrame()
 
+        fileDialog = QFileDialog()
+        fileDialog.setNameFilter("Excel file (*.xlsx)")
+        fileDialog.setViewMode(QFileDialog.Detail)
+        fileDialog.setAcceptMode(QFileDialog.AcceptSave)
+        fileDialog.setDefaultSuffix(".xlsx")
+
+        if fileDialog.exec_():
+            filename = fileDialog.selectedFiles()[0]
+            # ext = os.path.splitext(filename)[1]
+            with pd.ExcelWriter(filename) as xlsx_writer:
+                ligand_df.to_excel(xlsx_writer, sheet_name='Ligand', index=False)
 
 class CountWidget(QWidget):
 
@@ -2127,7 +2199,6 @@ class CountWidget(QWidget):
         scroll.setWidget(container)
         
         scrollLayout = QFormLayout(container)
-        
         
 
         self.multiSelesLine = QLineEdit("")
@@ -2314,6 +2385,7 @@ class MainDialog(QDialog):
         layout.addWidget(tab)
 
 
+
 dialog = None
 
 def run_plugin_gui():
@@ -2324,6 +2396,7 @@ def run_plugin_gui():
         QLocale.setDefault(locale)
 
         dialog = MainDialog()
+        dialog.setLocale(locale)
     dialog.show()
 
 
