@@ -60,6 +60,7 @@ plot_univariate_hca(
     only_medoids=True,       # hide every hotspot except the medoid
     annotate=False,          # is desirable the value at each cell?
 )
+plt.title("Univariate HCA")
 
 # The standard HCA over the same hotspots of the previous analysis. This one
 # calculates the distance over the aggregation of hotspot properties, including
@@ -71,5 +72,6 @@ plot_multivariate_hca(
     only_medoids=True,
     annotate=False,
 )
+plt.title("Multivariate HCA")
 
 plt.show()  # displays both plots!

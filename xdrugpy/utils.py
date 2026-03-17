@@ -300,7 +300,7 @@ def align_groups(
             pm.matrix_copy(f"{mobile}.protein", inner)
 
 
-def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, annotate, axis, vmin=None, vmax=None, enable_heatmap=False):
+def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, annotate, axis, vmin=None, vmax=None, enable_heatmap=False, rename_leafs=None):
     if isinstance(axis, axes.Axes):
         fig = axis.get_figure()
         fig.clear()
@@ -315,6 +315,10 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, 
     else:
         gs = fig.add_gridspec(1, 1, height_ratios=[1], wspace=0.01, hspace=0.01)
         ax_dend_top = fig.add_subplot(gs[0])
+    
+    for leaf_node, new_label in (rename_leafs or {}).items():
+        idx = labels.index(leaf_node)
+        labels[idx] = new_label
     
     Z = linkage(dists, method=linkage_method, optimal_ordering=True)
     dendro = sch.dendrogram(

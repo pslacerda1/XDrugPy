@@ -1093,6 +1093,7 @@ def plot_univariate_hca(
     only_medoids: bool = False,
     plot: str = "",
     enable_heatmap: bool = False,
+    rename_leafs: Optional[Dict[str, str]] = None
 ):
     """
     Compute the similarity between matching objects using a similarity function.
@@ -1138,7 +1139,7 @@ def plot_univariate_hca(
                         seq_align=align,
                     )
             X.append(1 - ret)
-    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, only_medoids, annotate, plot, vmin=0, vmax=1, enable_heatmap=enable_heatmap)
+    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, only_medoids, annotate, plot, vmin=0, vmax=1, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs)
     return X, objects, dendro, medoids
 
 
@@ -1206,6 +1207,7 @@ def plot_multivariate_hca(
     plot: str = None,
     dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
     enable_heatmap: bool = False,
+    rename_leafs: Optional[Dict[str, str]] = None
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1256,7 +1258,8 @@ def plot_multivariate_hca(
     
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
     X = distance.pdist(p, dist_method)
-    return plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap)
+    dendro, medoids = plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs)
+    return X, object_list, dendro, medoids
 
 
 class OverlapFunction(StrEnum):
@@ -1424,13 +1427,15 @@ QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
 QGroupBox = Qt.QtWidgets.QGroupBox
 QHeaderView = Qt.QtWidgets.QHeaderView
 QStyledItemDelegate = Qt.QtWidgets.QStyledItemDelegate
+QShortcut = Qt.QtWidgets.QShortcut
 
 QtCore = Qt.QtCore
 QLocale = Qt.QtCore.QLocale
 QIcon = Qt.QtGui.QIcon
 QDoubleValidator = Qt.QtGui.QDoubleValidator
+QKeySequence = Qt.QtGui.QKeySequence
 QValidator = Qt.QtGui.QValidator
-
+QApplication = Qt.QtWidgets.QApplication
 
 class LoadWidget(QWidget):
 
@@ -1752,10 +1757,14 @@ class HcaWidget(QWidget):
         self.hotspotSeleLine = QLineEdit("*")
         mainLayout.addWidget(self.hotspotSeleLine)
 
-        groupBox = QGroupBox("Parameters")
+        tab = QTabWidget()
+        mainLayout.addWidget(tab)
+
+        groupBox = QWidget()
         mainLayout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
+        tab.addTab(groupBox, "Parameters")
 
         self.linkageMethodCombo = QComboBox()
         self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
@@ -1778,6 +1787,47 @@ class HcaWidget(QWidget):
         self.onlyMedoidsCheck = QCheckBox()
         self.onlyMedoidsCheck.setChecked(False)
         boxLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
+
+        self.table = QTableWidget()
+        tab.addTab(self.table, "Leaf names")
+        # self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        # self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Name", "Rename"])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.insertRow(0)
+        self.table.setItem(0, 0, QTableWidgetItem(""))
+        self.table.setItem(0, 1, QTableWidgetItem(""))
+        self.shortcut = QShortcut(QKeySequence("Ctrl+V"), self.table)
+        self.shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
+        self.shortcut.activated.connect(self.paste_data)
+        @self.table.itemChanged.connect
+        def itemChanged(item):
+            row = self.table.rowCount()
+            if item.row() != row-1:
+                return
+            if self.table.item(row-1, 0) is None:
+                self.table.insertRow(row)
+                self.table.setItem(row, 0, QTableWidgetItem(""))
+                self.table.setItem(row, 1, QTableWidgetItem(""))
+                return
+            
+            col0_text = self.table.item(row-1, 0)
+            col0_text = col0_text.text().strip()
+            
+            col1_text = self.table.item(row-1, 1)
+            col1_text = col1_text.text().strip()
+
+            if (col0_text == "" and col1_text == ""):
+                return
+            
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(""))
+            self.table.setItem(row, 1, QTableWidgetItem(""))
+            
+            self.table.blockSignals(False)
 
         layout = QHBoxLayout()
         mainLayout.addLayout(layout)
@@ -1820,6 +1870,46 @@ class HcaWidget(QWidget):
         plotButton.clicked.connect(self.plot_multivariate_hca)
         boxLayout.addWidget(plotButton)
 
+    def paste_data(self):
+        if not self.table.isVisible() or not self.table.isEnabled():
+            return
+        
+        clipboard = QApplication.instance().clipboard()
+        mime_data = clipboard.mimeData()
+        if not mime_data.hasText():
+            return
+        text = mime_data.text()
+        rows = text.strip().split('\n')
+
+        self.table.blockSignals(True)
+        while self.table.rowCount() > 0:
+            self.table.removeRow(0)
+        
+        for row_ix, row_text in enumerate(rows):
+            columns = row_text.split('\t')
+            self.table.insertRow(self.table.rowCount())
+
+            for col_ix, col_text in enumerate(columns):
+                if col_ix < self.table.columnCount():
+                    value = col_text.strip().replace(',', '.')
+                    item = QTableWidgetItem(value)
+                    self.table.setItem(row_ix, col_ix, item)
+        self.table.insertRow(self.table.rowCount())
+        self.table.setItem(row_ix+1, 0, QTableWidgetItem(""))
+        self.table.setItem(row_ix+1, 1, QTableWidgetItem(""))
+        self.table.blockSignals(False)
+    
+    def getLeafLabels(self):
+        rows = self.table.rowCount()
+        data = {}
+        for r in range(rows):
+            obj = self.table.item(r, 0).text().strip()
+            lbl = self.table.item(r, 1).text().strip()
+            if obj == "" or lbl == "":
+                continue
+            data[obj] = lbl
+        return data
+    
     def plot_univariate(self):
         sele = self.hotspotSeleLine.text()
         function = self.univariateFunctionCombo.currentText()
@@ -1841,6 +1931,7 @@ class HcaWidget(QWidget):
             color_threshold=color_threshold,
             only_medoids=only_medoids,
             enable_heatmap=enable_heatmap,
+            rename_leafs=self.getLeafLabels(),
         )
 
     def plot_multivariate_hca(self):
@@ -1860,7 +1951,9 @@ class HcaWidget(QWidget):
             annotate=annotate,
             dist_method=dist_method,
             enable_heatmap=enable_heatmap,
+            rename_leafs=self.getLeafLabels(),
         )
+
 
 class LigandTableWidget(QTableWidget):
     COLUMNS = ["Ligand", "PKI", "LE", "BEI", "FQ", "HA", "MW", "Label"]
