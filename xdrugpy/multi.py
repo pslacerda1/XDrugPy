@@ -1,15 +1,7 @@
 import time
 import logging
 from pymol import cmd as pm
-import pandas as pd
 import numpy as np
-from fnmatch import fnmatch
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.cluster import OPTICS
-from matplotlib import pyplot as plt
-from matplotlib.colors import ListedColormap
 from collections import Counter
 from strenum import StrEnum
 from pymol import CmdException

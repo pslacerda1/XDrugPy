@@ -19,7 +19,7 @@ def install_xdrugpy_requirements():
         import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, watchdog, molscrub, pdb2pqr, propka, networkx
     except:
         os.system(
-            "pip install --upgrade"
+            "pip install"
             " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api watchdog molscrub pdb2pqr propka networkx"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
