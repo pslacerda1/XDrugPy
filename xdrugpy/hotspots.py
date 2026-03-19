@@ -987,10 +987,13 @@ def get_ho(
     """
     atoms1 = pm.get_coords(hs1)
     atoms2 = pm.get_coords(hs2)
-    dist = distance_matrix(atoms1, atoms2) <= radius
-    num_contacts1 = np.sum(np.any(dist, axis=1))
-    num_contacts2 = np.sum(np.any(dist, axis=0))
-    ho = (num_contacts1 + num_contacts2) / (len(atoms1) + len(atoms2))
+    if atoms1 is None or atoms2 is None:
+        ho = 0
+    else:
+        dist = distance_matrix(atoms1, atoms2) <= radius
+        num_contacts1 = np.sum(np.any(dist, axis=1))
+        num_contacts2 = np.sum(np.any(dist, axis=0))
+        ho = (num_contacts1 + num_contacts2) / (len(atoms1) + len(atoms2))
     if not quiet:
         print(f"HO: {ho:.2f}")
     return ho
