@@ -438,20 +438,18 @@ class Hotspot:
             for ix2, c2 in enumerate(clusters):
                 if ix1 >= ix2:
                     continue
-                collision = Hotspot.has_collision(group, c1.selection, c2.selection, radius, samples)
+                collisions = Hotspot.detect_collisions(group, c1.selection, c2.selection, radius, samples)
                 # Lógica de Conectividade:
                 # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
-                atoms1_collided = np.any(collision, axis=1) # Vetor (N,)
-                atoms2_collided = np.any(collision, axis=0) # Vetor (M,)
-                
                 # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
-                if np.mean(atoms1_collided) < max_collisions and np.mean(atoms2_collided) < max_collisions:
+                if np.sum(collisions) < max_collisions*collisions.shape[0]*collisions.shape[1]:
                     g.add_edge(c1.selection, c2.selection)
+                
         return nx.number_connected_components(g)
 
     @staticmethod
     @lru_cache
-    def has_collision(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
+    def detect_collisions(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
 
         list_a = pm.get_coords(clu_sele1)
         list_b = pm.get_coords(clu_sele2)
@@ -485,7 +483,7 @@ class Hotspot:
     
 @new_command
 def show_hs(selections: List[str]) -> Hotspot:
-    hs = Hotspot.from_cluster_selections(selections, max_collisions=0.20)
+    hs = Hotspot.from_cluster_selections(selections, max_collisions=0.25)
     hs.show()
     print(hs)
     return hs
@@ -499,7 +497,7 @@ def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
     allow_nested: bool = False,
-    max_collisions: float = 0.20,
+    max_collisions: float = 0.25,
 ):
     try:
         pm.set('defer_updates', 1)
@@ -533,7 +531,7 @@ def _load_ftmap(
     filename: Path,
     group: str = "",
     allow_nested: bool = False,
-    max_collisions: float = 0.20,
+    max_collisions: float = 0.25,
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -1096,7 +1094,8 @@ def plot_univariate_hca(
     only_medoids: bool = False,
     plot: str = "",
     enable_heatmap: bool = False,
-    rename_leafs: Optional[Dict[str, str]] = None
+    rename_leafs: Optional[Dict[str, str]] = None,
+    no_plot: bool = False,
 ):
     """
     Compute the similarity between matching objects using a similarity function.
@@ -1142,7 +1141,7 @@ def plot_univariate_hca(
                         seq_align=align,
                     )
             X.append(1 - ret)
-    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, only_medoids, annotate, plot, vmin=0, vmax=1, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs)
+    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, only_medoids, annotate, plot, vmin=0, vmax=1, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs, no_plot=no_plot)
     return X, objects, dendro, medoids
 
 
@@ -1210,7 +1209,8 @@ def plot_multivariate_hca(
     plot: str = None,
     dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
     enable_heatmap: bool = False,
-    rename_leafs: Optional[Dict[str, str]] = None
+    rename_leafs: Optional[Dict[str, str]] = None,
+    no_plot: bool = False,
 ):
     """
     Compute the similarity dendrogram of hotspots.
@@ -1261,7 +1261,7 @@ def plot_multivariate_hca(
     
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
     X = distance.pdist(p, dist_method)
-    dendro, medoids = plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs)
+    dendro, medoids = plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs, no_plot=no_plot)
     return X, object_list, dendro, medoids
 
 
@@ -1834,31 +1834,32 @@ class HcaWidget(QWidget):
 
         layout = QHBoxLayout()
         mainLayout.addLayout(layout)
+        
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            groupBox = QGroupBox("Univariate analysis")
+            layout.addWidget(groupBox)
+            boxLayout = QFormLayout()
+            groupBox.setLayout(boxLayout)
 
-        groupBox = QGroupBox("Univariate analysis")
-        layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
+            self.univariateFunctionCombo = QComboBox()
+            self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+            boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
-        self.univariateFunctionCombo = QComboBox()
-        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
-        boxLayout.addRow("Function:", self.univariateFunctionCombo)
+            self.radiusSpin = QDoubleSpinBox()
+            self.radiusSpin.setValue(4)
+            self.radiusSpin.setSingleStep(0.5)
+            self.radiusSpin.setDecimals(2)
+            self.radiusSpin.setMinimum(1)
+            self.radiusSpin.setMaximum(10)
+            boxLayout.addRow("Radius:", self.radiusSpin)
 
-        self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(4)
-        self.radiusSpin.setSingleStep(0.5)
-        self.radiusSpin.setDecimals(2)
-        self.radiusSpin.setMinimum(1)
-        self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Radius:", self.radiusSpin)
+            self.pairwiseSeqAlignCheck = QCheckBox()
+            self.pairwiseSeqAlignCheck.setChecked(False)
+            boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
 
-        self.pairwiseSeqAlignCheck = QCheckBox()
-        self.pairwiseSeqAlignCheck.setChecked(False)
-        boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
-
-        plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_univariate)
-        boxLayout.addWidget(plotButton)
+            plotButton = QPushButton("Plot")
+            plotButton.clicked.connect(self.plot_univariate)
+            boxLayout.addWidget(plotButton)
 
         groupBox = QGroupBox("Multivariate analysis")
         layout.addWidget(groupBox)

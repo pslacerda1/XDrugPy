@@ -300,19 +300,20 @@ def align_groups(
             pm.matrix_copy(f"{mobile}.protein", inner)
 
 
-def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, annotate, axis, vmin=None, vmax=None, enable_heatmap=False, rename_leafs=None):
+def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, annotate, axis, vmin=None, vmax=None, enable_heatmap=False, rename_leafs=None, no_plot=False):
     if isinstance(axis, axes.Axes):
         fig = axis.get_figure()
         fig.clear()
-    else:
+    elif not no_plot:
         fig, ax = plt.subplots(constrained_layout=True)
         ax.remove()
-
+        
+    ax_dend_top = None
     if enable_heatmap:
         gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
         ax_dend_top = fig.add_subplot(gs[0])
         ax_heat = fig.add_subplot(gs[1])
-    else:
+    elif not no_plot:
         gs = fig.add_gridspec(1, 1, height_ratios=[1], wspace=0.01, hspace=0.01)
         ax_dend_top = fig.add_subplot(gs[0])
     
@@ -330,8 +331,9 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, 
         leaf_rotation=90,
         ax=ax_dend_top,
         no_labels=enable_heatmap,
+        no_plot=no_plot,
     )
-    if color_threshold > 0:
+    if not no_plot and color_threshold is not None and color_threshold > 0:
         ax_dend_top.axhline(color_threshold, color="gray", ls="--")
         ax_dend_top.set_ylim(bottom=-0.005)
 
@@ -407,30 +409,30 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, 
                 if color not in medoids:
                     medoids[color] = set()
                 medoids[color].add(leaf_label1)
-    
-    medoids_labels = set(itertools.chain.from_iterable(medoids.values()))
-    label_to_color = dict(zip(dendro["ivl"], dendro["leaves_color_list"]))
-    if enable_heatmap:
-        ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
-    else:
-        ticklabels = ax_dend_top.get_xticklabels()
-    
+    if not no_plot:
+        medoids_labels = set(itertools.chain.from_iterable(medoids.values()))
+        label_to_color = dict(zip(dendro["ivl"], dendro["leaves_color_list"]))
+        if enable_heatmap:
+            ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
+        else:
+            ticklabels = ax_dend_top.get_xticklabels()
 
-    for label in ticklabels:
-        color = label_to_color[label.get_text()]
-        label.set_color(color)
-        if color in medoids and label.get_text() in medoids[color]:
-            label.set_fontstyle("italic")
-            label.set_fontweight('bold')
-    
-        if only_medoids and color_threshold > 0.0:
-            if label.get_text() not in medoids_labels:
-                label.set_visible(False)
+        for label in ticklabels:
+            color = label_to_color[label.get_text()]
+            label.set_color(color)
+            if color in medoids and label.get_text() in medoids[color]:
+                label.set_fontstyle("italic")
+                label.set_fontweight('bold')
         
-    if not axis:
-        fig.show()
-    elif isinstance(axis, (str, Path)):
-        fig.savefig(axis)
+            if only_medoids and color_threshold > 0.0:
+                if label.get_text() not in medoids_labels:
+                    label.set_visible(False)
+        
+        if not axis:
+            fig.show()
+        elif isinstance(axis, (str, Path)):
+            fig.savefig(axis)
+    
     return dendro, medoids
 
 
