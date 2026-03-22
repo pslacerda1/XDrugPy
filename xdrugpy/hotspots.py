@@ -53,6 +53,11 @@ class ECluster:
     ST: int
 
 
+@lru_cache(1024)
+def get_coords(sel):
+    return pm.get_coords(sel)
+
+
 def get_clusters():
     clusters = []
     eclusters = []
@@ -60,7 +65,7 @@ def get_clusters():
         if obj.startswith(f"crosscluster."):
             _, _, s, _ = obj.split(".", maxsplit=4)
             pm.remove(f"%{obj} & elem H")
-            coords = pm.get_coords(obj)
+            coords = get_coords(obj)
             clusters.append(
                 Cluster(
                     selection=obj,
@@ -71,7 +76,7 @@ def get_clusters():
         elif obj.startswith("consensus."):
             _, _, s = obj.split(".", maxsplit=3)
             pm.remove(f"%{obj} & elem H")
-            coords = pm.get_coords(obj)
+            coords = get_coords(obj)
             clusters.append(
                 Cluster(
                     selection=obj,
@@ -81,7 +86,7 @@ def get_clusters():
             )
         elif obj.startswith("clust."):
             _, idx, s, probe_type = obj.split(".", maxsplit=4)
-            coords = pm.get_coords(obj)
+            coords = get_coords(obj)
             eclusters.append(
                 ECluster(
                     selection=obj,
@@ -135,20 +140,6 @@ def find_occupied_pockets(
 
         if not pocket_clusters:
             continue
-
-        # p_xyz = pm.get_coords(p_sele)
-        # hs_xyz = pm.get_coords(hs_sele)
-        # if len(hs_xyz) < 4:
-        #     continue
-
-        # hull = ConvexHull(hs_xyz)
-        # surf_ixs = hull.vertices
-        # surf_xyz = hs_xyz[surf_ixs]
-        
-        # d = distance_matrix(surf_xyz, p_xyz) < 3
-        # nc = np.sum(np.any(d, axis=1))
-        # if nc < 0.2 * len(surf_xyz):
-        #     continue
         
         hs_sele = ' | '.join([c.selection for c in pocket_clusters])
         if hs_sele in pockets:
@@ -451,10 +442,10 @@ class Hotspot:
     @lru_cache
     def detect_collisions(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
 
-        list_a = pm.get_coords(clu_sele1)
-        list_b = pm.get_coords(clu_sele2)
+        list_a = get_coords(clu_sele1)
+        list_b = get_coords(clu_sele2)
         
-        prot_xyz = pm.get_coords(f'{group}.protein')
+        prot_xyz = get_coords(f'{group}.protein')
         tree = cKDTree(prot_xyz)
         
         t = np.linspace(0, 1, samples)
@@ -692,8 +683,8 @@ def get_fo(
         state2  hotspot state.
         radius  the radius so sel1 and sel2 are in contact (default: 2).
     """
-    xyz1 = pm.get_coords(sel1)
-    xyz2 = pm.get_coords(sel2)
+    xyz1 = get_coords(sel1)
+    xyz2 = get_coords(sel2)
     if xyz1 is None or xyz2 is None:
         fo = 0
     else:
@@ -732,8 +723,8 @@ def get_dc(
         dc ftmap1234.D.003, REF_LIG, radius=1.5
 
     """
-    xyz1 = pm.get_coords(sel1)
-    xyz2 = pm.get_coords(sel2)
+    xyz1 = get_coords(sel1)
+    xyz2 = get_coords(sel2)
     if xyz1 is None or xyz2 is None:
         dc = 0
     else:
@@ -983,8 +974,8 @@ def get_ho(
         radius  the distance to consider two atoms in contact (default: 2.5)
         quiet   define verbosity
     """
-    atoms1 = pm.get_coords(hs1)
-    atoms2 = pm.get_coords(hs2)
+    atoms1 = get_coords(hs1)
+    atoms2 = get_coords(hs2)
     if atoms1 is None or atoms2 is None:
         ho = 0
     else:
@@ -1026,8 +1017,8 @@ def res_sim(
         res_sim 8DSU.D_001*, 6XHM.D_001*
         res_sim 8DSU.CS_*, 6XHM.CS_*
     """
-    group1 = pm.get_property("Group", hs1)  # FIXME it doesn't works with arbitrary objects
-    group2 = pm.get_property("Group", hs2)
+    group1 = pm.get_property("Group", f"first {hs1}")  # FIXME it doesn't works with arbitrary objects
+    group2 = pm.get_property("Group", f"first {hs2}")
 
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
     sel2 = f"{group2}.protein within {radius} from ({hs2})"
@@ -1112,8 +1103,10 @@ def plot_univariate_hca(
         plot_pairwise_similarity *.D_000_*_* *.DS_*
     """
 
-    
-    objects = pm.get_object_list(sele)
+    if '/' in sele:
+        objects = [s.strip() for s in sele.split('/')]
+    else:
+        objects = pm.get_object_list(sele)
     assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
 
     X = []
@@ -1601,9 +1594,6 @@ class TableWidget(QWidget):
                     pm.enable("sele")
                     break
 
-        def hideEvent(self, evt):
-            self.clearSelection()
-
     def __init__(self):
         super().__init__()
         self.selected_objs = set()
@@ -1613,6 +1603,7 @@ class TableWidget(QWidget):
         self.setLayout(layout)
 
         self.filter_line = QLineEdit("*")
+        self.filter_line.setPlaceholderText("PyMOL Selection Algebra")
         layout.addWidget(self.filter_line)
 
         @self.filter_line.textEdited.connect
@@ -1758,6 +1749,7 @@ class HcaWidget(QWidget):
         self.setLayout(mainLayout)
 
         self.hotspotSeleLine = QLineEdit("*")
+        self.hotspotSeleLine.setPlaceholderText("PyMOL Selection Algebra")
         mainLayout.addWidget(self.hotspotSeleLine)
 
         tab = QTabWidget()
@@ -1767,7 +1759,7 @@ class HcaWidget(QWidget):
         mainLayout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
-        tab.addTab(groupBox, "Parameters")
+        tab.addTab(groupBox, "General")
 
         self.linkageMethodCombo = QComboBox()
         self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
@@ -1781,15 +1773,15 @@ class HcaWidget(QWidget):
         self.colorThresholdSpin.setDecimals(2)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
+        self.onlyMedoidsCheck = QCheckBox()
+        self.onlyMedoidsCheck.setChecked(False)
+        boxLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
+
         self.enableHeatmapCheck = QCheckBox()
         boxLayout.addRow("Heatmap:", self.enableHeatmapCheck)
 
         self.annotateCheck = QCheckBox()
-        boxLayout.addRow("Annotate:", self.annotateCheck)
-
-        self.onlyMedoidsCheck = QCheckBox()
-        self.onlyMedoidsCheck.setChecked(False)
-        boxLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
+        boxLayout.addRow("Annotate heatmap:", self.annotateCheck)
 
         self.table = QTableWidget()
         tab.addTab(self.table, "Leaf names")
@@ -1808,24 +1800,18 @@ class HcaWidget(QWidget):
         self.shortcut.activated.connect(self.paste_data)
         @self.table.itemChanged.connect
         def itemChanged(item):
+            self.table.blockSignals(True)
+            for row in range(self.table.rowCount()-1, -1, -1):
+                col0_text = self.table.item(row, 0)
+                col0_text = col0_text.text().strip()
+                
+                col1_text = self.table.item(row, 1)
+                col1_text = col1_text.text().strip()
+                
+                if (col0_text == "" and col1_text == ""):
+                    self.table.removeRow(row)
+            
             row = self.table.rowCount()
-            if item.row() != row-1:
-                return
-            if self.table.item(row-1, 0) is None:
-                self.table.insertRow(row)
-                self.table.setItem(row, 0, QTableWidgetItem(""))
-                self.table.setItem(row, 1, QTableWidgetItem(""))
-                return
-            
-            col0_text = self.table.item(row-1, 0)
-            col0_text = col0_text.text().strip()
-            
-            col1_text = self.table.item(row-1, 1)
-            col1_text = col1_text.text().strip()
-
-            if (col0_text == "" and col1_text == ""):
-                return
-            
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(""))
             self.table.setItem(row, 1, QTableWidgetItem(""))
@@ -1835,31 +1821,30 @@ class HcaWidget(QWidget):
         layout = QHBoxLayout()
         mainLayout.addLayout(layout)
         
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            groupBox = QGroupBox("Univariate analysis")
-            layout.addWidget(groupBox)
-            boxLayout = QFormLayout()
-            groupBox.setLayout(boxLayout)
+        groupBox = QGroupBox("Univariate analysis")
+        layout.addWidget(groupBox)
+        boxLayout = QFormLayout()
+        groupBox.setLayout(boxLayout)
 
-            self.univariateFunctionCombo = QComboBox()
-            self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
-            boxLayout.addRow("Function:", self.univariateFunctionCombo)
+        self.univariateFunctionCombo = QComboBox()
+        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+        boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
-            self.radiusSpin = QDoubleSpinBox()
-            self.radiusSpin.setValue(4)
-            self.radiusSpin.setSingleStep(0.5)
-            self.radiusSpin.setDecimals(2)
-            self.radiusSpin.setMinimum(1)
-            self.radiusSpin.setMaximum(10)
-            boxLayout.addRow("Radius:", self.radiusSpin)
+        self.radiusSpin = QDoubleSpinBox()
+        self.radiusSpin.setValue(4)
+        self.radiusSpin.setSingleStep(0.5)
+        self.radiusSpin.setDecimals(2)
+        self.radiusSpin.setMinimum(1)
+        self.radiusSpin.setMaximum(10)
+        boxLayout.addRow("Radius:", self.radiusSpin)
 
-            self.pairwiseSeqAlignCheck = QCheckBox()
-            self.pairwiseSeqAlignCheck.setChecked(False)
-            boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
+        self.pairwiseSeqAlignCheck = QCheckBox()
+        self.pairwiseSeqAlignCheck.setChecked(False)
+        boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
 
-            plotButton = QPushButton("Plot")
-            plotButton.clicked.connect(self.plot_univariate)
-            boxLayout.addWidget(plotButton)
+        plotButton = QPushButton("Plot")
+        plotButton.clicked.connect(self.plot_univariate)
+        boxLayout.addWidget(plotButton)
 
         groupBox = QGroupBox("Multivariate analysis")
         layout.addWidget(groupBox)
@@ -1985,25 +1970,28 @@ class LigandTableWidget(QTableWidget):
 
     def refresh(self, objects):
         self.setSortingEnabled(False)
+        self.blockSignals(True)
+        
         while self.rowCount() > 0:
             self.removeRow(0)
         for obj in objects:
             self.insertRow(self.rowCount())
-            line = self.rowCount() - 1
+            row = self.rowCount() - 1
 
             item = QTableWidgetItem(obj)
             item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-            self.setItem(line, 0, item)
+            self.setItem(row, 0, item)
 
-            self.setItem(line, 1, QTableWidgetItem(""))
-            for ix in range(2, 7):
+            self.setItem(row, 1, QTableWidgetItem(""))
+            for col in range(2, 7):
                 item = QTableWidgetItem("")
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-                self.setItem(line, ix, item)
+                self.setItem(row, col, item)
             
-            self.setItem(line, 7, QTableWidgetItem(""))
+            self.setItem(row, 7, QTableWidgetItem(""))
                 
         self.setSortingEnabled(True)
+        self.blockSignals(False)
     
     def getDataFrame(self):
         rows = self.rowCount()
@@ -2016,24 +2004,35 @@ class LigandTableWidget(QTableWidget):
         for r in range(rows):
             obj = self.item(r, 0).text()
             pki = self.item(r, 1).text()
-            if not pki:
-                continue
-            le = self.item(r, 2).text()
-            bei = self.item(r, 3).text()
-            fq = self.item(r, 4).text()
             ha = self.item(r, 5).text()
             mw = self.item(r, 6).text()
             label = self.item(r, 7).text()
-            data.append([
-                obj,
-                float(pki.replace(",", ".")),
-                float(le.replace(",", ".")),
-                float(bei.replace(",", ".")),
-                float(fq.replace(",", ".")),
-                int(ha),
-                float(mw.replace(",", ".")),
-                label,
-            ])
+            if not pki:
+                data.append([
+                    obj,
+                    "",
+                    "",
+                    "",
+                    "",
+                    int(ha),
+                    float(mw.replace(",", ".")),
+                    label,
+                ])
+            else:
+                le = self.item(r, 2).text()
+                bei = self.item(r, 3).text()
+                fq = self.item(r, 4).text()
+                
+                data.append([
+                    obj,
+                    float(pki.replace(",", ".")),
+                    float(le.replace(",", ".")),
+                    float(bei.replace(",", ".")),
+                    float(fq.replace(",", ".")),
+                    int(ha),
+                    float(mw.replace(",", ".")),
+                    label,
+                ])
         return pd.DataFrame(data, columns=headers)
 
 
@@ -2099,11 +2098,11 @@ class OverlapWidget(QWidget):
 
             if item.column() == 1:
                 if item.text() == "":
-                    le = ""
-                    bei = ""
-                    fq = ""
-                    ha = ""
-                    mw = ""
+                    self.table.item(row, 2).setText(f"")
+                    self.table.item(row, 3).setText(f"")
+                    self.table.item(row, 4).setText(f"")
+                    # self.table.item(row, 5).setText(f"")
+                    # self.table.item(row, 6).setText(f"")
                 else:
                     lig_obj = self.table.item(row, 0).text()
                     pki = float(self.table.item(row, 1).text())
@@ -2114,7 +2113,6 @@ class OverlapWidget(QWidget):
                     ha = bind['ha']
                     mw = bind['mw']
                 
-                if self.table.item(row, 2):
                     self.table.item(row, 2).setText(f"{le:.3f}")
                     self.table.item(row, 3).setText(f"{bei:.3f}")
                     self.table.item(row, 4).setText(f"{fq:.3f}")
@@ -2475,7 +2473,7 @@ class MainDialog(QDialog):
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
         tab.addTab(HcaWidget(), "HCA")
-        tab.addTab(OverlapWidget(), "Overlap")
+        tab.addTab(OverlapWidget(), "Overlap && Ligands")
         if XDRUGPY_EXPERIMENTAL_VERSION:
             tab.addTab(CountWidget(), "Fingerprints")
 
