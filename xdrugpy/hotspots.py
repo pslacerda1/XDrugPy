@@ -2052,7 +2052,7 @@ class LigandFitWidget(QWidget):
         self.setLayout(layout)
         
         self.hotspotsSeleLine = QLineEdit()
-        self.hotspotsSeleLine.setPlaceholderText("Hotspot objects or selections...")
+        self.hotspotsSeleLine.setPlaceholderText("Single hotspot object or selection...")
         self.hotspotsSeleLine.textChanged.connect(self.validateUpdateWidget)
         layout.addRow("Hotspots:", self.hotspotsSeleLine)
 
