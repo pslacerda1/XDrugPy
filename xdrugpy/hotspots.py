@@ -1335,7 +1335,7 @@ def plot_overlap_matrix(
     return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
 
 
-def calc_medchem_bind_metrics(lig_sele, pki):
+def calc_medchem_bind_metrics(lig_sele: Selection, pki: float):
     mw = 0
     for at in pm.get_model(lig_sele).atom:
         mw += at.get_mass()
@@ -1353,7 +1353,23 @@ def calc_medchem_bind_metrics(lig_sele, pki):
         'fq': fq
     }
 
-def plot_overlap_activity_scatter(hs_sele, sele_b, function, radius, annotate, bind_df):
+
+class BindMetric(StrEnum):
+    PKI = "pki"
+    LE = "le"
+    BEI = "bei"
+    FQ = "fq"
+
+
+def plot_ligand_fit(
+    hs_sele: Selection,
+    sele_b: Selection,
+    function: OverlapFunction,
+    radius: float,
+    annotate: bool,
+    lig_metric: BindMetric,
+    bind_df
+):
     if len(pm.get_object_list(hs_sele)) != 1:
         raise ValueError("Only one hotspot can be analyzed at time.")
     overlap_df = plot_overlap_matrix(
@@ -1374,29 +1390,18 @@ def plot_overlap_activity_scatter(hs_sele, sele_b, function, radius, annotate, b
     function_col = function.upper()
 
     # do the actual plot
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, constrained_layout=True)
-    for ax, metric in [
-        (ax1, 'PKI'),
-        (ax2, 'LE'),
-        (ax3, 'BEI'),
-        (ax4, 'FQ'),
-    ]:
-        for label, subset_df in df.groupby('A'):
-            x = subset_df[function_col] / subset_df[function_col].iloc[ix_frag]
-            y = subset_df[metric] / subset_df[metric].iloc[ix_frag]
-            ax.scatter(x, y, label=label)
-            rows = zip(x, y, subset_df['Ligand'], subset_df['Label'])
-            for x, y, obj, label in rows:
-                s = label.strip() or obj
-                ax.text(x, y, s)
-        ax.set_xlabel(function_col)
-        ax.set_ylabel(metric)
-    fig.legend(
-        loc='lower center',
-        bbox_to_anchor=(1, 1.02),
-        fontsize='small',
-        ncol=3,
-    )
+    lig_metric = lig_metric.upper()
+    fig, ax = plt.subplots(constrained_layout=True)
+    x = df[function_col] / df[function_col].iloc[ix_frag]
+    y = df[lig_metric] / df[lig_metric].iloc[ix_frag]
+    ax.scatter(x, y)
+    rows = zip(x, y, df['Ligand'], df['Label'])
+    for x, y, obj, label in rows:
+        s = label.strip() or obj
+        ax.text(x, y, s)
+    ax.set_xlabel(function_col)
+    ax.set_ylabel(lig_metric)
+
 #
 # GRAPHICAL USER INTERFACE
 #
@@ -1748,10 +1753,6 @@ class HcaWidget(QWidget):
         mainLayout = QVBoxLayout()
         self.setLayout(mainLayout)
 
-        self.hotspotSeleLine = QLineEdit("*")
-        self.hotspotSeleLine.setPlaceholderText("PyMOL Selection Algebra")
-        mainLayout.addWidget(self.hotspotSeleLine)
-
         tab = QTabWidget()
         mainLayout.addWidget(tab)
 
@@ -1760,6 +1761,10 @@ class HcaWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
         tab.addTab(groupBox, "General")
+
+        self.hotspotSeleLine = QLineEdit("*")
+        self.hotspotSeleLine.setPlaceholderText("PyMOL Selection Algebra")
+        boxLayout.addRow("Hotspots:", self.hotspotSeleLine)
 
         self.linkageMethodCombo = QComboBox()
         self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
@@ -1819,7 +1824,9 @@ class HcaWidget(QWidget):
             self.table.blockSignals(False)
 
         layout = QHBoxLayout()
-        mainLayout.addLayout(layout)
+        container = QWidget(self)
+        container.setLayout(layout)
+        mainLayout.addWidget(container)
         
         groupBox = QGroupBox("Univariate analysis")
         layout.addWidget(groupBox)
@@ -2036,29 +2043,27 @@ class LigandTableWidget(QTableWidget):
         return pd.DataFrame(data, columns=headers)
 
 
-class OverlapWidget(QWidget):
+class LigandFitWidget(QWidget):
 
     def __init__(self):
         super().__init__()
         
         layout = QFormLayout()
         self.setLayout(layout)
-
-        seleContainer = QWidget()
-        seleLayout = QHBoxLayout(seleContainer)
-        seleLayout.setContentsMargins(0, 0, 0, 0)
         
-        layout.addRow("Selections:", seleContainer)
-        
-        self.aSeleLine = QLineEdit()
-        self.aSeleLine.setPlaceholderText("Selection A...")
-        seleLayout.addWidget(self.aSeleLine)
-        self.aSeleLine.textChanged.connect(self.validateUpdateWidget)
+        self.hotspotsSeleLine = QLineEdit()
+        self.hotspotsSeleLine.setPlaceholderText("Hotspot objects or selections...")
+        self.hotspotsSeleLine.textChanged.connect(self.validateUpdateWidget)
+        layout.addRow("Hotspots:", self.hotspotsSeleLine)
 
-        self.bSeleLine = QLineEdit()
-        self.bSeleLine.setPlaceholderText("Selection B...")
-        self.bSeleLine.textChanged.connect(self.validateUpdateWidget)
-        seleLayout.addWidget(self.bSeleLine)
+        self.ligandsSeleLine = QLineEdit()
+        self.ligandsSeleLine.setPlaceholderText("Ligand objects or selections...")
+        self.ligandsSeleLine.textChanged.connect(self.validateUpdateWidget)
+        layout.addRow("Ligands:", self.ligandsSeleLine)
+        
+        self.ligMetricCombo = QComboBox()
+        self.ligMetricCombo.addItems([e.value for e in BindMetric])
+        layout.addRow("Bind metric:", self.ligMetricCombo)
         
         self.functionCombo = QComboBox()
         self.functionCombo.addItems([e.value for e in OverlapFunction])
@@ -2075,18 +2080,6 @@ class OverlapWidget(QWidget):
         self.annotateCheck = QCheckBox()
         self.annotateCheck.setChecked(True)
         layout.addRow("Annotate:", self.annotateCheck)
-
-        self.container1 = QWidget()
-        hLayout1 = QHBoxLayout(self.container1)
-        layout.addRow(self.container1)
-
-        plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_overlap)
-        hLayout1.addWidget(plotButton)
-
-        exportButton = QPushButton("Export")
-        exportButton.clicked.connect(self.export_overlap)
-        hLayout1.addWidget(exportButton)
 
         self.table = LigandTableWidget()
         self.table.setEnabled(False)
@@ -2120,50 +2113,127 @@ class OverlapWidget(QWidget):
                     self.table.item(row, 6).setText(f"{mw:.2f}")
             self.table.setSortingEnabled(True)
 
-        self.container2 = QWidget()
-        hLayout2 = QHBoxLayout(self.container2)
-        layout.addRow(self.container2)
+        self.container = QWidget()
+        hLayout = QHBoxLayout(self.container)
+        layout.addRow(self.container)
 
-        plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_overlap_activity_scatter)
-        hLayout2.addWidget(plotButton)
+        self.plotButton = QPushButton("Plot")
+        self.plotButton.clicked.connect(self.plot)
+        hLayout.addWidget(self.plotButton)
 
-        exportButton = QPushButton("Export")
-        exportButton.clicked.connect(self.export_ligand_data)
-        hLayout2.addWidget(exportButton)
+        self.exportButton = QPushButton("Export")
+        self.exportButton.clicked.connect(self.export)
+        hLayout.addWidget(self.exportButton)
 
     def validateUpdateWidget(self):
-        a_sele = self.aSeleLine.text().strip()
-        b_ph = "Selection B..."
-        if a_sele != "":
-            b_ph = a_sele
-        self.bSeleLine.setPlaceholderText(b_ph)
-        objs_a = pm.get_object_list(a_sele)
-        if objs_a is None:
-            objs_a = []
-        if len(objs_a) == 0:
-            self.container1.setEnabled(False)
+        hs_sele = self.hotspotsSeleLine.text().strip()
+        hs_objs = pm.get_object_list(hs_sele)
+        if hs_objs is None:
+            hs_objs = []
+        if len(hs_objs) == 0:
+            self.container.setEnabled(False)
         else:
-            self.container1.setEnabled(True)
+            self.container.setEnabled(True)
 
-        b_sele = self.bSeleLine.text().strip()
-        objs_b = pm.get_object_list(b_sele)
-        if objs_b is None:
-            objs_b = []
-        self.table.refresh(objs_b)
-        if len(objs_b) > 0:
+        ligs_sele = self.ligandsSeleLine.text().strip()
+        ligs_objs = pm.get_object_list(ligs_sele)
+        if ligs_objs is None:
+            ligs_objs = []
+        self.table.refresh(ligs_objs)
+        if len(ligs_objs) > 0:
             self.table.setEnabled(True)
-            self.container2.children()[2].setEnabled(True)
-            if len(objs_a) == 1:
-                self.container2.children()[1].setEnabled(True)
+            self.exportButton.setEnabled(True)
+            if len(hs_objs) == 1:
+                self.plotButton.setEnabled(True)
         else:
             self.table.setEnabled(False)
-            self.container2.children()[1].setEnabled(False)
-            self.container2.children()[2].setEnabled(False)
-        if len(objs_a) != 1:
-            self.container2.children()[1].setEnabled(False)
-            
+            self.plotButton.setEnabled(False)
+            self.exportButton.setEnabled(False)
+        if len(hs_objs) != 1:
+            self.plotButton.setEnabled(False)
+
+    def plot(self):
+        hs_sele = self.hotspotsSeleLine.text().strip()
+        ligs_sele = self.ligandsSeleLine.text().strip()
+        function = self.functionCombo.currentText()
+        radius = self.radiusSpin.value()
+        annotate = self.annotateCheck.isChecked()
+        lig_metric = self.ligMetricCombo.currentText()
+
+        bind_df = self.table.getDataFrame()
+        bind_df = bind_df.set_index('Ligand')
+
+        plot_ligand_fit(
+            hs_sele=hs_sele,
+            sele_b=ligs_sele,
+            function=function,
+            radius=radius,
+            annotate=annotate,
+            lig_metric=lig_metric,
+            bind_df=bind_df
+        )
+        plt.show()
     
+    def export(self):
+        ligand_df = self.table.getDataFrame()
+
+        fileDialog = QFileDialog()
+        fileDialog.setNameFilter("Excel file (*.xlsx)")
+        fileDialog.setViewMode(QFileDialog.Detail)
+        fileDialog.setAcceptMode(QFileDialog.AcceptSave)
+        fileDialog.setDefaultSuffix(".xlsx")
+
+        if fileDialog.exec_():
+            filename = fileDialog.selectedFiles()[0]
+            # ext = os.path.splitext(filename)[1]
+            with pd.ExcelWriter(filename) as xlsx_writer:
+                ligand_df.to_excel(xlsx_writer, sheet_name='Ligand', index=False)
+
+
+class OverlapWidget(QWidget):
+
+    def __init__(self):
+        super().__init__()
+        
+        layout = QFormLayout()
+        self.setLayout(layout)
+
+        self.aSeleLine = QLineEdit()
+        self.aSeleLine.setPlaceholderText("Objects or selections...")
+        layout.addRow("Selection A:", self.aSeleLine)
+
+        self.bSeleLine = QLineEdit()
+        self.bSeleLine.setPlaceholderText("Objects or selections...")
+        layout.addRow("Selection B:", self.bSeleLine)
+        
+        self.functionCombo = QComboBox()
+        self.functionCombo.addItems([e.value for e in OverlapFunction])
+        layout.addRow("Function:", self.functionCombo)
+
+        self.radiusSpin = QDoubleSpinBox()
+        self.radiusSpin.setValue(2)
+        self.radiusSpin.setSingleStep(0.5)
+        self.radiusSpin.setDecimals(2)
+        self.radiusSpin.setMinimum(1)
+        self.radiusSpin.setMaximum(10)
+        layout.addRow("Radius:", self.radiusSpin)
+
+        self.annotateCheck = QCheckBox()
+        self.annotateCheck.setChecked(True)
+        layout.addRow("Annotate:", self.annotateCheck)
+
+        self.container1 = QWidget()
+        hLayout1 = QHBoxLayout(self.container1)
+        layout.addRow(self.container1)
+
+        plotButton = QPushButton("Plot")
+        plotButton.clicked.connect(self.plot_overlap)
+        hLayout1.addWidget(plotButton)
+
+        exportButton = QPushButton("Export")
+        exportButton.clicked.connect(self.export_overlap)
+        hLayout1.addWidget(exportButton)
+
     def plot_overlap(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
@@ -2208,40 +2278,6 @@ class OverlapWidget(QWidget):
             with pd.ExcelWriter(filename) as xlsx_writer:
                 table_df.to_excel(xlsx_writer, sheet_name='Overlap', index=False)
 
-    def plot_overlap_activity_scatter(self):
-        sele_a = self.aSeleLine.text().strip()
-        sele_b = self.bSeleLine.text().strip()
-        function = self.functionCombo.currentText()
-        radius = self.radiusSpin.value()
-        annotate = self.annotateCheck.isChecked()
-
-        bind_df = self.table.getDataFrame()
-        bind_df = bind_df.set_index('Ligand')
-
-        plot_overlap_activity_scatter(
-            hs_sele=sele_a,
-            sele_b=sele_b,
-            function=function,
-            radius=radius,
-            annotate=annotate,
-            bind_df=bind_df
-        )
-        plt.show()
-    
-    def export_ligand_data(self):
-        ligand_df = self.table.getDataFrame()
-
-        fileDialog = QFileDialog()
-        fileDialog.setNameFilter("Excel file (*.xlsx)")
-        fileDialog.setViewMode(QFileDialog.Detail)
-        fileDialog.setAcceptMode(QFileDialog.AcceptSave)
-        fileDialog.setDefaultSuffix(".xlsx")
-
-        if fileDialog.exec_():
-            filename = fileDialog.selectedFiles()[0]
-            # ext = os.path.splitext(filename)[1]
-            with pd.ExcelWriter(filename) as xlsx_writer:
-                ligand_df.to_excel(xlsx_writer, sheet_name='Ligand', index=False)
 
 class CountWidget(QWidget):
 
@@ -2472,8 +2508,9 @@ class MainDialog(QDialog):
         tab = QTabWidget()
         tab.addTab(LoadWidget(), "Load")
         tab.addTab(TableWidget(), "Properties")
-        tab.addTab(HcaWidget(), "HCA")
-        tab.addTab(OverlapWidget(), "Overlap && Ligands")
+        tab.addTab(HcaWidget(), "Hotspot Similarity")
+        tab.addTab(OverlapWidget(), "Overlap Matrix")
+        tab.addTab(LigandFitWidget(), "Ligand Fit")
         if XDRUGPY_EXPERIMENTAL_VERSION:
             tab.addTab(CountWidget(), "Fingerprints")
 
