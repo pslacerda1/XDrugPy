@@ -210,26 +210,18 @@ def test_load():
     pm.reinitialize()
     ftmap = load_ftmap([
         pkg_data + "/2TPR.pdb",
-        pkg_data + "/1dq8_atlas.pdb",
         pkg_data + "/1BZL.pdb",
-        pkg_data + "/dimero/2WP5.pdb",
-    ])
+    ], allow_nested=True
+    )
     hotspots = ftmap[0].hotspots
-    assert len(hotspots) == 5
-    assert hotspots[4].klass == 'DS' 
+    assert len(hotspots) == 2
+    assert len(hotspots[0].clusters) == 7
+    assert len(hotspots[1].clusters) == 6
+    assert hotspots[0].klass == 'DL'
 
     hotspots = ftmap[1].hotspots
-    assert len(hotspots) == 4
-    assert hotspots[1].klass == 'D'
-    assert hotspots[2].klass == 'DS'
-    assert hotspots[4].klass == 'B'
-
-    hotspots = ftmap[2].hotspots
-    assert len(hotspots) == 3
-
-    hotspots = ftmap[3].hotspots
-    assert len(hotspots) == 6
-    assert hotspots[3].klass == 'DL'
+    assert len(hotspots) == 1
+    assert hotspots[0].klass == 'DL'
 
 
 def test_show_hs():

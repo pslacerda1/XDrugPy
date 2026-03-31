@@ -120,7 +120,7 @@ def find_occupied_pockets(
         p_sele = f'{group}.protein & ({p_sele})'
 
         
-        hs_sele = f"{group}.CS.* near_to 4 of ({p_sele})"
+        hs_sele = f"{group}.CS.* near_to 8 of ({p_sele})"
         sele_cnt = 0
         while True:
             new_sele_cnt = pm.count_atoms(hs_sele)
@@ -128,7 +128,7 @@ def find_occupied_pockets(
                 sele_cnt = new_sele_cnt
             else:
                 break
-            hs_sele = f"{group}.CS.* within 4 of ({hs_sele})"
+            hs_sele = f"{group}.CS.* within 8 of ({hs_sele})"
         
         hs_objs = pm.get_object_list(hs_sele)
         if not hs_objs:
@@ -156,7 +156,7 @@ def find_pykvf_pockets(protein):
         atomic = pyKVFinder.read_pdb(protein_pdb)
         
     vertices = pyKVFinder.get_vertices(atomic)
-    _, cavities = pyKVFinder.detect(atomic, vertices, volume_cutoff=750)
+    _, cavities = pyKVFinder.detect(atomic, vertices)
     residues = pyKVFinder.constitutional(cavities, atomic, vertices)
     return residues
 
@@ -217,10 +217,11 @@ class Hotspot:
     S0: int
     S1: int
     SZ: int
-    CD: float
+    CD0: float
+    CD16: float
+    CD13: float
     MD: float
     length: int
-    isComplex: bool
     nComponents: int
     type: Literal["HS"] =  field(default="HS", repr=False)
     
@@ -241,7 +242,7 @@ class Hotspot:
         )
     
     @staticmethod
-    def from_cluster_selections(selections: List[str], max_collisions: float=0.25) -> Hotspot:
+    def from_cluster_selections(selections: List[str], max_collisions: float=0.15) -> Hotspot:
         clusters = []
         objs = pm.get_object_list(' | '.join(selections))
         for obj in objs:
@@ -257,9 +258,29 @@ class Hotspot:
         return Hotspot.from_clusters(group, clusters, max_collisions=max_collisions)
         
     @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], max_collisions: float=0.25) -> Hotspot:
+    def from_clusters(group: str, clusters: List[Cluster], max_collisions: float=0.15) -> Hotspot:
         coms = [pm.centerofmass(c.selection) for c in clusters]
         cd = [distance.euclidean(coms[0], com) for com in coms]
+
+        cd13 = []
+        coms13 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 13]
+        for com in coms:
+            min_d = 0.0
+            for com13 in coms13:
+                d = distance.euclidean(com, com13)
+                if min_d == 0.0 or d < min_d:
+                    min_d = d
+            cd13.append(min_d)
+
+        cd16 = []
+        coms16 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 16]
+        for com in coms:
+            min_d = 0.0
+            for com16 in coms16:
+                d = distance.euclidean(com, com16)
+                if min_d == 0.0 or d < min_d:
+                    min_d = d
+            cd16.append(min_d)
 
         coords = np.concatenate([c.coords for c in clusters])
         max_dist = distance_matrix(coords, coords).max()
@@ -274,17 +295,17 @@ class Hotspot:
             ST=sum(c.ST for c in clusters),
             S0=clusters[0].ST,
             S1=clusters[1].ST if len(clusters) >= 2 else 0,
-            SZ=clusters[-1].ST if len(clusters) >= 3 else 0,
-            CD=np.max(cd),
+            SZ=clusters[-1].ST,
+            CD0=np.max(cd) if len(cd) > 0 else 0.0,
+            CD16=np.max(cd16) if len(cd16) > 0 else 0.0,
+            CD13=np.max(cd13) if len(cd13) > 0 else 0.0,
             MD=max_dist,
             length=len(clusters),
-            isComplex=len(clusters) >= 4 and clusters[1].ST >= 16,
             nComponents=-1,
         )
         
         s0 = hs.S0
-        sz = hs.SZ
-        cd = hs.CD
+        cd = np.min([hs.CD0, hs.CD13, hs.CD16])  # FIXME Is this correct?
         md = hs.MD
 
         if s0 >= 16 and cd < 8 and md >= 10:
@@ -312,7 +333,8 @@ class Hotspot:
         pocket_residues: Dict[str, Any],
         clusters: List[Cluster],
         allow_nested: bool,
-        max_collisions: float=0.25
+        combinatory_search: bool,
+        max_collisions: float=0.15
     ) -> List[Hotspot]:
         
         # filter out weak clusters
@@ -329,12 +351,13 @@ class Hotspot:
                 spots.append(hs)
         
         # identify hotspots from combinations of consensus sites
-        for r in range(1, 4):
-            for comb in combinations(clusters, r):
-                comb = list(comb)
-                hs = Hotspot.from_clusters(group, comb, max_collisions=max_collisions)
-                if hs.klass:
-                    spots.append(hs)
+        if combinatory_search:
+            for r in range(1, 4):
+                for comb in combinations(clusters, r):
+                    comb = list(comb)
+                    hs = Hotspot.from_clusters(group, comb, max_collisions=max_collisions)
+                    if hs.klass:
+                        spots.append(hs)
         
         # remove hotspot objects when they totally fit inside another (and are of the same class)
         nested = set()
@@ -420,7 +443,7 @@ class Hotspot:
                             pm.distance(measure_name, e[0], e[1], mode=4)
                             pm.color('cyan', measure_name)
 
-    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=50, max_collisions: float=0.25) -> int:
+    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=50, max_collisions: float=0.15) -> int:
         g = nx.Graph()
         # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
         g.add_nodes_from([c.selection for c in clusters])
@@ -474,9 +497,8 @@ class Hotspot:
     
 @new_command
 def show_hs(selections: List[str]) -> Hotspot:
-    hs = Hotspot.from_cluster_selections(selections, max_collisions=0.25)
+    hs = Hotspot.from_cluster_selections(selections, max_collisions=0.15)
     hs.show()
-    print(hs)
     return hs
 
 
@@ -487,8 +509,9 @@ class FTMapResults:
 def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
+    combinatory_search: bool = False,
     allow_nested: bool = False,
-    max_collisions: float = 0.25,
+    max_collisions: float = 0.15,
 ):
     try:
         pm.set('defer_updates', 1)
@@ -507,9 +530,9 @@ def load_ftmap(
                 iter.append((filename, os.path.splitext(os.path.basename(filename))[0]))
         for fnames, groups in iter:
             try:
-                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested, max_collisions=max_collisions))
+                rets.append(_load_ftmap(fnames, groups, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
             except:
-                rets.append(_load_ftmap(fnames, groups, allow_nested=allow_nested, max_collisions=max_collisions))
+                rets.append(_load_ftmap(fnames, groups, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
         if single:
             return rets[0]
         else:
@@ -521,8 +544,9 @@ def load_ftmap(
 def _load_ftmap(
     filename: Path,
     group: str = "",
+    combinatory_search: bool = False,
     allow_nested: bool = False,
-    max_collisions: float = 0.25,
+    max_collisions: float = 0.15,
 ):
     """
     Load a FTMap PDB file and classify hotspot ensembles in accordance to
@@ -556,7 +580,14 @@ def _load_ftmap(
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
     pocket_residues = find_pykvf_pockets(f"{group}.protein")
-    hotspots = Hotspot.find_hotspots(group, pocket_residues, clusters, allow_nested, max_collisions=max_collisions)
+    hotspots = Hotspot.find_hotspots(
+        group,
+        pocket_residues,
+        clusters,
+        combinatory_search=combinatory_search,
+        allow_nested=allow_nested,
+        max_collisions=max_collisions
+    )
 
     pm.hide("everything", f"{group}.*")
 
@@ -635,8 +666,7 @@ def _load_ftmap(
     for grp in groups:
         if grp in pm.get_names():
             pm.delete(grp)
-
-
+    
     ret = SimpleNamespace(
         clusters=clusters,
         eclusters=eclusters,
@@ -1225,7 +1255,7 @@ def plot_multivariate_hca(
 
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "HS":
-        n_props = 4
+        n_props = 5
     elif hs_type == "CS":
         n_props = 1
     elif hs_type == "ACS":
@@ -1240,9 +1270,10 @@ def plot_multivariate_hca(
         if hs_type == "HS":
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
-            CD = pm.get_property("CD", obj)
+            CD0 = pm.get_property("CD0", obj)
+            CD16 = pm.get_property("CD16", obj)
             MD = pm.get_property("MD", obj)
-            p[ix, :] = np.array([ST, S0, CD, MD, x, y, z])
+            p[ix, :] = np.array([ST, S0, CD0, CD16, MD, x, y, z])
         elif hs_type == "CS":
             ST = pm.get_property("ST", obj)
             p[ix, :] = np.array([ST, x, y, z])
@@ -1363,7 +1394,7 @@ class BindMetric(StrEnum):
 
 def plot_ligand_fit(
     hs_sele: Selection,
-    sele_b: Selection,
+    ligs_sele: Selection,
     function: OverlapFunction,
     radius: float,
     annotate: bool,
@@ -1374,7 +1405,7 @@ def plot_ligand_fit(
         raise ValueError("Only one hotspot can be analyzed at time.")
     overlap_df = plot_overlap_matrix(
         sele_a=hs_sele,
-        sele_b=sele_b,
+        sele_b=ligs_sele,
         function=function,
         radius=radius,
         annotate=annotate
@@ -1399,8 +1430,8 @@ def plot_ligand_fit(
     for x, y, obj, label in rows:
         s = label.strip() or obj
         ax.text(x, y, s)
-    ax.set_xlabel(function_col)
-    ax.set_ylabel(lig_metric)
+    ax.set_xlabel(f"{function_col} / {function_col}_ref")
+    ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
 
 #
 # GRAPHICAL USER INTERFACE
@@ -1474,15 +1505,19 @@ class LoadWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
+        self.combinatorySearch = QCheckBox()
+        self.combinatorySearch.setChecked(False)
+        boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
+
         self.allowNested = QCheckBox()
         self.allowNested.setChecked(False)
-        boxLayout.addRow("Allow nested hotspots", self.allowNested)
-
+        boxLayout.addRow("Allow nested hotspots:", self.allowNested)
+        
         self.maxCollisions = QDoubleSpinBox()
         self.maxCollisions.setRange(0.0, 1.0)
         self.maxCollisions.setSingleStep(0.05)
-        self.maxCollisions.setValue(0.25)
-        boxLayout.addRow("Max collisions", self.maxCollisions)
+        self.maxCollisions.setValue(0.15)
+        boxLayout.addRow("Max collisions:", self.maxCollisions)
         
     def pickFile(self):
         fileDIalog = QFileDialog()
@@ -1513,6 +1548,7 @@ class LoadWidget(QWidget):
         self.table.setRowCount(0)
 
     def load(self):
+        combinatory_search = self.combinatorySearch.isChecked()
         allow_nested = self.allowNested.isChecked()
         max_collisions = self.maxCollisions.value()
         try:
@@ -1529,6 +1565,7 @@ class LoadWidget(QWidget):
         load_ftmap(
             filenames,
             groups=groups,
+            combinatory_search=combinatory_search,
             allow_nested=allow_nested,
             max_collisions=max_collisions,
         )
@@ -1626,16 +1663,17 @@ class TableWidget(QWidget):
                 "ST",
                 "S0",
                 "S1",
-                "CD",
+                "SZ",
+                "CD0",
+                "CD16",
+                "CD13",
                 "MD",
                 "Length",
             ],
             ("CS", "CS"): ["ST"],
         }
         if XDRUGPY_EXPERIMENTAL_VERSION:
-            self.hotspotsMap[("Hotspots", "HS")].insert(4, "SZ")
-            self.hotspotsMap[("Hotspots", "HS")].append("isComplex")
-            self.hotspotsMap[("ACS", "ACS")] = ["Class", "ST", "MD"]
+            self.hotspotsMap[("E-FTMap", "ACS")] = ["Class", "ST", "MD"]
 
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
@@ -2165,7 +2203,7 @@ class LigandFitWidget(QWidget):
 
         plot_ligand_fit(
             hs_sele=hs_sele,
-            sele_b=ligs_sele,
+            ligs_sele=ligs_sele,
             function=function,
             radius=radius,
             annotate=annotate,
