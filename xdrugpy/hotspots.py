@@ -242,7 +242,11 @@ class Hotspot:
         )
     
     @staticmethod
-    def from_cluster_selections(selections: List[str], max_collisions: float=0.15) -> Hotspot:
+    def from_cluster_selections(
+        selections: List[str],
+        cd_to_anchor: bool=True,
+        max_collisions: float=0.15
+    ) -> Hotspot:
         clusters = []
         objs = pm.get_object_list(' | '.join(selections))
         for obj in objs:
@@ -255,32 +259,41 @@ class Hotspot:
             )
             pm.group(group, obj, action='add')
             clusters.append(clu)
-        return Hotspot.from_clusters(group, clusters, max_collisions=max_collisions)
+        return Hotspot.from_clusters(group, clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
         
     @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], max_collisions: float=0.15) -> Hotspot:
+    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=True, max_collisions: float=0.15) -> Hotspot:
         coms = [pm.centerofmass(c.selection) for c in clusters]
         cd = [distance.euclidean(coms[0], com) for com in coms]
+        cd0 = np.max(cd) if len(cd) > 0 else 0.0
 
-        cd13 = []
-        coms13 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 13]
-        for com in coms:
-            min_d = 0.0
-            for com13 in coms13:
-                d = distance.euclidean(com, com13)
-                if min_d == 0.0 or d < min_d:
-                    min_d = d
-            cd13.append(min_d)
+        if cd_to_anchor:
 
-        cd16 = []
-        coms16 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 16]
-        for com in coms:
-            min_d = 0.0
-            for com16 in coms16:
-                d = distance.euclidean(com, com16)
-                if min_d == 0.0 or d < min_d:
-                    min_d = d
-            cd16.append(min_d)
+            cd16 = [] 
+            coms16 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 16]
+            for com in coms:
+                min_d = 0.0
+                for com16 in coms16:
+                    d = distance.euclidean(com, com16)
+                    if min_d == 0.0 or d < min_d:
+                        min_d = d
+                cd16.append(min_d)
+        
+            cd13 = []
+            coms13 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 13]
+            for com in coms:
+                min_d = 0.0
+                for com13 in coms13:
+                    d = distance.euclidean(com, com13)
+                    if min_d == 0.0 or d < min_d:
+                        min_d = d
+                cd13.append(min_d)
+            
+            cd16 = np.max(cd16) if len(cd16) > 0 else 0.0
+            cd13 = np.max(cd13) if cd16 == 0.0 and len(cd13) > 0 else 0.0
+        else:
+            cd16 = 0.0
+            cd13 = 0.0
 
         coords = np.concatenate([c.coords for c in clusters])
         max_dist = distance_matrix(coords, coords).max()
@@ -296,16 +309,21 @@ class Hotspot:
             S0=clusters[0].ST,
             S1=clusters[1].ST if len(clusters) >= 2 else 0,
             SZ=clusters[-1].ST,
-            CD0=np.max(cd) if len(cd) > 0 else 0.0,
-            CD16=np.max(cd16) if len(cd16) > 0 else 0.0,
-            CD13=np.max(cd13) if len(cd13) > 0 else 0.0,
+            CD0=cd0,
+            CD16=cd16,
+            CD13=cd13,
             MD=max_dist,
             length=len(clusters),
             nComponents=-1,
-        )
+        )   
         
         s0 = hs.S0
-        cd = np.min([hs.CD0, hs.CD13, hs.CD16])  # FIXME Is this correct?
+        if cd_to_anchor:
+            cd = (
+                cd16 if cd16 > 0 else
+                cd13 if cd13 > 0 else
+                cd0
+            )
         md = hs.MD
 
         if s0 >= 16 and cd < 8 and md >= 10:
@@ -332,8 +350,9 @@ class Hotspot:
         group: str,
         pocket_residues: Dict[str, Any],
         clusters: List[Cluster],
-        allow_nested: bool,
+        cd_to_anchor: bool,
         combinatory_search: bool,
+        allow_nested: bool,
         max_collisions: float=0.15
     ) -> List[Hotspot]:
         
@@ -345,7 +364,7 @@ class Hotspot:
         spots = []
         pockets = find_occupied_pockets(group, pocket_residues, clusters)
         for hs_sele, pocket_clusters in pockets.items():
-            hs = Hotspot.from_clusters(group, pocket_clusters, max_collisions=max_collisions)
+            hs = Hotspot.from_clusters(group, pocket_clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
             if hs.klass:
                 hs.selection = hs_sele
                 spots.append(hs)
@@ -355,13 +374,13 @@ class Hotspot:
             for r in range(1, 4):
                 for comb in combinations(clusters, r):
                     comb = list(comb)
-                    hs = Hotspot.from_clusters(group, comb, max_collisions=max_collisions)
+                    hs = Hotspot.from_clusters(group, comb, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
                     if hs.klass:
                         spots.append(hs)
         
         # remove hotspot objects when they totally fit inside another (and are of the same class)
-        nested = set()
         if not allow_nested:
+            nested = set()
             for ix1, hs1 in enumerate(spots):
                 for ix2, hs2 in enumerate(spots):
                     if ix1 == ix2:
@@ -378,7 +397,7 @@ class Hotspot:
                 
 
         # rename and renumber hotspots
-        spots = sorted(spots, key=lambda hs: (-hs.S0, -hs.S1, -hs.SZ, -hs.ST))
+        spots = sorted(spots, key=lambda hs: (-hs.ST, -hs.S0, -hs.S1, -hs.SZ))
         spots = sorted(spots, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
         spots = list(spots)
 
@@ -496,10 +515,16 @@ class Hotspot:
         return has_collision
     
 @new_command
-def show_hs(selections: List[str]) -> Hotspot:
-    hs = Hotspot.from_cluster_selections(selections, max_collisions=0.15)
+def show_hs(selections: List[str],
+            cd_to_anchor: bool = True,
+            max_collisions: float = 0.15) -> Hotspot:
+    hs = Hotspot.from_cluster_selections(
+        selections,
+        cd_to_anchor=cd_to_anchor,
+        max_collisions=max_collisions
+    )
     hs.show()
-    return hs
+    print(hs)
 
 
 class FTMapResults:
@@ -509,6 +534,7 @@ class FTMapResults:
 def load_ftmap(
     filenames: List[Path] | Path,
     groups: List[str] | str = "",
+    cd_to_anchor: bool = True,
     combinatory_search: bool = False,
     allow_nested: bool = False,
     max_collisions: float = 0.15,
@@ -530,9 +556,9 @@ def load_ftmap(
                 iter.append((filename, os.path.splitext(os.path.basename(filename))[0]))
         for fnames, groups in iter:
             try:
-                rets.append(_load_ftmap(fnames, groups, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
+                rets.append(_load_ftmap(fnames, groups, cd_to_anchor=cd_to_anchor, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
             except:
-                rets.append(_load_ftmap(fnames, groups, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
+                rets.append(_load_ftmap(fnames, groups, cd_to_anchor=cd_to_anchor, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
         if single:
             return rets[0]
         else:
@@ -544,6 +570,7 @@ def load_ftmap(
 def _load_ftmap(
     filename: Path,
     group: str = "",
+    cd_to_anchor: bool = True,
     combinatory_search: bool = False,
     allow_nested: bool = False,
     max_collisions: float = 0.15,
@@ -584,6 +611,7 @@ def _load_ftmap(
         group,
         pocket_residues,
         clusters,
+        cd_to_anchor=cd_to_anchor,
         combinatory_search=combinatory_search,
         allow_nested=allow_nested,
         max_collisions=max_collisions
@@ -1505,6 +1533,10 @@ class LoadWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
+        self.cdToAnchor = QCheckBox()
+        self.cdToAnchor.setChecked(True)
+        boxLayout.addRow("Use satellite-to-anchor CD:", self.cdToAnchor)
+
         self.combinatorySearch = QCheckBox()
         self.combinatorySearch.setChecked(False)
         boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
@@ -1548,6 +1580,7 @@ class LoadWidget(QWidget):
         self.table.setRowCount(0)
 
     def load(self):
+        cd_to_anchor = self.cdToAnchor.isChecked()
         combinatory_search = self.combinatorySearch.isChecked()
         allow_nested = self.allowNested.isChecked()
         max_collisions = self.maxCollisions.value()
@@ -1565,6 +1598,7 @@ class LoadWidget(QWidget):
         load_ftmap(
             filenames,
             groups=groups,
+            cd_to_anchor=cd_to_anchor,
             combinatory_search=combinatory_search,
             allow_nested=allow_nested,
             max_collisions=max_collisions,
