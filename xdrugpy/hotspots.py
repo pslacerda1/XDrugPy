@@ -217,6 +217,7 @@ class Hotspot:
     S0: int
     S1: int
     SZ: int
+    CD: float
     CD0: float
     CD16: float
     CD13: float
@@ -312,6 +313,7 @@ class Hotspot:
             CD0=cd0,
             CD16=cd16,
             CD13=cd13,
+            CD=0.0,
             MD=max_dist,
             length=len(clusters),
             nComponents=-1,
@@ -324,6 +326,9 @@ class Hotspot:
                 cd13 if cd13 > 0 else
                 cd0
             )
+        else:
+            cd = cd0
+        hs.CD = cd
         md = hs.MD
 
         if s0 >= 16 and cd < 8 and md >= 10:
@@ -1299,9 +1304,9 @@ def plot_multivariate_hca(
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
             CD0 = pm.get_property("CD0", obj)
-            CD16 = pm.get_property("CD16", obj)
+            CD = pm.get_property("CD", obj)
             MD = pm.get_property("MD", obj)
-            p[ix, :] = np.array([ST, S0, CD0, CD16, MD, x, y, z])
+            p[ix, :] = np.array([ST, S0, CD0, CD, MD, x, y, z])
         elif hs_type == "CS":
             ST = pm.get_property("ST", obj)
             p[ix, :] = np.array([ST, x, y, z])
@@ -1698,6 +1703,7 @@ class TableWidget(QWidget):
                 "S0",
                 "S1",
                 "SZ",
+                "CD",
                 "CD0",
                 "CD16",
                 "CD13",
