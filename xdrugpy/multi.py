@@ -439,7 +439,7 @@ class RmsfWidget(QWidget):
         layout.addRow("Reference site:", self.refSiteLine)
 
         self.siteRadiusSpin = QDoubleSpinBox()
-        self.siteRadiusSpin.setMinimum(1.0)
+        self.siteRadiusSpin.setMinimum(0.0)
         self.siteRadiusSpin.setMaximum(10.0)
         self.siteRadiusSpin.setValue(3.0)
         self.siteRadiusSpin.setSingleStep(0.5)
