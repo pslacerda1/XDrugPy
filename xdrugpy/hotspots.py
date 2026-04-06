@@ -119,7 +119,7 @@ def find_occupied_pockets(
         p_sele += 'none'
         p_sele = f'{group}.protein & ({p_sele})'
 
-        
+        levels = []
         hs_sele = f"{group}.CS.* near_to 8 of ({p_sele})"
         sele_cnt = 0
         while True:
@@ -128,24 +128,21 @@ def find_occupied_pockets(
                 sele_cnt = new_sele_cnt
             else:
                 break
+            levels.append(hs_sele)
             hs_sele = f"{group}.CS.* within 8 of ({hs_sele})"
         
-        hs_objs = pm.get_object_list(hs_sele)
-        if not hs_objs:
-            continue
-                
-        pocket_clusters = [c for c in clusters if c.selection in hs_objs]
-        ix_ignore = next((i for i, c in enumerate(pocket_clusters) if c.ST<5), len(pocket_clusters))
-        pocket_clusters = pocket_clusters[:ix_ignore]
+        for hs_sele in levels:
+            hs_objs = pm.get_object_list(hs_sele)
 
-        if not pocket_clusters:
-            continue
+            if not hs_objs:
+                continue
+
+            pocket_clusters = [c for c in clusters if c.selection in hs_objs if c.ST >= 5]
+            if not pocket_clusters:
+                continue
         
-        hs_sele = ' | '.join([c.selection for c in pocket_clusters])
-        if hs_sele in pockets:
-            assert all(c1 == c2 for c1, c2 in zip(pocket_clusters, pockets[hs_sele]))
-            assert len(pocket_clusters) == len(pockets[hs_sele])
-        pockets[hs_sele] = pocket_clusters
+            hs_sele = ' | '.join([c.selection for c in pocket_clusters])
+            pockets[hs_sele] = pocket_clusters
     return pockets
 
 
@@ -246,7 +243,7 @@ class Hotspot:
     def from_cluster_selections(
         selections: List[str],
         cd_to_anchor: bool=True,
-        max_collisions: float=0.15
+        max_collisions: float=0.10
     ) -> Hotspot:
         clusters = []
         objs = pm.get_object_list(' | '.join(selections))
@@ -263,7 +260,7 @@ class Hotspot:
         return Hotspot.from_clusters(group, clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
         
     @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=True, max_collisions: float=0.15) -> Hotspot:
+    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=True, max_collisions: float=0.10) -> Hotspot:
         coms = [pm.centerofmass(c.selection) for c in clusters]
         cd = [distance.euclidean(coms[0], com) for com in coms]
         cd0 = np.max(cd) if len(cd) > 0 else 0.0
@@ -358,7 +355,7 @@ class Hotspot:
         cd_to_anchor: bool,
         combinatory_search: bool,
         allow_nested: bool,
-        max_collisions: float=0.15
+        max_collisions: float=0.10
     ) -> List[Hotspot]:
         
         # filter out weak clusters
@@ -467,7 +464,7 @@ class Hotspot:
                             pm.distance(measure_name, e[0], e[1], mode=4)
                             pm.color('cyan', measure_name)
 
-    def make_graph(group: str, clusters: List[Cluster], radius: float=0.5, samples: int=50, max_collisions: float=0.15) -> int:
+    def make_graph(group: str, clusters: List[Cluster], radius: float=1.7, samples: int=50, max_collisions: float=0.15) -> int:
         g = nx.Graph()
         # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
         g.add_nodes_from([c.selection for c in clusters])
@@ -1553,7 +1550,7 @@ class LoadWidget(QWidget):
         self.maxCollisions = QDoubleSpinBox()
         self.maxCollisions.setRange(0.0, 1.0)
         self.maxCollisions.setSingleStep(0.05)
-        self.maxCollisions.setValue(0.15)
+        self.maxCollisions.setValue(0.10)
         boxLayout.addRow("Max collisions:", self.maxCollisions)
         
     def pickFile(self):
@@ -2145,7 +2142,7 @@ class LigandFitWidget(QWidget):
         
         self.functionCombo = QComboBox()
         self.functionCombo.addItems([e.value for e in OverlapFunction])
-        layout.addRow("Function:", self.functionCombo)
+        layout.addRow("Overlap function:", self.functionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(2)
@@ -2286,7 +2283,7 @@ class OverlapWidget(QWidget):
         
         self.functionCombo = QComboBox()
         self.functionCombo.addItems([e.value for e in OverlapFunction])
-        layout.addRow("Function:", self.functionCombo)
+        layout.addRow("Overlap function:", self.functionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(2)
