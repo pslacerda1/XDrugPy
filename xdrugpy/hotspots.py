@@ -53,9 +53,9 @@ class ECluster:
     ST: int
 
 
-@lru_cache(1024)
-def get_coords(sel):
-    return pm.get_coords(sel)
+# @lru_cache(1024)
+def get_coords(sel, state=1):
+    return pm.get_coords(sel, state)
 
 
 def get_clusters():
@@ -120,16 +120,17 @@ def find_occupied_pockets(
         p_sele = f'{group}.protein & ({p_sele})'
 
         levels = []
-        hs_sele = f"{group}.CS.* near_to 8 of ({p_sele})"
-        sele_cnt = 0
-        while True:
-            new_sele_cnt = pm.count_atoms(hs_sele)
-            if new_sele_cnt != sele_cnt:
-                sele_cnt = new_sele_cnt
-            else:
-                break
-            levels.append(hs_sele)
-            hs_sele = f"{group}.CS.* within 8 of ({hs_sele})"
+        for radius in [4, 8]:
+            hs_sele = f"{group}.CS.* near_to {radius} of ({p_sele})"
+            sele_cnt = 0
+            while True:
+                new_sele_cnt = pm.count_atoms(hs_sele)
+                if new_sele_cnt != sele_cnt:
+                    sele_cnt = new_sele_cnt
+                else:
+                    break
+                levels.append(hs_sele)
+                hs_sele = f"{group}.CS.* within {radius} of ({hs_sele})"
         
         for hs_sele in levels:
             hs_objs = pm.get_object_list(hs_sele)
@@ -595,7 +596,7 @@ def _load_ftmap(
     group = pm.get_legal_name(group)
     
     pm.delete(f"%{group}")
-    pm.load(str(filename), quiet=1)
+    pm.load(str(filename), quiet=1, discrete=1)
 
     if objs := pm.get_object_list("*_protein"):
         assert len(objs) == 1
@@ -727,6 +728,8 @@ def get_fo(
     sel1: Selection,
     sel2: Selection,
     radius: float = 2,
+    state1: int = 1,
+    state2: int = 1,
     quiet: bool = True,
 ):
     """
@@ -743,8 +746,8 @@ def get_fo(
         state2  hotspot state.
         radius  the radius so sel1 and sel2 are in contact (default: 2).
     """
-    xyz1 = get_coords(sel1)
-    xyz2 = get_coords(sel2)
+    xyz1 = get_coords(sel1, state=state1)
+    xyz2 = get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         fo = 0
     else:
@@ -762,6 +765,8 @@ def get_dc(
     sel1: Selection,
     sel2: Selection,
     radius: float = 1.25,
+    state1: int = 1,
+    state2: int = 1,
     quiet: bool = True,
 ):
     """
@@ -783,8 +788,8 @@ def get_dc(
         dc ftmap1234.D.003, REF_LIG, radius=1.5
 
     """
-    xyz1 = get_coords(sel1)
-    xyz2 = get_coords(sel2)
+    xyz1 = get_coords(sel1, state=state1)
+    xyz2 = get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         dc = 0
     else:
@@ -799,6 +804,8 @@ def get_dce(
     sel1: Selection,
     sel2: Selection,
     radius: float = 1.25,
+    state1: int = 1,
+    state2: int = 1,
     quiet: bool = True,
 ):
     """
@@ -819,7 +826,13 @@ def get_dce(
     EXAMPLE
         dce REF_LIG, ftmap1234.D_003_*_*
     """
-    dce = get_dc(sel1, sel2, radius=radius) / pm.count_atoms(sel1)
+    dce = get_dc(
+        sel1,
+        sel2,
+        radius=radius,
+        state1=state1,
+        state2=state2
+    ) / pm.count_atoms(sel1)
     if not quiet:
         print(f"DCE: {dce:.2f}")
     return dce

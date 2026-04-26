@@ -563,7 +563,7 @@ class VinaDockingEngine:
 
     def run_cmd(self, token, command):
         text = f"[{token}] command:\n\t{command}\n"
-        html = f"<hr><p><b>{token} command</b><br><pre>{command}</pre><br>"
+        html = f"<hr><p><b>{token} COMMAND</b><br><pre>{command}</pre><br>"
         process = subprocess.Popen(
             command,
             shell=True,
