@@ -1949,6 +1949,7 @@ class HcaWidget(QWidget):
             groupBox = QGroupBox("Multivariate analysis")
         else:
             groupBox = QGroupBox()
+        
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
