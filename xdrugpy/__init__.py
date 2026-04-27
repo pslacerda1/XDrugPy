@@ -23,9 +23,9 @@ def install_xdrugpy_requirements():
     except:
         os.system(
             "pip install"
-            " numpy, pandas, matplotlib, scipy, strenum, networkx"
+            " numpy pandas matplotlib scipy strenum networkx"
             " watchdog rcsb-api"
-            " molscrub, openpyxl, openbabel-wheel, pdb2pqr, propka"
+            " molscrub openpyxl openbabel-wheel pdb2pqr propka"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
 
