@@ -16,11 +16,16 @@ else:
 @pm.extend
 def install_xdrugpy_requirements():
     try:
-        import meeko, pandas, openpyxl, scipy, matplotlib, strenum, openbabel, watchdog, molscrub, pdb2pqr, propka, networkx
+        import numpy, pandas, matplotlib, scipy, strenum, networkx
+        import watchdog
+        import meeko, molscrub, openpyxl, openbabel, pdb2pqr, propka
+
     except:
         os.system(
             "pip install"
-            " pandas openpyxl scipy matplotlib strenum openbabel-wheel rcsb-api watchdog molscrub pdb2pqr propka networkx"
+            " numpy, pandas, matplotlib, scipy, strenum, networkx"
+            " watchdog rcsb-api"
+            " molscrub, openpyxl, openbabel-wheel, pdb2pqr, propka"
             " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
         )
 
@@ -86,8 +91,6 @@ def __init_plugin__(app=None):
     if XDRUGPY_EXPERIMENTAL_VERSION:
         __init_docking__()
         __init_multi__()
-
-    pm.undo_disable()
     
     import matplotlib.style
     import matplotlib as mpl
