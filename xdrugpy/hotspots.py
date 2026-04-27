@@ -1945,7 +1945,10 @@ class HcaWidget(QWidget):
             plotButton.clicked.connect(self.plot_univariate)
             boxLayout.addWidget(plotButton)
 
-        groupBox = QGroupBox("Multivariate analysis")
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            groupBox = QGroupBox("Multivariate analysis")
+        else:
+            groupBox = QGroupBox()
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
