@@ -1549,17 +1549,20 @@ class LoadWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.cdToAnchor = QCheckBox()
-        self.cdToAnchor.setChecked(True)
-        boxLayout.addRow("Use satellite-to-anchor CD:", self.cdToAnchor)
-
+        self.cdToAnchor.setChecked(False)
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            boxLayout.addRow("Use satellite-to-anchor CD:", self.cdToAnchor)
+        
         self.combinatorySearch = QCheckBox()
-        self.combinatorySearch.setChecked(False)
-        boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
+        self.combinatorySearch.setChecked(True)
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
 
         self.allowNested = QCheckBox()
-        self.allowNested.setChecked(False)
-        boxLayout.addRow("Allow nested hotspots:", self.allowNested)
-        
+        self.allowNested.setChecked(True)
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            boxLayout.addRow("Allow nested hotspots:", self.allowNested)
+            
         self.maxCollisions = QDoubleSpinBox()
         self.maxCollisions.setRange(0.0, 1.0)
         self.maxCollisions.setSingleStep(0.05)
@@ -1711,18 +1714,18 @@ class TableWidget(QWidget):
                 "Class",
                 "ST",
                 "S0",
-                "S1",
-                "SZ",
                 "CD",
-                "CD0",
-                "CD16",
-                "CD13",
                 "MD",
                 "Length",
             ],
             ("CS", "CS"): ["ST"],
         }
         if XDRUGPY_EXPERIMENTAL_VERSION:
+            self.hotspotsMap[("Hotspots", "HS")].insert(3, "S1")
+            self.hotspotsMap[("Hotspots", "HS")].insert(4, "SZ")
+            self.hotspotsMap[("Hotspots", "HS")].insert(6, "CD0")
+            self.hotspotsMap[("Hotspots", "HS")].insert(7, "CD16")
+            self.hotspotsMap[("Hotspots", "HS")].insert(8, "CD13")
             self.hotspotsMap[("E-FTMap", "ACS")] = ["Class", "ST", "MD"]
 
         self.tables = {}
@@ -1916,30 +1919,31 @@ class HcaWidget(QWidget):
         container.setLayout(layout)
         mainLayout.addWidget(container)
         
-        groupBox = QGroupBox("Univariate analysis")
-        layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            groupBox = QGroupBox("Univariate analysis")
+            layout.addWidget(groupBox)
+            boxLayout = QFormLayout()
+            groupBox.setLayout(boxLayout)
 
-        self.univariateFunctionCombo = QComboBox()
-        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
-        boxLayout.addRow("Function:", self.univariateFunctionCombo)
+            self.univariateFunctionCombo = QComboBox()
+            self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+            boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
-        self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(4)
-        self.radiusSpin.setSingleStep(0.5)
-        self.radiusSpin.setDecimals(2)
-        self.radiusSpin.setMinimum(1)
-        self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Radius:", self.radiusSpin)
+            self.radiusSpin = QDoubleSpinBox()
+            self.radiusSpin.setValue(4)
+            self.radiusSpin.setSingleStep(0.5)
+            self.radiusSpin.setDecimals(2)
+            self.radiusSpin.setMinimum(1)
+            self.radiusSpin.setMaximum(10)
+            boxLayout.addRow("Radius:", self.radiusSpin)
 
-        self.pairwiseSeqAlignCheck = QCheckBox()
-        self.pairwiseSeqAlignCheck.setChecked(False)
-        boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
+            self.pairwiseSeqAlignCheck = QCheckBox()
+            self.pairwiseSeqAlignCheck.setChecked(False)
+            boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
 
-        plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_univariate)
-        boxLayout.addWidget(plotButton)
+            plotButton = QPushButton("Plot")
+            plotButton.clicked.connect(self.plot_univariate)
+            boxLayout.addWidget(plotButton)
 
         groupBox = QGroupBox("Multivariate analysis")
         layout.addWidget(groupBox)
@@ -1948,7 +1952,8 @@ class HcaWidget(QWidget):
 
         self.multivariateFunctionCombo = QComboBox()
         self.multivariateFunctionCombo.addItems([e.value for e in DistanceMethod])
-        boxLayout.addRow("Distance:", self.multivariateFunctionCombo)
+        if XDRUGPY_EXPERIMENTAL_VERSION:
+            boxLayout.addRow("Distance:", self.multivariateFunctionCombo)
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_multivariate_hca)
