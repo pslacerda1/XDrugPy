@@ -138,10 +138,7 @@ def find_occupied_pockets(
             if not hs_objs:
                 continue
 
-            pocket_clusters = [c for c in clusters if c.selection in hs_objs if c.ST >= 5]
-            if not pocket_clusters:
-                continue
-        
+            pocket_clusters = [c for c in clusters if c.selection in hs_objs]
             hs_sele = ' | '.join([c.selection for c in pocket_clusters])
             pockets[hs_sele] = pocket_clusters
     return pockets
@@ -367,10 +364,11 @@ class Hotspot:
         spots = []
         pockets = find_occupied_pockets(group, pocket_residues, clusters)
         for hs_sele, pocket_clusters in pockets.items():
-            hs = Hotspot.from_clusters(group, pocket_clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-            if hs.klass:
-                hs.selection = hs_sele
-                spots.append(hs)
+            if pocket_clusters:
+                hs = Hotspot.from_clusters(group, pocket_clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
+                if hs.klass:
+                    hs.selection = hs_sele
+                    spots.append(hs)
         
         # identify hotspots from combinations of consensus sites
         if combinatory_search:
