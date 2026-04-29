@@ -381,6 +381,21 @@ class Hotspot:
                     if hs.klass:
                         spots.append(hs)
         
+        # remove identical repeated hotspots
+        repeated = set()
+        for ix1, hs1 in enumerate(spots):
+            for ix2, hs2 in enumerate(spots):
+                if ix1 != ix2:
+                    if ix1 < ix2:
+                        continue
+                    if len(hs1.clusters) == len(hs2.clusters):
+                        if all(c1 == c2 for c1, c2 in zip(hs1.clusters, hs2.clusters)):
+                            repeated.add(hs2.selection)
+        
+        for hs in spots.copy():
+            if hs.selection in repeated:
+                spots.remove(hs)
+
         # remove hotspot objects when they totally fit inside another (and are of the same class)
         if not allow_nested:
             nested = set()
