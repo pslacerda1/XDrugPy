@@ -1447,7 +1447,7 @@ class BindMetric(StrEnum):
     PKI = "pki"
     LE = "le"
     BEI = "bei"
-    FQ = "fq"
+    # FQ = "fq"
 
 
 def plot_ligand_fit(
