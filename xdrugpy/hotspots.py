@@ -1447,7 +1447,7 @@ class BindMetric(StrEnum):
     PKI = "pki"
     LE = "le"
     BEI = "bei"
-    # FQ = "fq"
+    FQ = "fq"
 
 
 def plot_ligand_fit(
@@ -2174,8 +2174,8 @@ class LigandFitWidget(QWidget):
         layout.addRow("Ligands:", self.ligandsSeleLine)
         
         self.ligMetricCombo = QComboBox()
-        self.ligMetricCombo.addItems([e.value for e in BindMetric])
-        layout.addRow("Bind metric:", self.ligMetricCombo)
+        self.ligMetricCombo.addItems([e.value for e in BindMetric if e != BindMetric.PKI])
+        layout.addRow("Binding metric:", self.ligMetricCombo)
         
         self.functionCombo = QComboBox()
         self.functionCombo.addItems([e.value for e in OverlapFunction])
