@@ -3,7 +3,9 @@
 from setuptools import setup
 
 setup(
-    name="XDrugPy",
-    version="0.1",
+    name="DRUGpy",
+    version="2.0.0",
     packages=["xdrugpy"],
+    author="Pedro Sousa Lacerda",
+    author_email="pslacerda@gmail.com",
 )

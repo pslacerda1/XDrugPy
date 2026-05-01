@@ -1,11 +1,6 @@
 import builtins
 import itertools
-import subprocess
-import os
-import atexit
 import sys
-import io
-import signal
 import shlex
 import inspect
 import scipy.cluster.hierarchy as sch
@@ -17,14 +12,12 @@ from collections import namedtuple, defaultdict
 from shutil import rmtree
 from tempfile import mkdtemp
 from pymol import Qt, cmd as pm, parsing
-from contextlib import contextmanager
 from pathlib import Path
 from matplotlib.axes import Axes
 from matplotlib import pyplot as plt, axes
 from scipy.spatial import distance
 from scipy.cluster.hierarchy import linkage
 from collections import namedtuple
-from functools import lru_cache
 from strenum import StrEnum
 from enum import Enum
 
@@ -32,27 +25,6 @@ from enum import Enum
 from pymol.parser import __file__ as _parser_filename
 
 QStandardPaths = Qt.QtCore.QStandardPaths
-
-
-RESOURCES_DIR = Path(
-    QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
-)
-RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
-
-LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/ligands/")
-LIGAND_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
-
-RECEPTOR_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/receptors/")
-RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
-
-TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
-
-
-def clear_temp():
-    rmtree(TEMPDIR)
-
-
-atexit.register(clear_temp)
 
 
 Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
@@ -64,24 +36,6 @@ class AligMethod(StrEnum):
     CEALIGN = "cealign"
     FIT = "fit"
     
-
-
-def run(command, log=True, cwd=None, env=os.environ):
-    if log:
-        print("RUNNING PROCESS:", command)
-    ret = subprocess.run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        cwd=cwd,
-        shell=True,
-        env=env,
-    )
-    output = ret.stdout.decode(errors="replace")
-    success = ret.returncode == 0
-    return output, success
-
-
 
 class Selection(str):
     pass
@@ -266,21 +220,6 @@ def new_command(name, function=None, _self=pm):
     inner.func = inner.__wrapped__ 
     return inner
 
-@contextmanager
-def mpl_axis(ax, **kwargs):
-    if not ax:
-        _, new_ax = plt.subplots(**kwargs)
-    elif isinstance(ax, (str, Path)):
-        output_file = ax
-        _, new_ax = plt.subplots(**kwargs)
-    elif isinstance(ax, Axes):
-        new_ax = ax
-    yield new_ax
-    if not ax:
-        plt.show()
-    elif isinstance(ax, (str, Path)):
-        plt.savefig(output_file)
-
 
 @new_command
 def align_groups(
@@ -434,172 +373,3 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, 
             fig.savefig(axis)
     
     return dendro, medoids
-
-
-@lru_cache(25000)
-def get_residue_from_object(obj, idx):
-    res = []
-    pm.iterate_state(
-        -1,
-        f"%{obj} & index {idx}",
-        "res.append(Residue(model, int(index), int(resi), chain, resn, oneletter, conservation))",
-        space={"res": res, "Residue": Residue},
-    )
-    return res[0]
-
-
-def clustal_omega(seles, conservation, titles=None):
-    replaced_dict = {}
-    replaced_list = []
-    if not titles:
-        titles = seles
-    input_fasta = ''
-    for sele, title in zip(seles, titles):
-        query = f'({sele}) and present and guide and polymer'
-
-        title_replaced = title.replace(' ', '_')
-        replaced_dict[title_replaced] = title
-        replaced_list.append(title_replaced)
-
-        input_fasta += (
-            ">" + title_replaced + 
-            pm
-            .get_fastastr(query, key='model')
-            .removeprefix(f'>{sele}')
-        )
-    
-    proc = subprocess.Popen(
-        "clustalo -i - --outfmt=clustal",
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        shell=True,
-        text=True,
-    )
-    output, err = proc.communicate(input_fasta)
-    if err:
-        raise Exception(f"Clustal Omega error: {err}")
-    
-    # joining multiline sequences
-    output = output.split('\n')[3:]
-    sequences = {}
-    while output:
-        line = output.pop(0)
-        if line.strip() == "":
-            continue
-        if line[0] != ' ':
-            name, seq = line.split()
-        else:
-            name = 'CLUSTALO'
-            seq = line[-len(seq):]
-        sequences[name] = sequences.get(name, "") + seq
-
-    # skiping gaps and keeping counters ok
-    clu = sequences.pop('CLUSTALO')
-    len_aln = len(clu)
-    omega = {}
-    for (title, seq), sele in zip(sequences.items(), seles):
-        local_ix = 0
-        atoms = [a for a in pm.get_model(f"%{sele} & present & guide & polymer").atom]
-        for aln_ix in range(len_aln):
-            seq_char = seq[aln_ix]
-            clu_char = clu[aln_ix]
-            if seq_char != '-':
-                if clu_char in conservation:
-                    assert local_ix < len(atoms)
-                    at = atoms[local_ix]
-                    if title not in omega:
-                        omega[title] = []
-                    omega[title].append(Residue(
-                        at.model, at.index, int(at.resi), at.chain, at.resn, seq_char, clu_char
-                    ))
-                local_ix += 1
-    
-    omega = {
-        replaced_dict[title]: omega[title]
-        for title in sorted(omega, key=replaced_list.index)
-    }
-    return omega
-
-
-from pymol import Qt
-
-QWidget = Qt.QtWidgets.QWidget
-QFileDialog = Qt.QtWidgets.QFileDialog
-QFormLayout = Qt.QtWidgets.QFormLayout
-QPushButton = Qt.QtWidgets.QPushButton
-QSpinBox = Qt.QtWidgets.QSpinBox
-QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
-QLineEdit = Qt.QtWidgets.QLineEdit
-QCheckBox = Qt.QtWidgets.QCheckBox
-QVBoxLayout = Qt.QtWidgets.QVBoxLayout
-QHBoxLayout = Qt.QtWidgets.QHBoxLayout
-QDialog = Qt.QtWidgets.QDialog
-QComboBox = Qt.QtWidgets.QComboBox
-QTabWidget = Qt.QtWidgets.QTabWidget
-QLabel = Qt.QtWidgets.QLabel
-QTableWidget = Qt.QtWidgets.QTableWidget
-QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
-QGroupBox = Qt.QtWidgets.QGroupBox
-QHeaderView = Qt.QtWidgets.QHeaderView
-QTextEdit = Qt.QtWidgets.QTextEdit
-
-QtCore = Qt.QtCore
-QIcon = Qt.QtGui.QIcon
-QTextCursor = Qt.QtGui.QTextCursor
-
-
-
-def kill_process(proc):
-    """
-    Mata processo corretamente, incluindo subprocessos
-    """
-    if proc.poll() is not None:
-        return  # Já terminou
-    
-    try:
-        if sys.platform == 'win32':
-            # Windows - usar taskkill para matar árvore
-            subprocess.call(
-                ['taskkill', '/F', '/T', '/PID', str(proc.pid)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-        else:
-            # Unix - matar grupo de processos
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                # Se não terminou, força
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait()
-    
-    except ProcessLookupError:
-        pass  # Processo já morreu
-    except Exception as e:
-        print(f"Error killing process: {e}")
-        # Último recurso
-        try:
-            proc.kill()
-            proc.wait()
-        except:
-            pass
-
-class PyMOLComboObjectBox(QComboBox):
-
-    def __init__(self):
-        super().__init__()
-        self.setEditable(True)
-        self.setInsertPolicy(QComboBox.NoInsert)
-        self.setEditText("")
-
-    def showPopup(self):
-        currentText = self.currentText().strip()
-        selections = pm.get_names("selections", enabled_only=False)
-        objects = pm.get_names("objects", enabled_only=False)
-        self.clear()
-        self.addItems("(%s)" % s for s in selections)
-        self.addItems(objects)
-        if currentText != "":
-            self.setCurrentText(currentText)
-        super().showPopup()

@@ -6,9 +6,7 @@ from os.path import expanduser
 from glob import glob
 from xdrugpy.hotspots import (
     load_ftmap,
-    plot_univariate_hca,
     plot_multivariate_hca,
-    PairwiseFunction,
     LinkageMethod
 )
 
@@ -31,7 +29,8 @@ pm.undo_disable()
 # This glob ???? match four chars (like a PDB id), but could be replaced by:
 #                        ~/Desktop/PEPTI/atlas/*_atlas.pdb
 files = glob(expanduser("~/Desktop/PEPTI/atlas/????_atlas.pdb"))
-for file in files[:25]:
+for file in files[:25]:  # limit to the first 25 entries,
+                        # but you can load as many as you want!
     
     # Load structures and does hotspots ligability analysis.
     ftmap = load_ftmap(file)
@@ -41,26 +40,12 @@ for file in files[:25]:
     # optimization reduces the number of PyMOL objects irrelevant to our
     # analysis improving the performance at high loads.
     #                             "NOT (*.D* AND p.S0>20 OR *.protein)"
-    for obj in pm.get_object_list("NOT (*.D* AND p.S0>20)"):
+    for obj in pm.get_object_list("NOT (*.protein OR *.D* AND p.S0>20)"):
         pm.delete(obj)
 
 # If you don't delete protein structures you can have a nice session!
 # pm.save("~/My Folder/nice_session.pze")
 
-# Does the similarity cluster analysis with hotspot overlap (HO) function. Only
-# strong hotspots with at least p.S0>20 that remained from the previous successive
-# loading and deletions. You can think this as univariate HCA or no HCA at all,
-# just a simple way to cluster hotspots.
-plot_univariate_hca(
-    '*.D* AND p.S0>20',
-    function=PairwiseFunction.HO,
-    radius=2.0,
-    linkage_method=LinkageMethod.AVERAGE,
-    color_threshold=2.5,     # probably you'll need to adjust this variable
-    only_medoids=True,       # hide every hotspot except the medoid
-    annotate=False,          # is desirable the value at each cell?
-)
-plt.title("Univariate HCA")
 
 # The standard HCA over the same hotspots of the previous analysis. This one
 # calculates the distance over the aggregation of hotspot properties, including

@@ -1,97 +1,24 @@
 from os.path import exists
 import os
-import stat
 from urllib.request import urlretrieve
-import platform
 from pymol import cmd as pm
-from .utils import RESOURCES_DIR
 
-SYSTEM = platform.system().lower()
-
-if 'XDRUGPY_EXPERIMENTAL' in os.environ:
-    XDRUGPY_EXPERIMENTAL_VERSION = True
-else:
-    XDRUGPY_EXPERIMENTAL_VERSION = False
 
 @pm.extend
 def install_xdrugpy_requirements():
     try:
-        import numpy, pandas, matplotlib, scipy, strenum, networkx
-        import watchdog
-        import meeko, molscrub, openpyxl, openbabel, pdb2pqr, propka
-
+        import pandas, matplotlib, scipy, strenum, networkx, openpyxl
     except:
         os.system(
-            "pip install"
-            " numpy pandas matplotlib scipy strenum networkx"
-            " watchdog rcsb-api"
-            " molscrub openpyxl openbabel-wheel pdb2pqr propka"
-            " https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
+            "pip install pandas matplotlib scipy strenum networkx openpyxl"
         )
-
     try:
         import pyKVFinder
     except:
         os.system("pip install --no-deps pyKVFinder")
 
-    #
-    # Install Vina
-    #
-    match SYSTEM:
-        case "windows":
-            bin_fname = "vina_1.2.7_win.exe"
-        case "linux":
-            bin_fname = "vina_1.2.7_linux_x86_64"
-        case "darwin":
-            bin_fname = "vina_1.2.7_mac_x86_64"
-    vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
-    vina_exe = f'{RESOURCES_DIR}/vina'
-    if SYSTEM == "windows":
-        vina_exe += ".exe"
-    if not exists(vina_exe):
-        print(f"Installing AutoDock Vina on", RESOURCES_DIR)
-        urlretrieve(vina_url, vina_exe)
-        os.chmod(vina_exe, stat.S_IEXEC)
-
-    #
-    # Install Clustal Omega
-    #
-    if SYSTEM == "windows":
-        web_name = "clustal-omega-1.2.2-win64.zip"
-        local_name = RESOURCES_DIR / web_name
-        if not exists(local_name):
-            urlretrieve(
-                f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}",
-                local_name
-            )
-            import zipfile
-            zipfile.ZipFile(local_name).extractall(RESOURCES_DIR)
-            os.chmod(RESOURCES_DIR / 'clustalo.exe', stat.S_IEXEC)
-    else:
-        if SYSTEM == "linux":
-            web_name = "clustalo-1.2.4-Ubuntu-x86_64"
-        elif SYSTEM == "darwin":
-            web_name = "clustal-omega-1.2.3-macosx"
-        else:
-            raise RuntimeError("Unexpected system.")
-        
-        clustalo_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}"
-        clustalo_exe = RESOURCES_DIR / "clustalo"
-        if not exists(clustalo_exe):
-            urlretrieve(clustalo_url, clustalo_exe)
-            os.chmod(clustalo_exe, stat.S_IEXEC)
-
 
 def __init_plugin__(app=None):
-    from .hotspots import __init_plugin__ as __init_hotspots__
-    from .docking import __init_plugin__ as __init_docking__
-    from .multi import __init_plugin__ as __init_multi__
-
-    __init_hotspots__()
-    if XDRUGPY_EXPERIMENTAL_VERSION:
-        __init_docking__()
-        __init_multi__()
-    
     import matplotlib.style
     import matplotlib as mpl
     mpl.style.use('default')
@@ -106,11 +33,8 @@ def __init_plugin__(app=None):
     from PyQt5.QtCore import QLocale
     QLocale.setDefault(QLocale("en_US"))
 
-
-if SYSTEM == "windows":
-    os.environ["PATH"] = "%s;%s" % (RESOURCES_DIR, os.environ["PATH"])
-else:
-    os.environ["PATH"] = "%s:%s" % (RESOURCES_DIR, os.environ["PATH"])
+    from .hotspots import __init_plugin__ as __init_hotspots_plugin__
+    __init_hotspots_plugin__()
 
 
 if __name__ in ["pymol", "pmg_tk.startup.XDrugPy"]:

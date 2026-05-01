@@ -12,7 +12,7 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 import matplotlib
-from scipy.spatial import distance_matrix, distance, cKDTree, ConvexHull
+from scipy.spatial import distance_matrix, distance, cKDTree
 
 from scipy.stats import pearsonr
 from matplotlib import pyplot as plt
@@ -20,18 +20,13 @@ from strenum import StrEnum
 import networkx as nx
 import pyKVFinder
 
-from . import XDRUGPY_EXPERIMENTAL_VERSION
 from .utils import (
     new_command,
     Selection,
     plot_hca_base,
-    clustal_omega,
-    run,
-    Residue
 )
 
 from pymol import cmd as pm
-from pymol.exporting import _resn_to_aa as RESN_TO_AA
 
 
 matplotlib.use("Qt5Agg")
@@ -859,190 +854,6 @@ class LinkageMethod(StrEnum):
 
 
 @new_command
-def fpt_sim(
-    multi_seles: Selection,
-    site: Selection = "*",
-    site_radius: float = 5.0,
-    seq_align_omega: bool = False,
-    omega_conservation: str = "*:.",
-    contact_radius: float = 4.0,
-    nbins: int = 5,
-    sharex: bool = True,
-    linkage_method: LinkageMethod = LinkageMethod.WARD,
-    color_threshold: float = 0.0,
-    only_medoids: bool = False,
-    annotate: bool = True,
-    plot_fingerprints: str = "",
-    share_ylim: bool = True,
-    plot_hca: str = "",
-    quiet: bool = True,
-):
-    """
-    Compute the similarity between the residue contact fingerprint of two
-    hotspots.
-
-    OPTIONS:
-        hotspots          hotspot selection
-        site              selection to focus based on first protein
-        radius            radius to compute the contacts (default: 4)
-        plot_fingerprints plot the fingerprints (default: True)
-        nbins             number of residue labels (default: 5)
-        plot_dendrogram   plot the dendrogram (default: False)
-        linkage_method    linkage method (default: single)
-        quiet             define verbosity
-
-    EXAMPLES
-        fs_sim 8DSU.K15_D_01* 6XHM.K15_D_01*
-        fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
-    """
-    seles = []
-    groups = []
-
-    for sele in multi_seles.split("/"):
-        sele = sele.strip()
-        seles.append(sele.strip())
-        obj = pm.get_object_list(sele)
-        if obj is not None and len(obj) >= 1:
-            obj = obj[0]
-        else:
-            raise ValueError(f"Bad selection: {sele}")
-        if group := pm.get_property("Group", obj):
-            groups.append(group)
-    polymers = [f"{g}.protein" for g in groups]
-    assert len(polymers) > 0, "Please review your selections"
-    
-    ref_polymer = polymers[0]
-    ref_sele = seles[0]
-    site_sele = f"{ref_polymer} & ({ref_polymer} within {site_radius} of ({site}))"
-    site_resis = []
-    for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
-        site_resis.append((at.model, at.index))
-    
-    if seq_align_omega:
-        mapping = clustal_omega(polymers, omega_conservation.strip(), titles=seles)
-    else:
-        mapping = {}
-        ref_model = pm.get_model(f"{ref_polymer} & present & guide & polymer")
-        ref_map = []
-        for at in ref_model.atom:
-            ref_map.append(Residue(
-                at.model, at.index, int(at.resi), at.chain,
-                at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
-            ))
-        mapping[ref_sele] = ref_map
-        for poly, sele in zip(polymers, seles):
-            if sele == ref_sele:
-                continue
-            current_model = pm.get_model(f"{poly} & present & guide & polymer")
-            lookup = {(int(at.resi), at.chain): at for at in current_model.atom}
-            current_map = []
-            for ref_res in ref_map:
-                match = lookup.get((int(ref_res.resi), ref_res.chain))
-                if match:
-                    at = match
-                    current_map.append(
-                        Residue(
-                            at.model, at.index, int(at.resi), at.chain,
-                            at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
-                        )
-                    )
-                else:
-                    current_map.append(
-                        Residue(None, -1, int(ref_res.resi), ref_res.chain, 'GAP', '-', ''))
-            mapping[sele] = current_map
-
-    ref_map = mapping[ref_sele]
-    fpts = []
-    for poly, (hs, map) in zip(polymers, mapping.items()):
-        fpt = {}
-        for ref_res, res in zip(ref_map, map):
-            if (ref_polymer, ref_res.index) not in site_resis:
-                continue
-            lbl = (res.oneletter, res.conservation, res.resi, res.chain)
-            cnt = pm.count_atoms(
-                f"({hs}) within {contact_radius} of (byres %{poly} & index {res.index})"
-            )
-            fpt[lbl] = fpt.get(lbl, 0) + cnt
-        fpts.append(fpt)
-    
-    if plot_fingerprints:
-        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
-        fig.supylabel('Atom Counts')
-        if not isinstance(axs, (np.ndarray, list)):
-            axs = [axs]
-        if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
-            raise ValueError(
-                "All fingerprints must have the same length. "
-                "Do you have incomplete structures?"
-            )
-        
-        max_val = 0
-        for ix, (ax, fpt, sele) in enumerate(zip(axs, fpts, seles)):
-            labels = ["%s%s %s_%s" % k for k in fpt]
-            if sharex and ix == 0:
-                shared_labels = labels
-            elif sharex and ix + 1 == len(seles):
-                labels = shared_labels
-            arange = np.arange(len(fpt))
-            max_val = max(max(fpt.values()), max_val)
-            ax.bar(arange, fpt.values(), color="C0")
-            ax.set_title(sele)
-            ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-            if not sharex or sharex and ix + 1 == len(seles):
-                ax.set_xticks(arange, labels=labels, rotation=90)
-                ax.locator_params(axis="x", tight=True, nbins=nbins)
-                for label in ax.xaxis.get_majorticklabels():
-                    label.set_verticalalignment("top")
-        if share_ylim:
-            for ax in axs:
-                ax.set_ylim(0, max_val * 1.05)
-        
-        if isinstance(plot_fingerprints, (str, Path)):
-            fig.savefig(plot_fingerprints, dpi=300)
-            if not quiet:
-                print(f"Fingerprint figure saved to {plot_fingerprints}")
-        
-    corrs = []
-    labels = []
-    for i1, (fp1, sele1) in enumerate(zip(fpts, seles)):
-        labels.append(sele1)
-        for i2, (fp2, sele2) in enumerate(zip(fpts, seles)):
-            if i1 >= i2:
-                continue
-            corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
-            if np.isnan(corr):
-                corr = 0
-            corrs.append(1 - corr)
-            if not quiet:
-                print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
-    
-    dendro, medoids = None, None
-    if plot_hca:
-        fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=True)
-        assert len(fpts) > 1, "Clustering requires multiple fingerprints, please add more selections."
-        
-        dendro, medoids = plot_hca_base(
-            corrs,
-            labels,
-            linkage_method=linkage_method,
-            color_threshold=color_threshold,
-            only_medoids=only_medoids,
-            annotate=annotate,
-            axis=ax,
-            vmin=0,
-            vmax=2,
-        )
-        for label in ax.xaxis.get_majorticklabels():
-            label.set_horizontalalignment("right")
-        if isinstance(plot_hca, (str, Path)):
-            fig.savefig(plot_hca, dpi=300)
-            if not quiet:
-                print(f"Clusters figure saved to {plot_hca}")
-    
-    return fpts, corrs, dendro, medoids
-
-
-@new_command
 def get_ho(
     hs1: Selection,
     hs2: Selection,
@@ -1074,210 +885,6 @@ def get_ho(
     return ho
 
 
-class ResidueSimilarityMethod(StrEnum):
-    JACCARD = "jaccard"
-    OVERLAP = "overlap"
-
-
-@new_command
-def res_sim(
-    hs1: Selection,
-    hs2: Selection,
-    radius: float = 4.0,
-    seq_align: bool = False,
-    method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
-    quiet: bool = True,
-):
-    """
-    Compute hotspots similarity by the Jaccard or overlap coefficient of nearby
-    residues.
-
-    OPTIONS
-        hs1     hotspot 1
-        hs2     hotspot 2
-        radius  distance to consider residues near hotspots (default: 2)
-        method  jaccard or overlap (default: jaccard)
-        quiet   define verbosity
-
-    EXAMPLES
-        res_sim 8DSU.D_001*, 6XHM.D_001*
-        res_sim 8DSU.CS_*, 6XHM.CS_*
-    """
-    group1 = pm.get_property("Group", f"first {hs1}")  # FIXME it doesn't works with arbitrary objects
-    group2 = pm.get_property("Group", f"first {hs2}")
-
-    sel1 = f"{group1}.protein within {radius} from ({hs1})"
-    sel2 = f"{group2}.protein within {radius} from ({hs2})"
-
-    resis1 = set()
-    pm.iterate(sel1, "resis1.add((chain, resi))", space={"resis1": resis1})
-
-    if group1 == group2 or not seq_align:
-        resis2 = set()
-        pm.iterate(sel2, "resis2.add((chain, resi))", space={"resis2": resis2})
-    else:
-        try:
-            # FIXME Clustal Omega?
-            aln_obj = pm.get_unused_name()
-            pm.cealign(
-                f"{group1}.protein", f"{group2}.protein", transform=0, object=aln_obj
-            )
-            raw = pm.get_raw_alignment(aln_obj)
-
-            resis = {}
-            pm.iterate(
-                aln_obj, "resis[model, index] = (chain, resi)", space={"resis": resis}
-            )
-
-            site2 = [(a.chain, a.resi) for a in pm.get_model(sel2).atom]
-            resis2 = set()
-            for idx1, idx2 in raw:
-                if resis[idx1] in site2:
-                    resis2.add(resis[idx2])
-        finally:
-            pm.delete(aln_obj)
-
-    try:
-        match method:
-            case ResidueSimilarityMethod.JACCARD:
-                ret = len(resis1.intersection(resis2)) / len(resis1.union(resis2))
-            case ResidueSimilarityMethod.OVERLAP:
-                ret = len(resis1.intersection(resis2)) / min(len(resis1), len(resis2))
-    except ZeroDivisionError:
-        if not quiet:
-            print("Your selection yields zero atoms.")
-        return 0.0
-
-    if not quiet:
-        print(f"{method} similarity: {ret:.2}")
-    return ret
-
-
-class PairwiseFunction(StrEnum):
-    HO = "ho"
-    RESIDUE_JACCARD = "residue_jaccard"
-    RESIDUE_OVERLAP = "residue_overlap"
-
-
-@new_command
-def plot_univariate_hca(
-    sele: Selection,
-    function: PairwiseFunction = PairwiseFunction.HO,
-    radius: float = 2.0,
-    align: bool = False,
-    annotate: bool = False,
-    linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    color_threshold: float = 0.0,
-    only_medoids: bool = False,
-    plot: str = "",
-    enable_heatmap: bool = False,
-    rename_leafs: Optional[Dict[str, str]] = None,
-    no_plot: bool = False,
-):
-    """
-    Compute the similarity between matching objects using a similarity function.
-
-    OPTIONS
-        objs        space separated list of object expressions
-        method      ho, residue_jaccard, or residue_overlap (default: ho)
-        radius      the radius to consider atoms in contact (default: 2.0)
-        annotate    fill the cells with values
-
-    EXAMPLES
-        plot_pairwise_similarity *.D_000_*_*, function=residue_jaccard
-        plot_pairwise_similarity *.D_*. align=True
-        plot_pairwise_similarity *.D_000_*_* *.DS_*
-    """
-
-    if '/' in sele:
-        objects = [s.strip() for s in sele.split('/')]
-    else:
-        objects = pm.get_object_list(sele)
-    assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
-
-    X = []
-    for idx1, obj1 in enumerate(objects):
-        for idx2, obj2 in enumerate(objects):
-            if idx1 >= idx2:
-                continue
-            match function:
-                case PairwiseFunction.HO:
-                    ret = get_ho(obj1, obj2, radius=radius)
-                case PairwiseFunction.RESIDUE_JACCARD:
-                    ret = res_sim(
-                        obj1,
-                        obj2,
-                        radius=radius,
-                        method=ResidueSimilarityMethod.JACCARD,
-                        seq_align=align,
-                    )
-                case PairwiseFunction.RESIDUE_OVERLAP:
-                    ret = res_sim(
-                        obj1,
-                        obj2,
-                        radius=radius,
-                        method=ResidueSimilarityMethod.OVERLAP,
-                        seq_align=align,
-                    )
-            X.append(1 - ret)
-    dendro, medoids = plot_hca_base(X, objects, linkage_method, color_threshold, only_medoids, annotate, plot, vmin=0, vmax=1, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs, no_plot=no_plot)
-    return X, objects, dendro, medoids
-
-
-class PrioritizationType(StrEnum):
-    RESIDUE = "residue"
-    ATOM = "atom"
-
-
-@new_command
-def hs_proj(
-    sel: Selection,
-    protein: Selection = "",
-    radius: float = 4,
-    type: PrioritizationType = PrioritizationType.RESIDUE,
-    palette: str = "rainbow",
-):
-    """
-    Colour atoms by proximity with FTMap probes.
-
-    OPTIONS:
-        sel         probes selection.
-        protein     object which will be coloured.
-        max_dist    maximum distance in Angstroms (default: 4).
-        type        residue or type (default: residue).
-        palette     spectrum colour palette (default: rainbow).
-    """
-
-    if not protein:
-        group = sel.split(".", maxsplit=1)[0]
-        protein = f"{group}.protein"
-
-    pm.alter(protein, "q=0")
-    for prot_atom in pm.get_model(f"({protein}) within {radius} of ({sel})").atom:
-        match type:
-            case PrioritizationType.RESIDUE:
-                prot_atom_sel = f"byres index {prot_atom.index}"
-            case PrioritizationType.ATOM:
-                prot_atom_sel = f"index {prot_atom.index}"
-        count = count_molecules(f"({sel}) within {radius} of ({prot_atom_sel})")
-        pm.alter(prot_atom_sel, f"q={count}")
-
-    pm.hide("everything", protein)
-    match type:
-        case PrioritizationType.RESIDUE:
-            pm.show("surface", protein)
-        case PrioritizationType.ATOM:
-            pm.show("cartoon", protein)
-            pm.show("sticks", "q>0")
-    pm.spectrum("q", palette=palette, selection=protein)
-
-
-class DistanceMethod(StrEnum):
-    EUCLIDEAN = "euclidean"
-    CITYBLOCK = "cityblock"
-    DICE = "dice"
-
-
 @new_command
 def plot_multivariate_hca(
     exprs: Selection,
@@ -1286,7 +893,6 @@ def plot_multivariate_hca(
     only_medoids: bool = False,
     annotate: bool = False,
     plot: str = None,
-    dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
     enable_heatmap: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
     no_plot: bool = False,
@@ -1340,7 +946,7 @@ def plot_multivariate_hca(
 
     
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
-    X = distance.pdist(p, dist_method)
+    X = distance.pdist(p)
     dendro, medoids = plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs, no_plot=no_plot)
     return X, object_list, dendro, medoids
 
@@ -1560,21 +1166,6 @@ class LoadWidget(QWidget):
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
-
-        self.cdToAnchor = QCheckBox()
-        self.cdToAnchor.setChecked(False)
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            boxLayout.addRow("Use satellite-to-anchor CD:", self.cdToAnchor)
-        
-        self.combinatorySearch = QCheckBox()
-        self.combinatorySearch.setChecked(True)
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
-
-        self.allowNested = QCheckBox()
-        self.allowNested.setChecked(True)
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            boxLayout.addRow("Allow nested hotspots:", self.allowNested)
             
         self.maxCollisions = QDoubleSpinBox()
         self.maxCollisions.setRange(0.0, 1.0)
@@ -1611,9 +1202,9 @@ class LoadWidget(QWidget):
         self.table.setRowCount(0)
 
     def load(self):
-        cd_to_anchor = self.cdToAnchor.isChecked()
-        combinatory_search = self.combinatorySearch.isChecked()
-        allow_nested = self.allowNested.isChecked()
+        cd_to_anchor = False
+        combinatory_search = True
+        allow_nested = True
         max_collisions = self.maxCollisions.value()
         try:
             filenames = []
@@ -1733,14 +1324,6 @@ class TableWidget(QWidget):
             ],
             ("CS", "CS"): ["ST"],
         }
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            self.hotspotsMap[("Hotspots", "HS")].insert(3, "S1")
-            self.hotspotsMap[("Hotspots", "HS")].insert(4, "SZ")
-            self.hotspotsMap[("Hotspots", "HS")].insert(6, "CD0")
-            self.hotspotsMap[("Hotspots", "HS")].insert(7, "CD16")
-            self.hotspotsMap[("Hotspots", "HS")].insert(8, "CD13")
-            self.hotspotsMap[("E-FTMap", "ACS")] = ["Class", "ST", "MD"]
-
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
             table = self.TableWidgetImpl(props)
@@ -1866,8 +1449,8 @@ class HcaWidget(QWidget):
         groupBox.setLayout(boxLayout)
         tab.addTab(groupBox, "General")
 
-        self.hotspotSeleLine = QLineEdit("*")
-        self.hotspotSeleLine.setPlaceholderText("PyMOL Selection Algebra")
+        self.hotspotSeleLine = QLineEdit()
+        self.hotspotSeleLine.setPlaceholderText("Objects or selection")
         boxLayout.addRow("Hotspots:", self.hotspotSeleLine)
 
         self.linkageMethodCombo = QComboBox()
@@ -1932,45 +1515,14 @@ class HcaWidget(QWidget):
         container.setLayout(layout)
         mainLayout.addWidget(container)
         
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            groupBox = QGroupBox("Univariate analysis")
-            layout.addWidget(groupBox)
-            boxLayout = QFormLayout()
-            groupBox.setLayout(boxLayout)
-
-            self.univariateFunctionCombo = QComboBox()
-            self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
-            boxLayout.addRow("Function:", self.univariateFunctionCombo)
-
-            self.radiusSpin = QDoubleSpinBox()
-            self.radiusSpin.setValue(4)
-            self.radiusSpin.setSingleStep(0.5)
-            self.radiusSpin.setDecimals(2)
-            self.radiusSpin.setMinimum(1)
-            self.radiusSpin.setMaximum(10)
-            boxLayout.addRow("Radius:", self.radiusSpin)
-
-            self.pairwiseSeqAlignCheck = QCheckBox()
-            self.pairwiseSeqAlignCheck.setChecked(False)
-            boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
-
-            plotButton = QPushButton("Plot")
-            plotButton.clicked.connect(self.plot_univariate)
-            boxLayout.addWidget(plotButton)
-
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            groupBox = QGroupBox("Multivariate analysis")
-        else:
-            groupBox = QGroupBox()
+        groupBox = QGroupBox("Multivariate analysis")
         
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
         self.multivariateFunctionCombo = QComboBox()
-        self.multivariateFunctionCombo.addItems([e.value for e in DistanceMethod])
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            boxLayout.addRow("Distance:", self.multivariateFunctionCombo)
+        self.multivariateFunctionCombo.addItems(["euclidean"])
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_multivariate_hca)
@@ -2016,37 +1568,12 @@ class HcaWidget(QWidget):
             data[obj] = lbl
         return data
     
-    def plot_univariate(self):
-        sele = self.hotspotSeleLine.text()
-        function = self.univariateFunctionCombo.currentText()
-        radius = self.radiusSpin.value()
-        align = self.pairwiseSeqAlignCheck.isChecked()
-        linkage_method = self.linkageMethodCombo.currentText()
-        color_threshold = self.colorThresholdSpin.value()
-        only_medoids = self.onlyMedoidsCheck.isChecked()
-        annotate = self.annotateCheck.isChecked()
-        enable_heatmap = self.enableHeatmapCheck.isChecked()
-
-        plot_univariate_hca(
-            sele=sele,
-            function=function,
-            radius=radius,
-            align=align,
-            annotate=annotate,
-            linkage_method=linkage_method,
-            color_threshold=color_threshold,
-            only_medoids=only_medoids,
-            enable_heatmap=enable_heatmap,
-            rename_leafs=self.getLeafLabels(),
-        )
-
     def plot_multivariate_hca(self):
         sele = self.hotspotSeleLine.text()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
-        dist_method = self.multivariateFunctionCombo.currentText()
         enable_heatmap = self.enableHeatmapCheck.isChecked()
 
         plot_multivariate_hca(
@@ -2055,7 +1582,6 @@ class HcaWidget(QWidget):
             color_threshold=color_threshold,
             only_medoids=only_medoids,
             annotate=annotate,
-            dist_method=dist_method,
             enable_heatmap=enable_heatmap,
             rename_leafs=self.getLeafLabels(),
         )
@@ -2389,221 +1915,6 @@ class OverlapWidget(QWidget):
                 table_df.to_excel(xlsx_writer, sheet_name='Overlap', index=False)
 
 
-class CountWidget(QWidget):
-
-    def __init__(self):
-        super().__init__()
-
-        layout = QHBoxLayout()
-        self.setLayout(layout)
-
-        groupBox = QGroupBox("Color projection")
-        layout.addWidget(groupBox)
-        projBox = QFormLayout()
-        groupBox.setLayout(projBox)
-
-        self.multiSeleLine = QLineEdit()
-        projBox.addRow("Expressions:", self.multiSeleLine)
-
-        self.proteinExpressionLine = QLineEdit()
-        projBox.addRow("Protein:", self.proteinExpressionLine)
-
-        self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(4)
-        self.radiusSpin.setDecimals(2)
-        self.radiusSpin.setSingleStep(0.5)
-        self.radiusSpin.setMinimum(2)
-        self.radiusSpin.setMaximum(10)
-        projBox.addRow("Contact radius:", self.radiusSpin)
-
-        self.typeCombo = QComboBox()
-        self.typeCombo.addItems([e.value for e in PrioritizationType])
-        projBox.addRow("Type:", self.typeCombo)
-
-        self.paletteLine = QLineEdit("rainbow")
-        projBox.addRow("Palette:", self.paletteLine)
-
-        drawButton = QPushButton("Draw")
-        drawButton.clicked.connect(self.draw_projection)
-        projBox.addWidget(drawButton)
-
-        fptBox = QGroupBox("Fingerprint vector")
-        layout.addWidget(fptBox)
-
-        fptLayout = QVBoxLayout(fptBox)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        fptLayout.addWidget(scroll)
-
-        container = QWidget()
-        scroll.setWidget(container)
-        
-        scrollLayout = QFormLayout(container)
-        
-
-        self.multiSelesLine = QLineEdit("")
-        scrollLayout.addRow("Multi sele:", self.multiSelesLine)
-
-        self.siteSelectionLine = QLineEdit("*")
-        scrollLayout.addRow("Focus site:", self.siteSelectionLine)
-
-        self.siteRadiusSpin = QDoubleSpinBox()
-        self.siteRadiusSpin.setValue(5)
-        self.siteRadiusSpin.setDecimals(1)
-        self.siteRadiusSpin.setSingleStep(1)
-        self.siteRadiusSpin.setMinimum(0)
-        self.siteRadiusSpin.setMaximum(10)
-        scrollLayout.addRow("Site radius:", self.siteRadiusSpin)
-
-        self.contactRadiusSpin = QDoubleSpinBox()
-        self.contactRadiusSpin.setValue(4)
-        self.contactRadiusSpin.setDecimals(1)
-        self.contactRadiusSpin.setSingleStep(0.5)
-        self.contactRadiusSpin.setMinimum(3)
-        self.contactRadiusSpin.setMaximum(6)
-        scrollLayout.addRow("Contact radius:", self.contactRadiusSpin)
-
-        self.omegaCheck = QCheckBox()
-        self.omegaCheck.setChecked(False)
-        scrollLayout.addRow("Clustal Omega:", self.omegaCheck)
-
-        @self.omegaCheck.stateChanged.connect
-        def stateChanged(checkState):
-            if checkState == QtCore.Qt.Checked:
-                omegaBox.setEnabled(True)
-            else:
-                omegaBox.setEnabled(False)
-
-        omegaBox = QGroupBox()
-        scrollLayout.addRow(omegaBox)
-        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, omegaBox)
-        omegaLayout = QFormLayout()
-        omegaBox.setLayout(omegaLayout)
-        omegaBox.setEnabled(False)
-
-        self.omegaConservation = QLineEdit()
-        self.omegaConservation.setText("*:.")
-        omegaLayout.addRow("Conservation symbols:", self.omegaConservation)
-
-        self.fingerprintsCheck = QCheckBox()
-        self.fingerprintsCheck.setChecked(False)
-        scrollLayout.addRow("Fingerprints:", self.fingerprintsCheck)
-        @self.fingerprintsCheck.stateChanged.connect
-        def stateChanged(checkState):
-            if checkState == QtCore.Qt.Checked:
-                fptBox.setEnabled(True)
-            else:
-                fptBox.setEnabled(False)
-
-        fptBox = QGroupBox()
-        scrollLayout.addRow(fptBox)
-        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, fptBox)
-        fptLayout = QFormLayout()
-        fptBox.setLayout(fptLayout)
-        fptBox.setEnabled(False)
-
-        self.nBinsSpin = QSpinBox()
-        self.nBinsSpin.setValue(20)
-        self.nBinsSpin.setMinimum(0)
-        self.nBinsSpin.setMaximum(500)
-        fptLayout.addRow("Num bins:", self.nBinsSpin)
-
-        self.shareYLimCheck = QCheckBox()
-        self.shareYLimCheck.setChecked(True)
-        fptLayout.addRow("Share y limit:", self.shareYLimCheck)
-
-        self.sharexCheck = QCheckBox()
-        self.sharexCheck.setChecked(True)
-        fptLayout.addRow("Share x axis:", self.sharexCheck)
-
-        self.hcaCheck = QCheckBox()
-        self.hcaCheck.setChecked(False)
-
-        scrollLayout.addRow("Clustering:", self.hcaCheck)
-        @self.hcaCheck.stateChanged.connect
-        def stateChanged(checkState):
-            if checkState == QtCore.Qt.Checked:
-                hcaBox.setEnabled(True)
-            else:
-                hcaBox.setEnabled(False)
-
-        hcaBox = QGroupBox()
-        scrollLayout.addRow(hcaBox)
-        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, hcaBox)
-        hcaLayout = QFormLayout()
-        hcaBox.setLayout(hcaLayout)
-        hcaBox.setEnabled(False)
-
-        self.annotateCheck = QCheckBox()
-        self.annotateCheck.setChecked(True)
-        hcaLayout.addRow("Annotate:", self.annotateCheck)
-
-        self.linkageMethodCombo = QComboBox()
-        self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
-        hcaLayout.addRow("Linkage:", self.linkageMethodCombo)
-
-        self.colorThresholdSpin = QDoubleSpinBox()
-        self.colorThresholdSpin.setMinimum(0)
-        self.colorThresholdSpin.setMaximum(10)
-        self.colorThresholdSpin.setValue(0)
-        self.colorThresholdSpin.setSingleStep(0.1)
-        self.colorThresholdSpin.setDecimals(2)
-        hcaLayout.addRow("Color threshold:", self.colorThresholdSpin)
-
-        self.onlyMedoidsCheck = QCheckBox()
-        self.onlyMedoidsCheck.setChecked(False)
-        hcaLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
-        
-        plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_fingerprint)
-        scrollLayout.addWidget(plotButton)
-
-    def draw_projection(self):
-        hotspots = self.multiSeleLine.text()
-        protein = self.proteinExpressionLine.text()
-        radius = self.radiusSpin.value()
-        type = self.typeCombo.currentText()
-        palette = self.paletteLine.text()
-
-        hs_proj(hotspots, protein, radius, type, palette)
-
-    def plot_fingerprint(self):
-        multi_seles = self.multiSelesLine.text()
-        site = self.siteSelectionLine.text()
-        site_radius = self.siteRadiusSpin.value()
-        contact_radius = self.contactRadiusSpin.value()
-        plot_fingerprints = self.fingerprintsCheck.isChecked()
-        plot_hca = self.hcaCheck.isChecked()
-        seq_align_omega = self.omegaCheck.isChecked()
-        omega_conservation = self.omegaConservation.text().strip()
-        nbins = self.nBinsSpin.value()
-        share_ylim = self.shareYLimCheck.isChecked()
-        sharex = self.sharexCheck.isChecked()
-        annotate = self.annotateCheck.isChecked()
-        linkage_method = self.linkageMethodCombo.currentText()
-        color_threshold = self.colorThresholdSpin.value()
-        only_medoids = self.onlyMedoidsCheck.isChecked()
-
-        fpt_sim(
-            multi_seles,
-            site,
-            site_radius,
-            contact_radius=contact_radius,
-            plot_fingerprints=plot_fingerprints,
-            plot_hca=plot_hca,
-            seq_align_omega=seq_align_omega,
-            omega_conservation=omega_conservation,
-            nbins=nbins,
-            share_ylim=share_ylim,
-            sharex=sharex,
-            annotate=annotate,
-            linkage_method=linkage_method,
-            color_threshold=color_threshold,
-            only_medoids=only_medoids,
-        )
-        plt.show()
-
 
 class MainDialog(QDialog):
     def __init__(self, parent=None):
@@ -2621,8 +1932,6 @@ class MainDialog(QDialog):
         tab.addTab(HcaWidget(), "Hotspot Similarity")
         tab.addTab(OverlapWidget(), "Overlap Matrix")
         tab.addTab(LigandFitWidget(), "Ligand Fit")
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            tab.addTab(CountWidget(), "Fingerprints")
 
         layout.addWidget(tab)
 
