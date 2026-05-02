@@ -1,13 +1,12 @@
 #
 # Sample script to load DHODH structures and their corresponding FTMap results.
 #
-
 from os import chdir
+from os.path import expanduser
 from xdrugpy.hotspots import load_ftmap
 from pymol import cmd as pm
 
-
-chdir('~/Desktop/DHODH/')
+chdir(expanduser('~/Desktop/DHODH/'))
 data = [
     (
         '229', '229.pdb',
@@ -25,7 +24,6 @@ data = [
         'CXY', 131, 'A'
     ),
 ]
-
 
 for title, ftmap_pdb, crystal_pdb, resn, resid, chain in data:
     load_ftmap(

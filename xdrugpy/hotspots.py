@@ -19,18 +19,13 @@ from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
 import pyKVFinder
+from pymol import cmd as pm
 
 from .utils import (
     new_command,
     Selection,
     plot_hca_base,
 )
-
-from pymol import cmd as pm
-
-
-matplotlib.use("Qt5Agg")
-
 
 @dataclass
 class Cluster:
@@ -538,42 +533,75 @@ def show_hs(selections: List[str],
     print(hs)
 
 
-class FTMapResults:
-    pass
-
 @new_command
 def load_ftmap(
-    filenames: List[Path] | Path,
-    groups: List[str] | str = "",
+    filename: Path | str,
+    group: Optional[str] = None,
     cd_to_anchor: bool = True,
     combinatory_search: bool = False,
     allow_nested: bool = False,
     max_collisions: float = 0.15,
 ):
+    """
+    DESCRIPTION
+
+        Loads FTMap (or FTMove) results into PyMOL, organizes them into a structured
+        hierarchy, and calculates binding hotspots.
+
+        This command automates the identification, classification and visualization of
+        FTMap probes and hotspots,  assigning colors by class type and grouping objects
+        logically within the PyMOL object menu.
+
+    ARGUMENTS
+
+        filename:
+            Path to the FTMap .pdb file.
+
+        group:
+            The name of the top-level PyMOL group. If not provided, the 
+            basename of the file is used.
+
+        cd_to_anchor:
+            Whether to calculate Hotspot centers relative to the anchor 
+            consensus site (Center of Mass vs. Anchor consensus site).
+
+        combinatory_search:
+            If True, performs an exhaustive search across all potential 
+            cluster combinations to define hotspots.
+
+        allow_nested:
+            Determines if hotspots can overlap/nest within larger 
+            defined volumes.
+
+        max_collisions:
+            The tolerance percentage for steric clashes allowed when
+            defining hotspot connectivity.
+
+    EXAMPLES
+
+        load_ftmap 1w9h_ftmap.pdb
+        load_ftmap results.pdb, my_protein, max_collisions=0.20
+    """
     try:
         pm.set('defer_updates', 1)
-        if isinstance(filenames, (str, Path)):
-            filenames = [filenames]
-            groups = [groups]
-            single = True
-        else:
-            single = False
-        rets = []
-        if isinstance(groups, (tuple, list)):
-            iter = zip(filenames, groups)
-        else:
-            iter = []
-            for filename in filenames:
-                iter.append((filename, os.path.splitext(os.path.basename(filename))[0]))
-        for fnames, groups in iter:
-            try:
-                rets.append(_load_ftmap(fnames, groups, cd_to_anchor=cd_to_anchor, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
-            except:
-                rets.append(_load_ftmap(fnames, groups, cd_to_anchor=cd_to_anchor, combinatory_search=combinatory_search, allow_nested=allow_nested, max_collisions=max_collisions))
-        if single:
-            return rets[0]
-        else:
-            return rets
+        try:
+            return _load_ftmap(
+                filename=filename,
+                group=group,
+                cd_to_anchor=cd_to_anchor,
+                combinatory_search=combinatory_search,
+                allow_nested=allow_nested,
+                max_collisions=max_collisions
+            )
+        except:
+            return _load_ftmap(
+                filename=filename,
+                group=group,
+                cd_to_anchor=cd_to_anchor,
+                combinatory_search=combinatory_search,
+                allow_nested=allow_nested,
+                max_collisions=max_collisions
+            )
     finally:
         pm.set('defer_updates', 0)
 
@@ -586,24 +614,10 @@ def _load_ftmap(
     allow_nested: bool = False,
     max_collisions: float = 0.15,
 ):
-    """
-    Load a FTMap PDB file and classify hotspot ensembles in accordance to
-    Kozakov et al. (2015).
-    https://doi.org/10.1021/acs.jmedchem.5b00586
-
-    OPTIONS
-        filename        mapping PDB file.
-        group           optional group name.
-
-    EXAMPLES
-        load_ftmap ace_example.pdb
-        load_ftmap ace_example.pdb, group=MyProtein
-    """
     if not group:
         group = os.path.splitext(os.path.basename(filename))[0]
     group = pm.get_legal_name(group)
     
-    pm.delete(f"%{group}")
     pm.load(str(filename), quiet=1, discrete=1)
 
     if objs := pm.get_object_list("*_protein"):
@@ -741,18 +755,28 @@ def get_fo(
     quiet: bool = True,
 ):
     """
-    Compute the fractional overlap of sel1 respective to sel2.
-        FO = Nc/Nt
+    DESCRIPTION
 
-    Nc is the number of atoms of sel1 in contact with sel2. Nt is the number of atoms
-    of sel1. Hydrogen atoms are ignored.
+        Calculates the Fractional Overlap (FO) between two selections. 
+        FO is defined as the fraction of atoms in sel1 that are within 
+        a specified radius of any atom in sel2.
 
-    OPTIONS
-        sel1    ligand object.
-        sel2    hotspot object.
-        state1  ligand state.
-        state2  hotspot state.
-        radius  the radius so sel1 and sel2 are in contact (default: 2).
+    ARGUMENTS
+
+        sel1:
+            The 'query' selection. The FO is normalized by the number 
+            of atoms in this selection.
+
+        sel2:
+            The 'target' selection used as the proximity reference.
+
+        radius:
+            The distance cutoff in Angstroms to consider an atom 'overlapping'.
+
+    NOTES
+
+        Value ranges from 0.0 to 1.0. An FO of 1.0 means every atom in sel1 
+        is within the radius of sel2.
     """
     xyz1 = get_coords(sel1, state=state1)
     xyz2 = get_coords(sel2, state=state2)
@@ -778,23 +802,23 @@ def get_dc(
     quiet: bool = True,
 ):
     """
-    Compute the Density Correlation according to:
-        https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3264775/
+    DESCRIPTION
 
-    sel1 and sel2 are the selections representing the molecules or hotspots. The
-    threshold distance can be changed with radius.
+        Calculates Density Correlation, i.e. the total number of
+        pairwise atomic contacts between two selections based on
+        a distance threshold.
+        
+    ARGUMENTS
 
-    OPTIONS
-        sel1    first object
-        sel2    second object
-        state1  ligand state
-        state2  hotspot state
-        radius  the radius so two atoms are in contact (default: 1.25)
+        sel1, sel2:
+            The two groups of atoms to check for proximity.
 
-    EXAMPLES
-        dc REF_LIG, ftmap1234.D_003_*_*
-        dc ftmap1234.D.003, REF_LIG, radius=1.5
+        radius:
+            Distance cutoff.
 
+    RETURNS
+
+        The total count of atom-atom pair count within the radius.
     """
     xyz1 = get_coords(sel1, state=state1)
     xyz2 = get_coords(sel2, state=state2)
@@ -817,22 +841,25 @@ def get_dce(
     quiet: bool = True,
 ):
     """
-    Compute the Density Correlation Efficiency according to:
-        https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3264775/
+    DESCRIPTION
 
-    sel1 and sel2 are respectively the molecule and hotspot. The threshold
-    distance can be changed with radius.
+        Calculates the Density Correlation Efficiency (DCE). 
+        This is the total number of contacts (DC) normalized by the 
+        total number of atoms in the first selection.
 
-    OPTIONS
-        sel1    ligand object
-        sel2    hotspot object
-        state1  ligand state
-        state2  hotspot state
-        radius  the radius so two atoms are in contact (default: 1.25)
-        quiet   define verbosity
+    ARGUMENTS
 
-    EXAMPLE
-        dce REF_LIG, ftmap1234.D_003_*_*
+        sel1, sel2:
+            The two groups of atoms to check for proximity.
+
+        radius:
+            Distance cutoff.
+            
+    NOTES
+
+        DCE = get_dc(sel1, sel2) / count_atoms(sel1)
+        This is useful for comparing binding efficiency across ligands 
+        of different sizes.
     """
     dce = get_dc(
         sel1,
@@ -861,15 +888,25 @@ def get_ho(
     quiet: bool = True,
 ):
     """
-    Compute the Hotspot Overlap (HO) metric. HO is defined as the number of
-    atoms in hs1 in contact with hs2 plus the number of atoms in hs2 in
-    contact with hs1 divided by the total number of atoms in both hotspots.
+    DESCRIPTION
 
-    OPTIONS
-        hs1     an hotspot object
-        hs2     another hotspot object
-        radius  the distance to consider two atoms in contact (default: 2.5)
-        quiet   define verbosity
+        Calculates the Hotspot Overlap (HO) between two selections.
+        Unlike FO, HO is a symmetric metric that considers the overlap 
+        relative to the combined size of both selections.
+
+    ARGUMENTS
+
+        hs1, hs2:
+            Typically FTMap hotspots or consensus sites.
+
+        radius:
+            The proximity threshold for a contact.
+
+    MATHEMATICS
+
+        HO = (Contacts_in_1 + Contacts_in_2) / (Total_Atoms_1 + Total_Atoms_2)
+        Where a contact is defined as an atom having at least one neighbor 
+        in the opposing selection within the radius.
     """
     atoms1 = get_coords(hs1)
     atoms2 = get_coords(hs2)
@@ -892,36 +929,70 @@ def plot_multivariate_hca(
     color_threshold: float = 0.0,
     only_medoids: bool = False,
     annotate: bool = False,
-    plot: str = None,
     enable_heatmap: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
     no_plot: bool = False,
 ):
     """
-    Compute the similarity dendrogram of hotspots.
-    OPTIONS
-        exprs           space separated list of object expressions
-        com_weight      center-of-mass (x, y, z) weight
-        residue_radius  maximum distance for residue_similarity (default: 4)
-        residue_weight  residue similarity weight (default: 1)
-        residue_align   enable residue alignment (default: true)
-        linkage_method  linkage method: single, complete or average
-                        (default: single)
-    EXAMPLES
-        plot_similarity *.K15_D_* *.K15_DS_*, linkage_method=average
-    """
+    DESCRIPTION
 
+        Performs a Multivariate Hierarchical Cluster Analysis (HCA) on FTMap
+        consensus sites or hotspots.
+
+        The command automatically extracts properties stored within PyMOL objects
+        and center-of-mass coordinates, then construct standardized feature vectors
+        (Z-score) for each object to calculate high-dimensional distance.
+
+    PROPERTIES EVALUATED
+
+        Feature vectors are built based on the object type:
+        - Hotspots: ST, S0, CD, MD and XYZ (7 variables)
+        - Consensus sites: ST + XYZ Coordinates (4 variables)
+        - ACS (Atomic Contact Surfaces): ST, MD + XYZ Coordinates (5 variables)
+
+    ARGUMENTS
+
+        exprs:
+            A PyMOL selection containing the objects to compare. All objects must
+            be of the same type. All hotspots or all consensus sites.
+
+        linkage_method:
+            The clustering algorithm for the dendrogram. 
+
+        color_threshold:
+            Distance cutoff for coloring dendrogram branches.
+
+        only_medoids:
+            If True, focuses analysis or visualization only on the cluster medoids.
+
+        enable_heatmap:
+            Generates a distance matrix heatmap coupled with the dendrogram.
+
+        rename_leafs:
+            A dictionary mapping PyMOL object names to user-friendly labels.
+
+        no_plot:
+            If True, performs calculations and returns data without 
+            rendering the Matplotlib window.
+
+    RETURNS
+
+        A tuple containing: (Distance Matrix, Object List, Dendrogram, Medoids)
+
+    EXAMPLES
+
+        plot_multivariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
+        plot_multivariate_hca *.CS.*
+    """
     object_list = pm.get_object_list(exprs)
     assert object_list is not None and len(object_list) >= 2, "At least two hotspots are required for comparison."
-    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots of the same type are allowed in the HCA."
+    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots or only consensus sites are supported in the HCA."
 
     hs_type = pm.get_property("Type", object_list[0])
     if hs_type == "HS":
-        n_props = 5
+        n_props = 4
     elif hs_type == "CS":
         n_props = 1
-    elif hs_type == "ACS":
-        n_props = 2
     labels = []
 
     p = np.zeros((len(object_list), n_props + 3))
@@ -932,10 +1003,9 @@ def plot_multivariate_hca(
         if hs_type == "HS":
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
-            CD0 = pm.get_property("CD0", obj)
             CD = pm.get_property("CD", obj)
             MD = pm.get_property("MD", obj)
-            p[ix, :] = np.array([ST, S0, CD0, CD, MD, x, y, z])
+            p[ix, :] = np.array([ST, S0, CD, MD, x, y, z])
         elif hs_type == "CS":
             ST = pm.get_property("ST", obj)
             p[ix, :] = np.array([ST, x, y, z])
@@ -943,11 +1013,15 @@ def plot_multivariate_hca(
             ST = pm.get_property("ST", obj)
             MD = pm.get_property("MD", obj)
             p[ix, :] = np.array([ST, MD, x, y, z])
-
     
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
     X = distance.pdist(p)
-    dendro, medoids = plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs, no_plot=no_plot)
+    dendro, medoids = plot_hca_base(
+        X, labels, linkage_method, color_threshold, only_medoids, annotate,
+        enable_heatmap=enable_heatmap,
+        rename_leafs=rename_leafs,
+        no_plot=no_plot
+    )
     return X, object_list, dendro, medoids
 
 
@@ -964,8 +1038,58 @@ def plot_overlap_matrix(
     function: OverlapFunction = OverlapFunction.FO,
     radius: float = 2.0,
     annotate: bool = False
-
 ):
+    """
+    DESCRIPTION
+
+        Generates a heatmap matrix visualizing the overlap or contact 
+        metrics between two groups of PyMOL objects. 
+
+        This is ideal for cross-comparing FTMap hotspots across different 
+        protein conformations or comparing a ligand to a set of probe clusters.
+
+    USAGE
+
+        plot_overlap_matrix sele_a [, sele_b [, function [, radius [, annotate]]]]
+
+    ARGUMENTS
+
+        sele_a: str
+            The selection for the vertical axis (rows).
+
+        sele_b: str, optional
+            The selection for the horizontal axis (columns). If omitted or 
+            blank, it defaults to sele_a (creating a self-comparison matrix).
+
+        function: OverlapFunction, default=OverlapFunction.FO
+            The metric to calculate. Supported values:
+            - 'FO': Fraction of Overlap [0.0 - 1.0]
+            - 'DC': Distance Contacts (raw count)
+            - 'DCE': Distance Contact Efficiency (normalized)
+
+        radius: float, default=2.0
+            The distance cutoff (Angstroms) passed to the overlap function.
+
+        annotate: bool, default=False
+            If True, writes the numerical values directly inside the heatmap 
+            cells. Text color (black/white) is automatically adjusted for 
+            legibility based on the cell intensity.
+
+    RETURNS
+
+        A pandas DataFrame containing the raw data with columns ['A', 'B', 'METRIC'].
+
+    NOTES
+        If function is 'FO', the color scale is fixed between 0.0 and 1.0.
+
+    EXAMPLE
+
+        # Compare hotspots in group 1 vs group 2
+        plot_overlap_matrix group1.D*, group1.B*, function=FO, annotate=True
+
+        # Create a self-similarity matrix for all objects in a session
+        plot_overlap_matrix *, function=DC
+    """
     objs_a = pm.get_object_list(sele_a)
     if sele_b.strip():
         objs_b = pm.get_object_list(sele_b)
@@ -1585,6 +1709,7 @@ class HcaWidget(QWidget):
             enable_heatmap=enable_heatmap,
             rename_leafs=self.getLeafLabels(),
         )
+        plt.show()
 
 
 class LigandTableWidget(QTableWidget):
@@ -1609,7 +1734,7 @@ class LigandTableWidget(QTableWidget):
                 pm.select(obj)
                 pm.enable("sele")
                 break
-    
+
 
     def refresh(self, objects):
         self.setSortingEnabled(False)
