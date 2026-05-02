@@ -65,7 +65,6 @@ class AligMethod(StrEnum):
     FIT = "fit"
     
 
-
 def run(command, log=True, cwd=None, env=os.environ):
     if log:
         print("RUNNING PROCESS:", command)
@@ -300,7 +299,20 @@ def align_groups(
             pm.matrix_copy(f"{mobile}.protein", inner)
 
 
-def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, annotate, axis, vmin=None, vmax=None, enable_heatmap=False, rename_leafs=None, no_plot=False):
+def plot_hca_base(
+    dists,
+    labels,
+    linkage_method,
+    color_threshold,
+    only_medoids,
+    annotate,
+    axis=None,
+    vmin=None,
+    vmax=None,
+    enable_heatmap=False,
+    rename_leafs=None,
+    no_plot=False
+):
     if isinstance(axis, axes.Axes):
         fig = axis.get_figure()
         fig.clear()
@@ -427,12 +439,6 @@ def plot_hca_base(dists, labels, linkage_method, color_threshold, only_medoids, 
             if only_medoids and color_threshold > 0.0:
                 if label.get_text() not in medoids_labels:
                     label.set_visible(False)
-        
-        if not axis:
-            fig.show()
-        elif isinstance(axis, (str, Path)):
-            fig.savefig(axis)
-    
     return dendro, medoids
 
 

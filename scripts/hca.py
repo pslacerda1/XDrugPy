@@ -1,77 +1,66 @@
 #
 # Hierarchical Cluster Analysis (HCA) of a large number of hotspots
 #
-
 from os.path import expanduser
 from glob import glob
 from xdrugpy.hotspots import (
     load_ftmap,
-    plot_univariate_hca,
     plot_multivariate_hca,
-    PairwiseFunction,
     LinkageMethod
 )
-
 from pymol import cmd as pm
 from matplotlib import pyplot as plt
+import matplotlib.style
+import matplotlib.colors
+from cycler import cycler
 
-# Increase Matplotlib sizes
+# Change the default Matplotlib style and parameters to improve
+# the aesthetics of generated figures.
+matplotlib.style.use('default')
 plt.rcParams.update({
     'font.size': 14,
     'figure.figsize': (10, 6),
-    'svg.fonttype': 'none'
+    'svg.fonttype': 'none',
+    'axes.prop_cycle': cycler(color=reversed(
+        matplotlib.colors.XKCD_COLORS
+    )),
 })
-
 
 # OPTIONAL: Optimization that disables an unuseful feature if we'll not
 # launch the graphical interface after script execution.
 pm.undo_disable()
 
-# List the FTMap PDB files but limits arbitrarily to the first 25 entries.
-# This glob ???? match four chars (like a PDB id), but could be replaced by:
-#                        ~/Desktop/PEPTI/atlas/*_atlas.pdb
-files = glob(expanduser("~/Desktop/PEPTI/atlas/????_atlas.pdb"))
-for file in files[:25]:
+# Adapt the string to list all your FTMove PDB files but limits arbitrarily to
+# the first 5 entries found. Use small lists when developing the script to speed
+# up the process
+files = glob(expanduser("~/Desktop/PEPTI/atlas/*_atlas.pdb"))
+for file in files[:5]:
     
     # Load structures and does hotspots ligability analysis.
     ftmap = load_ftmap(file)
 
     # OPTIONAL: After each load, delete hotspots that doesn't satisfy the
-    # plotting criteria. It also deletes the *.protein structures. This
+    # plotting criteria. It also deletes *.protein structures. This
     # optimization reduces the number of PyMOL objects irrelevant to our
     # analysis improving the performance at high loads.
-    #                             "NOT (*.D* AND p.S0>20 OR *.protein)"
     for obj in pm.get_object_list("NOT (*.D* AND p.S0>20)"):
+    #                             "NOT (*.D* AND p.S0>20 OR *.protein)"
         pm.delete(obj)
 
 # If you don't delete protein structures you can have a nice session!
 # pm.save("~/My Folder/nice_session.pze")
 
-# Does the similarity cluster analysis with hotspot overlap (HO) function. Only
-# strong hotspots with at least p.S0>20 that remained from the previous successive
-# loading and deletions. You can think this as univariate HCA or no HCA at all,
-# just a simple way to cluster hotspots.
-plot_univariate_hca(
-    '*.D* AND p.S0>20',
-    function=PairwiseFunction.HO,
-    radius=2.0,
-    linkage_method=LinkageMethod.AVERAGE,
-    color_threshold=2.5,     # probably you'll need to adjust this variable
-    only_medoids=True,       # hide every hotspot except the medoid
-    annotate=False,          # is desirable the value at each cell?
-)
-plt.title("Univariate HCA")
-
-# The standard HCA over the same hotspots of the previous analysis. This one
-# calculates the distance over the aggregation of hotspot properties, including
-# coordinates of center-of-mass.
+# The standard HCA over strong hotspots with at least p.S0>20 that remained
+# from the previous successive loading and deletions.
 plot_multivariate_hca(
     '*.D* AND p.S0>20',
-    linkage_method=LinkageMethod.AVERAGE,
-    color_threshold=1.5,
+    linkage_method=LinkageMethod.WARD,
+    color_threshold=2,
     only_medoids=True,
     annotate=False,
 )
 plt.title("Multivariate HCA")
 
-plt.show()  # displays both plots!
+# Comment/Uncomment one of the following lines to show or save the figure.
+#plt.show()  # good for local usage, but disable for headless or remote sessions
+#plt.savefig("multivariate_hca.svg")  # save the SVG or PNG file
