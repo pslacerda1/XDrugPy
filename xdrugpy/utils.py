@@ -1,5 +1,6 @@
 import itertools
 import os
+import subprocess
 import scipy.cluster.hierarchy as sch
 from collections import defaultdict
 from shutil import rmtree
@@ -11,10 +12,6 @@ from pymol.parser import __file__ as _parser_filename
 
 from pymol import Qt, cmd as pm
 
-if 'EXPERIMENTAL_XDRUGPY' in os.environ:
-    EXPERIMENTAL_XDRUGPY = True
-else:
-    EXPERIMENTAL_XDRUGPY = False
 
 @pm.extend
 def plot(filename: str | None = None):
@@ -53,8 +50,25 @@ class AligMethod(StrEnum):
     FIT = "fit"
     
 
+def run(command, log=True, cwd=None, env=os.environ):
+    if log:
+        print("RUNNING PROCESS:", command)
+    ret = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        cwd=cwd,
+        shell=True,
+        env=env,
+    )
+    output = ret.stdout.decode(errors="replace")
+    success = ret.returncode == 0
+    return output, success
+
+
 class Selection(str):
     pass
+
 
 def get_color_threshold(Z, k):
     """
@@ -86,19 +100,20 @@ def get_color_threshold(Z, k):
     
     return (dist_k + dist_k_minus_1) / 2
 
+
 def plot_hca_base(
     dists,
     labels,
     linkage_method,
     only_medoids,
     annotate,
-    color_threshold=-1.0,
-    nclusters=-1,
     axis=None,
     vmin=None,
     vmax=None,
     enable_heatmap=False,
     rename_leafs=None,
+    nclusters=-1,
+    color_threshold=-1.0,
     no_plot=False
 ):
     if isinstance(axis, axes.Axes):

@@ -16,13 +16,15 @@ from scipy.cluster.hierarchy import linkage, leaves_list
 from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
+import pyKVFinder
 from pymol import cmd as pm
 
 from pymol_new_command import new_command
 from .utils import (
     Selection,
     plot_hca_base,
-    EXPERIMENTAL_XDRUGPY
+    clustal_omega,
+    Residue
 )
 
 @dataclass
@@ -868,7 +870,7 @@ def get_dce(
         radius:
             Distance cutoff.
             
-    NOTES   
+    NOTES
 
         DCE = get_dc(sel1, sel2) / count_atoms(sel1)
         This is useful for comparing binding efficiency across ligands 
@@ -1233,7 +1235,7 @@ def calc_overlap_matrix(
             legibility based on the cell intensity.
         
         rename_labels: list[str]
-            lorem ipsum!!!
+            lorem ipsum!!! TODO
         
         linkage_method:
             Optional clustering algorithm.
@@ -1426,6 +1428,190 @@ def calc_ligand_fit(
             ax.text(x, y, s)
     ax.set_xlabel(f"{function_col} / {function_col}_ref")
     ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
+
+
+@new_command
+def fpt_sim(
+    multi_seles: Selection,
+    site: Selection = "*",
+    site_radius: float = 5.0,
+    seq_align_omega: bool = False,
+    omega_conservation: str = "*:.",
+    contact_radius: float = 4.0,
+    nbins: int = 5,
+    sharex: bool = True,
+    linkage_method: LinkageMethod = LinkageMethod.WARD,
+    color_threshold: float = -1.0,
+    only_medoids: bool = False,
+    annotate: bool = True,
+    plot_fingerprints: str = "",
+    share_ylim: bool = True,
+    plot_hca: str = "",
+    quiet: bool = True,
+):
+    """
+    Compute the similarity between the residue contact fingerprint of two
+    hotspots.
+
+    OPTIONS:
+        hotspots          hotspot selection
+        site              selection to focus based on first protein
+        radius            radius to compute the contacts (default: 4)
+        plot_fingerprints plot the fingerprints (default: True)
+        nbins             number of residue labels (default: 5)
+        plot_dendrogram   plot the dendrogram (default: False)
+        linkage_method    linkage method (default: single)
+        quiet             define verbosity
+
+    EXAMPLES
+        fs_sim 8DSU.K15_D_01* 6XHM.K15_D_01*
+        fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
+    """
+    seles = []
+    groups = []
+
+    for sele in multi_seles.split("/"):
+        sele = sele.strip()
+        seles.append(sele.strip())
+        obj = pm.get_object_list(sele)
+        if obj is not None and len(obj) >= 1:
+            obj = obj[0]
+        else:
+            raise ValueError(f"Bad selection: {sele}")
+        if group := pm.get_property("Group", obj):
+            groups.append(group)
+    polymers = [f"{g}.protein" for g in groups]
+    assert len(polymers) > 0, "Please review your selections"
+    
+    ref_polymer = polymers[0]
+    ref_sele = seles[0]
+    site_sele = f"{ref_polymer} & ({ref_polymer} within {site_radius} of ({site}))"
+    site_resis = []
+    for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
+        site_resis.append((at.model, at.index))
+    
+    if seq_align_omega:
+        mapping = clustal_omega(polymers, omega_conservation.strip(), titles=seles)
+    else:
+        mapping = {}
+        ref_model = pm.get_model(f"{ref_polymer} & present & guide & polymer")
+        ref_map = []
+        for at in ref_model.atom:
+            ref_map.append(Residue(
+                at.model, at.index, int(at.resi), at.chain,
+                at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
+            ))
+        mapping[ref_sele] = ref_map
+        for poly, sele in zip(polymers, seles):
+            if sele == ref_sele:
+                continue
+            current_model = pm.get_model(f"{poly} & present & guide & polymer")
+            lookup = {(int(at.resi), at.chain): at for at in current_model.atom}
+            current_map = []
+            for ref_res in ref_map:
+                match = lookup.get((int(ref_res.resi), ref_res.chain))
+                if match:
+                    at = match
+                    current_map.append(
+                        Residue(
+                            at.model, at.index, int(at.resi), at.chain,
+                            at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
+                        )
+                    )
+                else:
+                    current_map.append(
+                        Residue(None, -1, int(ref_res.resi), ref_res.chain, 'GAP', '-', ''))
+            mapping[sele] = current_map
+
+    ref_map = mapping[ref_sele]
+    fpts = []
+    for poly, (hs, map) in zip(polymers, mapping.items()):
+        fpt = {}
+        for ref_res, res in zip(ref_map, map):
+            if (ref_polymer, ref_res.index) not in site_resis:
+                continue
+            lbl = (res.oneletter, res.conservation, res.resi, res.chain)
+            cnt = pm.count_atoms(
+                f"({hs}) within {contact_radius} of (byres %{poly} & index {res.index})"
+            )
+            fpt[lbl] = fpt.get(lbl, 0) + cnt
+        fpts.append(fpt)
+    
+    if plot_fingerprints:
+        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
+        fig.supylabel('Atom Counts')
+        if not isinstance(axs, (np.ndarray, list)):
+            axs = [axs]
+        if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
+            raise ValueError(
+                "All fingerprints must have the same length. "
+                "Do you have incomplete structures?"
+            )
+        
+        max_val = 0
+        for ix, (ax, fpt, sele) in enumerate(zip(axs, fpts, seles)):
+            labels = ["%s%s %s_%s" % k for k in fpt]
+            if sharex and ix == 0:
+                shared_labels = labels
+            elif sharex and ix + 1 == len(seles):
+                labels = shared_labels
+            arange = np.arange(len(fpt))
+            max_val = max(max(fpt.values()), max_val)
+            ax.bar(arange, fpt.values(), color="C0")
+            ax.set_title(sele)
+            ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+            if not sharex or sharex and ix + 1 == len(seles):
+                ax.set_xticks(arange, labels=labels, rotation=90)
+                ax.locator_params(axis="x", tight=True, nbins=nbins)
+                for label in ax.xaxis.get_majorticklabels():
+                    label.set_verticalalignment("top")
+        if share_ylim:
+            for ax in axs:
+                ax.set_ylim(0, max_val * 1.05)
+        
+        if isinstance(plot_fingerprints, (str, Path)):
+            fig.savefig(plot_fingerprints, dpi=300)
+            if not quiet:
+                print(f"Fingerprint figure saved to {plot_fingerprints}")
+        
+    corrs = []
+    labels = []
+    for i1, (fp1, sele1) in enumerate(zip(fpts, seles)):
+        labels.append(sele1)
+        for i2, (fp2, sele2) in enumerate(zip(fpts, seles)):
+            if i1 >= i2:
+                continue
+            corr = pearsonr(list(fp1.values()), list(fp2.values())).statistic
+            if np.isnan(corr):
+                corr = 0
+            corrs.append(1 - corr)
+            if not quiet:
+                print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
+    
+    dendro, medoids = None, None
+    if plot_hca:
+        fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=True)
+        assert len(fpts) > 1, "Clustering requires multiple fingerprints, please add more selections."
+        
+        dendro, medoids = plot_hca_base(
+            corrs,
+            labels,
+            linkage_method=linkage_method,
+            color_threshold=color_threshold,
+            only_medoids=only_medoids,
+            annotate=annotate,
+            axis=ax,
+            vmin=0,
+            vmax=2,
+        )
+        for label in ax.xaxis.get_majorticklabels():
+            label.set_horizontalalignment("right")
+        if isinstance(plot_hca, (str, Path)):
+            fig.savefig(plot_hca, dpi=300)
+            if not quiet:
+                print(f"Clusters figure saved to {plot_hca}")
+    
+    return fpts, corrs, dendro, medoids
 
 #
 # GRAPHICAL USER INTERFACE
@@ -1987,7 +2173,6 @@ class LigandTableWidget(QTableWidget):
                 pm.enable("sele")
                 break
 
-
     def refresh(self, objects):
         self.setSortingEnabled(False)
         self.blockSignals(True)
@@ -2298,6 +2483,224 @@ class OverlapWidget(QWidget):
             # ext = os.path.splitext(filename)[1]
             with pd.ExcelWriter(filename) as xlsx_writer:
                 table_df.to_excel(xlsx_writer, sheet_name='Overlap', index=False)
+
+
+
+class CountWidget(QWidget):
+
+    def __init__(self):
+        super().__init__()
+
+        layout = QHBoxLayout()
+        self.setLayout(layout)
+
+        groupBox = QGroupBox("Color projection")
+        layout.addWidget(groupBox)
+        projBox = QFormLayout()
+        groupBox.setLayout(projBox)
+
+        self.multiSeleLine = QLineEdit()
+        projBox.addRow("Expressions:", self.multiSeleLine)
+
+        self.proteinExpressionLine = QLineEdit()
+        projBox.addRow("Protein:", self.proteinExpressionLine)
+
+        self.radiusSpin = QDoubleSpinBox()
+        self.radiusSpin.setValue(4)
+        self.radiusSpin.setDecimals(2)
+        self.radiusSpin.setSingleStep(0.5)
+        self.radiusSpin.setMinimum(2)
+        self.radiusSpin.setMaximum(10)
+        projBox.addRow("Contact radius:", self.radiusSpin)
+
+        self.typeCombo = QComboBox()
+        self.typeCombo.addItems([e.value for e in PrioritizationType])
+        projBox.addRow("Type:", self.typeCombo)
+
+        self.paletteLine = QLineEdit("rainbow")
+        projBox.addRow("Palette:", self.paletteLine)
+
+        drawButton = QPushButton("Draw")
+        drawButton.clicked.connect(self.draw_projection)
+        projBox.addWidget(drawButton)
+
+        fptBox = QGroupBox("Fingerprint vector")
+        layout.addWidget(fptBox)
+
+        fptLayout = QVBoxLayout(fptBox)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        fptLayout.addWidget(scroll)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        
+        scrollLayout = QFormLayout(container)
+        
+
+        self.multiSelesLine = QLineEdit("")
+        scrollLayout.addRow("Multi sele:", self.multiSelesLine)
+
+        self.siteSelectionLine = QLineEdit("*")
+        scrollLayout.addRow("Focus site:", self.siteSelectionLine)
+
+        self.siteRadiusSpin = QDoubleSpinBox()
+        self.siteRadiusSpin.setValue(5)
+        self.siteRadiusSpin.setDecimals(1)
+        self.siteRadiusSpin.setSingleStep(1)
+        self.siteRadiusSpin.setMinimum(0)
+        self.siteRadiusSpin.setMaximum(10)
+        scrollLayout.addRow("Site radius:", self.siteRadiusSpin)
+
+        self.contactRadiusSpin = QDoubleSpinBox()
+        self.contactRadiusSpin.setValue(4)
+        self.contactRadiusSpin.setDecimals(1)
+        self.contactRadiusSpin.setSingleStep(0.5)
+        self.contactRadiusSpin.setMinimum(3)
+        self.contactRadiusSpin.setMaximum(6)
+        scrollLayout.addRow("Contact radius:", self.contactRadiusSpin)
+
+        self.omegaCheck = QCheckBox()
+        self.omegaCheck.setChecked(False)
+        scrollLayout.addRow("Clustal Omega:", self.omegaCheck)
+
+        @self.omegaCheck.stateChanged.connect
+        def stateChanged(checkState):
+            if checkState == QtCore.Qt.Checked:
+                omegaBox.setEnabled(True)
+            else:
+                omegaBox.setEnabled(False)
+
+        omegaBox = QGroupBox()
+        scrollLayout.addRow(omegaBox)
+        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, omegaBox)
+        omegaLayout = QFormLayout()
+        omegaBox.setLayout(omegaLayout)
+        omegaBox.setEnabled(False)
+
+        self.omegaConservation = QLineEdit()
+        self.omegaConservation.setText("*:.")
+        omegaLayout.addRow("Conservation symbols:", self.omegaConservation)
+
+        self.fingerprintsCheck = QCheckBox()
+        self.fingerprintsCheck.setChecked(False)
+        scrollLayout.addRow("Fingerprints:", self.fingerprintsCheck)
+        @self.fingerprintsCheck.stateChanged.connect
+        def stateChanged(checkState):
+            if checkState == QtCore.Qt.Checked:
+                fptBox.setEnabled(True)
+            else:
+                fptBox.setEnabled(False)
+
+        fptBox = QGroupBox()
+        scrollLayout.addRow(fptBox)
+        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, fptBox)
+        fptLayout = QFormLayout()
+        fptBox.setLayout(fptLayout)
+        fptBox.setEnabled(False)
+
+        self.nBinsSpin = QSpinBox()
+        self.nBinsSpin.setValue(20)
+        self.nBinsSpin.setMinimum(0)
+        self.nBinsSpin.setMaximum(500)
+        fptLayout.addRow("Num bins:", self.nBinsSpin)
+
+        self.shareYLimCheck = QCheckBox()
+        self.shareYLimCheck.setChecked(True)
+        fptLayout.addRow("Share y limit:", self.shareYLimCheck)
+
+        self.sharexCheck = QCheckBox()
+        self.sharexCheck.setChecked(True)
+        fptLayout.addRow("Share x axis:", self.sharexCheck)
+
+        self.hcaCheck = QCheckBox()
+        self.hcaCheck.setChecked(False)
+
+        scrollLayout.addRow("Clustering:", self.hcaCheck)
+        @self.hcaCheck.stateChanged.connect
+        def stateChanged(checkState):
+            if checkState == QtCore.Qt.Checked:
+                hcaBox.setEnabled(True)
+            else:
+                hcaBox.setEnabled(False)
+
+        hcaBox = QGroupBox()
+        scrollLayout.addRow(hcaBox)
+        scrollLayout.setWidget(scrollLayout.rowCount(), QFormLayout.SpanningRole, hcaBox)
+        hcaLayout = QFormLayout()
+        hcaBox.setLayout(hcaLayout)
+        hcaBox.setEnabled(False)
+
+        self.annotateCheck = QCheckBox()
+        self.annotateCheck.setChecked(True)
+        hcaLayout.addRow("Annotate:", self.annotateCheck)
+
+        self.linkageMethodCombo = QComboBox()
+        self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
+        hcaLayout.addRow("Linkage:", self.linkageMethodCombo)
+
+        self.colorThresholdSpin = QDoubleSpinBox()
+        self.colorThresholdSpin.setMinimum(0)
+        self.colorThresholdSpin.setMaximum(10)
+        self.colorThresholdSpin.setValue(0)
+        self.colorThresholdSpin.setSingleStep(0.1)
+        self.colorThresholdSpin.setDecimals(2)
+        hcaLayout.addRow("Color threshold:", self.colorThresholdSpin)
+
+        self.onlyMedoidsCheck = QCheckBox()
+        self.onlyMedoidsCheck.setChecked(False)
+        hcaLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
+        
+        plotButton = QPushButton("Plot")
+        plotButton.clicked.connect(self.plot_fingerprint)
+        scrollLayout.addWidget(plotButton)
+
+    def draw_projection(self):
+        hotspots = self.multiSeleLine.text()
+        protein = self.proteinExpressionLine.text()
+        radius = self.radiusSpin.value()
+        type = self.typeCombo.currentText()
+        palette = self.paletteLine.text()
+
+        hs_proj(hotspots, protein, radius, type, palette)
+
+    def plot_fingerprint(self):
+        multi_seles = self.multiSelesLine.text()
+        site = self.siteSelectionLine.text()
+        site_radius = self.siteRadiusSpin.value()
+        contact_radius = self.contactRadiusSpin.value()
+        plot_fingerprints = self.fingerprintsCheck.isChecked()
+        plot_hca = self.hcaCheck.isChecked()
+        seq_align_omega = self.omegaCheck.isChecked()
+        omega_conservation = self.omegaConservation.text().strip()
+        nbins = self.nBinsSpin.value()
+        share_ylim = self.shareYLimCheck.isChecked()
+        sharex = self.sharexCheck.isChecked()
+        annotate = self.annotateCheck.isChecked()
+        linkage_method = self.linkageMethodCombo.currentText()
+        color_threshold = self.colorThresholdSpin.value()
+        only_medoids = self.onlyMedoidsCheck.isChecked()
+
+        fpt_sim(
+            multi_seles,
+            site,
+            site_radius,
+            contact_radius=contact_radius,
+            plot_fingerprints=plot_fingerprints,
+            plot_hca=plot_hca,
+            seq_align_omega=seq_align_omega,
+            omega_conservation=omega_conservation,
+            nbins=nbins,
+            share_ylim=share_ylim,
+            sharex=sharex,
+            annotate=annotate,
+            linkage_method=linkage_method,
+            color_threshold=color_threshold,
+            only_medoids=only_medoids,
+        )
+        plt.show()
+
 
 
 

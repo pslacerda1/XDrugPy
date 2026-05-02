@@ -29,8 +29,9 @@ for title, ftmap_pdb, crystal_pdb, resn, resid, chain in data:
     load_ftmap(
         ftmap_pdb,
         title,
-        cd_to_anchor=True,
-        combinatory_search=False,
+        cd_to_anchor=False,
+        combinatory_search=True,
+        allow_nested=True
     )
     pm.load(crystal_pdb, 'temp')
     pm.align(

@@ -42,13 +42,29 @@ def xdrugpy_install():
 
 def __init_plugin__(app=None):
     from .utils import configure_matplotlib
-    configure_matplotlib()
+    import matplotlib
+    import matplotlib.style
+    import matplotlib.colors
+    from matplotlib import pyplot as plt
+    from cycler import cycler
+
+    configure_matplotlib("default", {
+        'font.size': 14,
+        'figure.figsize': (10, 6),
+        'svg.fonttype': 'none',
+        'axes.prop_cycle': cycler(color=reversed(matplotlib.colors.XKCD_COLORS))
+    })
 
     from PyQt5.QtCore import QLocale
     QLocale.setDefault(QLocale("en_US"))
 
-    from .hotspots import __init_plugin__ as __init_hotspots_plugin__
-    __init_hotspots_plugin__()
+    from .hotspots import __init_plugin__ as __init_hotspots__
+    # from .docking import __init_plugin__ as __init_docking__
+    # from .multi import __init_plugin__ as __init_multi__
+
+    __init_hotspots__()
+    # __init_docking__()
+    # __init_multi__()
 
     from textwrap import dedent
     print(dedent("""
