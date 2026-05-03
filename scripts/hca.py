@@ -3,28 +3,24 @@
 #
 from os.path import expanduser
 from glob import glob
-from xdrugpy.hotspots import (
+from xdrugpy import (
     load_ftmap,
-    plot_multivariate_hca,
-    LinkageMethod
+    calc_multivariate_hca,
+    LinkageMethod,
+    configure_matplotlib,
+    plot,
 )
 from pymol import cmd as pm
-from matplotlib import pyplot as plt
-import matplotlib.style
-import matplotlib.colors
-from cycler import cycler
 
 # Change the default Matplotlib style and parameters to improve
 # the aesthetics of generated figures.
-matplotlib.style.use('default')
-plt.rcParams.update({
-    'font.size': 14,
-    'figure.figsize': (10, 6),
-    'svg.fonttype': 'none',
-    'axes.prop_cycle': cycler(color=reversed(
-        matplotlib.colors.XKCD_COLORS
-    )),
-})
+configure_matplotlib(
+    style='default',
+    params={
+        'font.size': 14,
+        'figure.figsize': (10, 6)
+    }
+)
 
 # OPTIONAL: Optimization that disables an unuseful feature if we'll not
 # launch the graphical interface after script execution.
@@ -48,20 +44,15 @@ for file in files[:5]:
         pm.delete(obj)
 
 # If you don't delete protein structures you can have a nice session!
-# pm.save("~/My Folder/nice_session.pze")
+# pm.save("~/New Folders/almost_nice_session.pze")
 
-# The standard HCA over the same hotspots of the previous analysis. This one
-# calculates the distance over the aggregation of hotspot properties, including
+# The standard HCA based on the distance between hotspot properties, including
 # coordinates of center-of-mass.
-plot_multivariate_hca(
+calc_multivariate_hca(
     '*.D* AND p.S0>20',
     linkage_method=LinkageMethod.WARD,
     color_threshold=2,
     only_medoids=True,
     annotate=False,
 )
-plt.title("Multivariate HCA")
-
-# Comment/Uncomment one of the following lines to show or save the figure.
-#plt.show()  # good for local usage, but disable for headless or remote sessions
-#plt.savefig("multivariate_hca.svg")  # save the SVG or PNG file
+plot() # or plot("~/MyFolder/hca.png") to save the figure instead of showing it

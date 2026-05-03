@@ -3,7 +3,7 @@
 #
 from os import chdir
 from os.path import expanduser
-from xdrugpy.hotspots import load_ftmap
+from xdrugpy import load_ftmap
 from pymol import cmd as pm
 
 chdir(expanduser('~/Desktop/DHODH/'))
@@ -29,9 +29,8 @@ for title, ftmap_pdb, crystal_pdb, resn, resid, chain in data:
     load_ftmap(
         ftmap_pdb,
         title,
-        cd_to_anchor=False,
-        combinatory_search=True,
-        allow_nested=True
+        cd_to_anchor=True,
+        combinatory_search=False,
     )
     pm.load(crystal_pdb, 'temp')
     pm.align(

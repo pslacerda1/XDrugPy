@@ -11,10 +11,8 @@ from functools import lru_cache
 
 import numpy as np
 import pandas as pd
-import matplotlib
 from scipy.spatial import distance_matrix, distance, cKDTree
 
-from scipy.stats import pearsonr
 from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
@@ -728,8 +726,8 @@ def _load_ftmap(
     return ret
 
 
-@pm.extend
-def count_molecules(sel):
+@new_command
+def count_molecules(sel: Selection, quiet: bool = True) -> int:
     """
     Returns the number of distinct molecules in a given selection.
     """
@@ -742,6 +740,8 @@ def count_molecules(sel):
         num_objs += 1
         pm.select(sel_copy, "%s and not (bm. first %s)" % (sel_copy, sel_copy))
         atoms_in_sel = pm.count_atoms(sel_copy)
+    if not quiet:
+        print(f"Number of molecules: {num_objs}")
     return num_objs
 
 
@@ -923,7 +923,7 @@ def get_ho(
 
 
 @new_command
-def plot_multivariate_hca(
+def calc_multivariate_hca(
     exprs: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
@@ -1032,7 +1032,7 @@ class OverlapFunction(StrEnum):
 
 
 @new_command
-def plot_overlap_matrix(
+def calc_overlap_matrix(
     sele_a: str,
     sele_b: Optional[str] = None,
     function: OverlapFunction = OverlapFunction.FO,
@@ -1178,7 +1178,8 @@ class BindMetric(StrEnum):
     FQ = "fq"
 
 
-def plot_ligand_fit(
+@new_command
+def calc_ligand_fit(
     hs_sele: Selection,
     ligs_sele: Selection,
     function: OverlapFunction,
@@ -1189,7 +1190,7 @@ def plot_ligand_fit(
 ):
     if len(pm.get_object_list(hs_sele)) != 1:
         raise ValueError("Only one hotspot can be analyzed at time.")
-    overlap_df = plot_overlap_matrix(
+    overlap_df = calc_overlap_matrix(
         sele_a=hs_sele,
         sele_b=ligs_sele,
         function=function,
@@ -1700,7 +1701,7 @@ class HcaWidget(QWidget):
         annotate = self.annotateCheck.isChecked()
         enable_heatmap = self.enableHeatmapCheck.isChecked()
 
-        plot_multivariate_hca(
+        calc_multivariate_hca(
             exprs=sele,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
@@ -1924,7 +1925,7 @@ class LigandFitWidget(QWidget):
         bind_df = self.table.getDataFrame()
         bind_df = bind_df.set_index('Ligand')
 
-        plot_ligand_fit(
+        calc_ligand_fit(
             hs_sele=hs_sele,
             ligs_sele=ligs_sele,
             function=function,
@@ -2002,7 +2003,7 @@ class OverlapWidget(QWidget):
         radius = self.radiusSpin.value()
         annotate = self.annotateCheck.isChecked()
         
-        plot_overlap_matrix(
+        calc_overlap_matrix(
             sele_a=sele_a,
             sele_b=sele_b,
             function=function,
@@ -2018,7 +2019,7 @@ class OverlapWidget(QWidget):
         radius = self.radiusSpin.value()
         annotate = self.annotateCheck.isChecked()
         
-        table_df = plot_overlap_matrix(
+        table_df = calc_overlap_matrix(
             sele_a=sele_a,
             sele_b=sele_b,
             function=function,

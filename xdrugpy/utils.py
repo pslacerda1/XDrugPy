@@ -4,7 +4,7 @@ import sys
 import shlex
 import inspect
 import scipy.cluster.hierarchy as sch
-from contextlib import wraps
+from functools import wraps
 from textwrap import dedent
 from typing import get_args, Union, Any, get_origin, get_type_hints
 from types import UnionType
@@ -24,10 +24,45 @@ from enum import Enum
 
 from pymol.parser import __file__ as _parser_filename
 
-QStandardPaths = Qt.QtCore.QStandardPaths
 
 
-Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
+@pm.extend
+def install_xdrugpy_requirements():
+    """Install required packages for XDrugPy."""
+    import os
+    os.system(
+        "pip install pandas matplotlib scipy strenum networkx openpyxl --no-deps pyKVFinder"
+    )
+
+@pm.extend
+def configure_matplotlib(style='default', params=None):
+    """Configure Matplotlib for use in XDrugPy."""
+    import matplotlib
+    import matplotlib.style
+    import matplotlib.colors
+    from matplotlib import pyplot as plt
+    from cycler import cycler
+    
+    matplotlib.use("Qt5Agg")
+    matplotlib.style.use('default')
+    plt.rcParams.update({
+        **{
+            'font.size': 14,
+            'figure.figsize': (10, 6),
+            'svg.fonttype': 'none',
+            'axes.prop_cycle': cycler(color=reversed(matplotlib.colors.XKCD_COLORS))
+        },
+        **(params or {}),
+    })
+
+@pm.extend
+def plot(filename: str | None = None):
+    """Show or save the current Matplotlib plot."""
+    from matplotlib import pyplot as plt
+    if filename:
+        plt.savefig(filename)
+    else:
+        plt.show()
 
 
 class AligMethod(StrEnum):
@@ -40,7 +75,6 @@ class AligMethod(StrEnum):
 class Selection(str):
     pass
 
-        
 class ArgumentParsingError(ValueError):
     "Error on argument parsing."
 
@@ -54,6 +88,7 @@ class ArgumentParsingError(ValueError):
 
 
 def _into_types(var, type, value):
+    
     # Untyped string
     if type == Any:
         return value
@@ -196,7 +231,7 @@ def new_command(name, function=None, _self=pm):
                         new_kwargs[var] = _into_types(var, actual_type, value)
                 else:
                     if param.default is sign.empty:
-                        raise RuntimeError(f"Unknow variable '{var}'.")
+                        raise ArgumentParsingError(f"Unknow argument '{var}'.")
             defaults = {
                 k: v.default for k, v in sign.parameters.items()
                 if v.default is not sign.empty
