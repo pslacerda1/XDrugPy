@@ -21,6 +21,8 @@ from collections import namedtuple
 from strenum import StrEnum
 from enum import Enum
 
+from pymol.parser import __file__ as _parser_filename
+
 
 @pm.extend
 def plot(filename: str | None = None):
