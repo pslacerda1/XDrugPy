@@ -19,7 +19,6 @@ import networkx as nx
 from pymol import cmd as pm
 
 from .utils import (
-    new_command,
     Selection,
     plot_hca_base,
 )
@@ -518,7 +517,7 @@ class Hotspot:
         has_collision = np.any(has_collision, axis=2) # Matriz (N, M)
         return has_collision
     
-@new_command
+@pm.new_command
 def show_hs(selections: List[str],
             cd_to_anchor: bool = True,
             max_collisions: float = 0.15) -> Hotspot:
@@ -531,7 +530,7 @@ def show_hs(selections: List[str],
     print(hs)
 
 
-@new_command
+@pm.new_command
 def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
@@ -726,7 +725,7 @@ def _load_ftmap(
     return ret
 
 
-@new_command
+@pm.new_command
 def count_molecules(sel: Selection, quiet: bool = True) -> int:
     """
     Returns the number of distinct molecules in a given selection.
@@ -745,7 +744,7 @@ def count_molecules(sel: Selection, quiet: bool = True) -> int:
     return num_objs
 
 
-@new_command
+@pm.new_command
 def get_fo(
     sel1: Selection,
     sel2: Selection,
@@ -792,7 +791,7 @@ def get_fo(
     return fo
 
 
-@new_command
+@pm.new_command
 def get_dc(
     sel1: Selection,
     sel2: Selection,
@@ -831,7 +830,7 @@ def get_dc(
     return dc
 
 
-@new_command
+@pm.new_command
 def get_dce(
     sel1: Selection,
     sel2: Selection,
@@ -880,7 +879,7 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-@new_command
+@pm.new_command
 def get_ho(
     hs1: Selection,
     hs2: Selection,
@@ -922,7 +921,7 @@ def get_ho(
     return ho
 
 
-@new_command
+@pm.new_command
 def calc_multivariate_hca(
     exprs: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
@@ -1031,7 +1030,7 @@ class OverlapFunction(StrEnum):
     DCE = "dce"
 
 
-@new_command
+@pm.new_command
 def calc_overlap_matrix(
     sele_a: str,
     sele_b: Optional[str] = None,

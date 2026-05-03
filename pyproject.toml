@@ -1,5 +1,8 @@
 [project]
 name = "DRUGpy"
+authors = [
+  {name = "Pedro Sousa Lacerda", email = "pslacerda@gmail.com"},
+]
 version = "2.0.0"
 description = "Protein hotspot detection, visualization and comparative analysis based on FTMap solvent mapping."
 dependencies = [
@@ -10,4 +13,5 @@ dependencies = [
         "networkx==3.4",
         "openpyxl==3.1",
         # "pyKVFinder==0.9.0",
+        "pymol_new_command @ https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip"
 ]

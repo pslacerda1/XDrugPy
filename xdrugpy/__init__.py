@@ -1,6 +1,7 @@
 import sys
 from subprocess import check_call
 from pymol import cmd as pm
+import pymol_new_command
 
 
 __ALL__ = [
@@ -29,7 +30,8 @@ try:
 except ImportError:
     try:
         check_call([
-            sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0"
+            sys.executable, "-m", "pip", "install", "--no-deps",
+            "pyKVFinder==0.9.0",
         ])
         check_call([
             sys.executable, "-m", "pip", "install", "/home/peu/Desktop/XDrugPy"
@@ -60,6 +62,4 @@ from .hotspots import (
     calc_multivariate_hca, calc_overlap_matrix,
     LinkageMethod, OverlapFunction
 )
-from .utils import (
-    ArgumentParsingError, new_command, configure_matplotlib, plot
-)
+from .utils import configure_matplotlib, plot

@@ -11,7 +11,6 @@ from types import UnionType
 from collections import namedtuple, defaultdict
 from shutil import rmtree
 from tempfile import mkdtemp
-from pymol import Qt, cmd as pm, parsing
 from pathlib import Path
 from matplotlib.axes import Axes
 from matplotlib import pyplot as plt, axes
@@ -20,8 +19,9 @@ from scipy.cluster.hierarchy import linkage
 from collections import namedtuple
 from strenum import StrEnum
 from enum import Enum
-
 from pymol.parser import __file__ as _parser_filename
+
+from pymol import Qt, cmd as pm, parsing
 
 
 @pm.extend
@@ -64,188 +64,8 @@ class AligMethod(StrEnum):
 class Selection(str):
     pass
 
-class ArgumentParsingError(ValueError):
-    "Error on argument parsing."
 
-    def __init__(self, arg_name, message):
-        message = dedent(message).strip()
-        if arg_name:
-            s = f"Failed at parsing '{arg_name}'. {message}"
-        else:
-            s = message
-        super().__init__(s)
-
-
-def _into_types(var, type, value):
-    
-    # Untyped string
-    if type == Any:
-        return value
-            
-    # Boolean flags
-    elif type is bool:
-        if isinstance(value, bool):
-            return value
-        trues = ["yes", "1", "true", "on", "y"]
-        falses = ["no", "0", "false", "off", "n"]
-        if value.lower() in trues:
-            return True
-        elif value.lower() in falses:
-            return False
-        else:
-            raise ArgumentParsingError(
-                var,
-                f"Can't parse {value!r} as bool."
-                f" Supported true values are {', '.join(trues)}."
-                f" Supported false values are {', '.join(falses)}."
-            )
-    
-    # Types from typing module
-    elif origin := get_origin(type):
-
-        if origin in {Union, UnionType}:
-            funcs = get_args(type)
-            for func in funcs:
-                try:
-                    return _into_types(None, func, value)
-                except:
-                    continue
-            raise ArgumentParsingError(
-                var,
-                f"Can't parse {value!r} into {type}."
-                f" The parser tried each union type and none was suitable."
-            )
-        
-        elif issubclass(origin, tuple):
-            funcs = get_args(type)
-            if funcs:
-                values = shlex.split(value)
-                if len(funcs) > 0 and len(funcs) != len(values):
-                    raise ArgumentParsingError(
-                        var,
-                        f"Can't parse {value!r} into {type}."
-                        f" The number of tuple arguments are incorrect."
-                    )
-                try:
-                    return tuple(_into_types(None, f, v) for f, v in zip(funcs, values))
-                except:
-                    raise ArgumentParsingError(
-                        var,
-                        f"Can't parse {value!r} into {type}."
-                        f" One or more tuple values are of incorrect types."
-                    )
-            else:
-                return tuple(shlex.split(value))
-
-        elif issubclass(origin, list):
-            funcs = get_args(type)
-            if len(funcs) == 1:
-                func = funcs[0]
-                return [_into_types(None, func, a) for a in shlex.split(value)]
-            return shlex.split(value)
-    
-    elif sys.version_info >= (3, 11) and issubclass(type, StrEnum):
-        try:
-            return type(value)
-        except:
-            names = [e.value for e in list(type)]
-            raise ArgumentParsingError(
-                var,
-                f"Invalid value for {type.__name__}."
-                f" Accepted values are {', '.join(names)}."
-            )
-
-    # Specific types must go before other generic types
-    #   isinstance(type, builtins.type) comes after
-    elif issubclass(type, Enum):
-        value = type.__members__.get(value)
-        if value is None:
-            raise ArgumentParsingError(
-                var,
-                f"Invalid value for {type.__name__}."
-                f" Accepted values are {', '.join(type.__members__)}."
-            )
-        return value
-    
-    # Generic types must accept str as single argument to __init__(s)
-    elif isinstance(type, builtins.type):
-        try:
-            return type(value)
-        except Exception as exc:
-            raise ArgumentParsingError(
-                var,
-                f"Invalid value {value!r} for custom type {type.__name__}."
-                f" The type must accept str as the solo argument to __init__(s)."
-            ) from exc
-
-
-def new_command(name, function=None, _self=pm):
-
-    if function is None:
-        name, function = name.__name__, name
-
-    # docstring text, if present, should be dedented
-    if function.__doc__ is not None:
-        function.__doc__ = dedent(function.__doc__).strip()
-
-    # Resolve strings into real class objects (PEP 563).
-    try:
-        resolved_hints = get_type_hints(
-            function,
-            globalns=sys.modules[function.__module__].__dict__
-        )
-    except Exception:
-        resolved_hints = function.__annotations__
-
-    # Analysing arguments
-    sign = inspect.signature(function)
-    
-    # Inner function that will be callable every time the command is executed
-    @wraps(function)
-    def inner(*args, **kwargs):
-        caller = sys._getframe(1).f_code.co_filename
-        # It was called from command line or pml script, so parse arguments
-        if caller == _parser_filename:
-            # special _self argument
-            kwargs.pop("_self", None)
-            new_kwargs = {}
-            for var, param in sign.parameters.items():
-                if var in kwargs:
-                    value = kwargs[var]
-                    # special 'quiet' argument
-                    if var == 'quiet' and isinstance(value, int):
-                        new_kwargs[var] = bool(value)
-                    else:
-                        actual_type = resolved_hints.get(var, param.annotation)
-                        new_kwargs[var] = _into_types(var, actual_type, value)
-                else:
-                    if param.default is sign.empty:
-                        raise ArgumentParsingError(f"Unknow argument '{var}'.")
-            defaults = {
-                k: v.default for k, v in sign.parameters.items()
-                if v.default is not sign.empty
-            }
-            final_kwargs = {
-                **defaults,
-                **new_kwargs
-            }
-            return function(**final_kwargs)
-
-        # It was called from Python, so pass the arguments as is
-        else:
-            return function(*args, **kwargs)
-    
-    _self.keyword[name] = [inner, 0, 0, ',', parsing.STRICT]
-    _self.kwhash.append(name)
-    _self.help_sc.append(name)
-    
-    # Accessor to the original function so bypass the stack extraction.
-    # The purpose is optimization (loops, for instance).
-    inner.func = inner.__wrapped__ 
-    return inner
-
-
-@new_command
+@pm.new_command
 def align_groups(
     mobile_groups: Selection,
     target: Selection,
