@@ -1,0 +1,13 @@
+[project]
+name = "DRUGpy"
+version = "2.0.0"
+description = "Protein hotspot detection, visualization and comparative analysis based on FTMap solvent mapping."
+dependencies = [
+        "pandas==2.3",
+        "matplotlib==3.10",
+        "scipy==1.15",
+        "StrEnum==0.4",
+        "networkx==3.4",
+        "openpyxl==3.1",
+        # "pyKVFinder==0.9.0",
+]

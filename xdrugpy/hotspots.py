@@ -16,7 +16,6 @@ from scipy.spatial import distance_matrix, distance, cKDTree
 from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
-import pyKVFinder
 from pymol import cmd as pm
 
 from .utils import (
@@ -133,6 +132,7 @@ def find_occupied_pockets(
 
 
 def find_pykvf_pockets(protein):
+    import pyKVFinder
     with tempfile.TemporaryDirectory() as tempdir:
         protein_pdb = f"{tempdir}/protein.pdb"
         pm.save(protein_pdb, selection=protein)
@@ -1342,14 +1342,15 @@ class LoadWidget(QWidget):
         finally:
             self.clearInputs()
         
-        load_ftmap(
-            filenames,
-            groups=groups,
-            cd_to_anchor=cd_to_anchor,
-            combinatory_search=combinatory_search,
-            allow_nested=allow_nested,
-            max_collisions=max_collisions,
-        )
+        for filename, group in zip(filenames, groups):
+            load_ftmap(
+                filename=filename,
+                group=group,
+                cd_to_anchor=cd_to_anchor,
+                combinatory_search=combinatory_search,
+                allow_nested=allow_nested,
+                max_collisions=max_collisions,
+            )
 
 
 class SortableItem(QTableWidgetItem):
@@ -2079,5 +2080,4 @@ def run_plugin_gui():
 
 def __init_plugin__(app=None):
     from pymol.plugins import addmenuitemqt
-
     addmenuitemqt("(XDrugPy) Hotspots", run_plugin_gui)

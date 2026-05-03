@@ -22,29 +22,25 @@ from strenum import StrEnum
 from enum import Enum
 
 
-from pymol.parser import __file__ as _parser_filename
-
-
-
 @pm.extend
-def install_xdrugpy_requirements():
-    """Install required packages for XDrugPy."""
-    import os
-    os.system(
-        "pip install pandas matplotlib scipy strenum networkx openpyxl --no-deps pyKVFinder"
-    )
+def plot(filename: str | None = None):
+    """Show or save the current Matplotlib plot."""
+    from matplotlib import pyplot as plt
+    if filename:
+        plt.savefig(filename)
+    else:
+        plt.show()
 
-@pm.extend
+
 def configure_matplotlib(style='default', params=None):
     """Configure Matplotlib for use in XDrugPy."""
-    import matplotlib
     import matplotlib.style
     import matplotlib.colors
     from matplotlib import pyplot as plt
     from cycler import cycler
     
     matplotlib.use("Qt5Agg")
-    matplotlib.style.use('default')
+    matplotlib.style.use(style)
     plt.rcParams.update({
         **{
             'font.size': 14,
@@ -54,15 +50,6 @@ def configure_matplotlib(style='default', params=None):
         },
         **(params or {}),
     })
-
-@pm.extend
-def plot(filename: str | None = None):
-    """Show or save the current Matplotlib plot."""
-    from matplotlib import pyplot as plt
-    if filename:
-        plt.savefig(filename)
-    else:
-        plt.show()
 
 
 class AligMethod(StrEnum):
