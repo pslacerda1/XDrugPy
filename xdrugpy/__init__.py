@@ -5,14 +5,17 @@ from pymol import cmd as pm
 
 __ALL__ = [
     # hotspots
-    "load_fstmap",
+    "load_ftmap",
     "get_fo",
     "get_dc",
     "get_dce",
     "get_ho",
     "calc_multivariate_hca",
     "calc_overlap_matrix",
+    "calc_ligand_fit",
     "LinkageMethod",
+    "OverlapFunction",
+    "BindMetric",
 
     # utils
     "new_command",
@@ -48,17 +51,15 @@ def __init_plugin__(app=None):
     from textwrap import dedent
     print(dedent("""
         DRUGpy version 2.0 (a.k.a. DRUGpy_CAML_DDD).
-        Please read and cite: http://doi.com.br
+            Please read and cite: http://doi.com.br
     """))
-
-
-if __name__ in ['pymol', '/home/peu/.pymol/startup/xdrugpy.py']:
-    __init_plugin__()
 
 
 from .hotspots import (
     load_ftmap, get_fo, get_dc, get_dce, get_ho,
-    calc_multivariate_hca, calc_overlap_matrix, LinkageMethod)
+    calc_multivariate_hca, calc_overlap_matrix,
+    LinkageMethod, OverlapFunction
+)
 from .utils import (
     ArgumentParsingError, new_command, configure_matplotlib, plot
 )

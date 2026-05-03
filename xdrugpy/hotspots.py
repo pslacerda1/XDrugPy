@@ -1178,7 +1178,6 @@ class BindMetric(StrEnum):
     FQ = "fq"
 
 
-@new_command
 def calc_ligand_fit(
     hs_sele: Selection,
     ligs_sele: Selection,
@@ -1186,7 +1185,7 @@ def calc_ligand_fit(
     radius: float,
     annotate: bool,
     lig_metric: BindMetric,
-    bind_df
+    bind_df: Any,
 ):
     if len(pm.get_object_list(hs_sele)) != 1:
         raise ValueError("Only one hotspot can be analyzed at time.")
