@@ -22,7 +22,7 @@ from pathlib import Path
 from matplotlib.axes import Axes
 from matplotlib import pyplot as plt, axes
 from scipy.spatial import distance
-from scipy.cluster.hierarchy import linkage
+from scipy.cluster.hierarchy import linkage, fcluster
 from collections import namedtuple
 from functools import lru_cache
 from strenum import StrEnum
@@ -299,19 +299,31 @@ def align_groups(
             pm.matrix_copy(f"{mobile}.protein", inner)
 
 
+def threshold_for_k_clusters(Z, k):
+    """
+    Retorna um color_threshold para obter k clusters.
+
+    """
+    if k <= 1:
+        return float('inf')
+
+    k = min(k, len(Z))
+    return (Z[-(k - 1), 2] + Z[-k, 2]) / 2
+
 def plot_hca_base(
     dists,
     labels,
     linkage_method,
-    color_threshold,
     only_medoids,
+    color_threshold,
     annotate,
     axis=None,
     vmin=None,
     vmax=None,
     enable_heatmap=False,
     rename_leafs=None,
-    no_plot=False
+    no_plot=False,
+    nclusters=-1.0,
 ):
     if isinstance(axis, axes.Axes):
         fig = axis.get_figure()
@@ -332,8 +344,13 @@ def plot_hca_base(
     for leaf_node, new_label in (rename_leafs or {}).items():
         idx = labels.index(leaf_node)
         labels[idx] = new_label
-    
-    Z = linkage(dists, method=linkage_method, optimal_ordering=True)
+    if nclusters != -1.0 and color_threshold != -1.0:
+        raise ValueError("Cannot specify both nclusters and color_threshold.")
+    Z = linkage(dists, method=linkage_method)
+    if nclusters != -1.0:
+        # Calculate the distance threshold that corresponds to the desired number of clusters
+        Z = linkage(dists, method=linkage_method)
+        color_threshold = threshold_for_k_clusters(Z, nclusters)
     dendro = sch.dendrogram(
         Z,
         labels=labels,
@@ -345,7 +362,7 @@ def plot_hca_base(
         no_labels=enable_heatmap,
         no_plot=no_plot,
     )
-    if not no_plot and color_threshold is not None and color_threshold > 0:
+    if not no_plot and color_threshold > 0:
         ax_dend_top.axhline(color_threshold, color="gray", ls="--")
         ax_dend_top.set_ylim(bottom=-0.005)
 

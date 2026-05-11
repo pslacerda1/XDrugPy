@@ -619,16 +619,16 @@ def load_ftmap(
 def _load_ftmap(
     filename: Path,
     group: str = "",
-    cd_to_anchor: bool = True,
-    combinatory_search: bool = False,
-    allow_nested: bool = False,
+    cd_to_anchor: bool = False,
+    combinatory_search: bool = True,
+    allow_nested: bool = True,
     max_collisions: float = 0.15,
 ):
     if not group:
         group = os.path.splitext(os.path.basename(filename))[0]
     group = pm.get_legal_name(group)
     
-    pm.load(str(filename), quiet=1, discrete=1)
+    pm.load(str(filename), quiet=1)
 
     if objs := pm.get_object_list("*_protein"):
         assert len(objs) == 1
@@ -901,7 +901,7 @@ def fpt_sim(
     nbins: int = 5,
     sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
-    color_threshold: float = 0.0,
+    color_threshold: float = -1.0,
     only_medoids: bool = False,
     annotate: bool = True,
     plot_fingerprints: str = "",
@@ -1209,7 +1209,7 @@ def plot_univariate_hca(
     align: bool = False,
     annotate: bool = False,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    color_threshold: float = 0.0,
+    color_threshold: float = -1.0,
     only_medoids: bool = False,
     plot: str = "",
     enable_heatmap: bool = False,
@@ -1324,7 +1324,7 @@ class DistanceMethod(StrEnum):
 def plot_multivariate_hca(
     exprs: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    color_threshold: float = 0.0,
+    color_threshold: float = -1.0,
     only_medoids: bool = False,
     annotate: bool = False,
     plot: str = None,
@@ -1332,6 +1332,7 @@ def plot_multivariate_hca(
     enable_heatmap: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
     no_plot: bool = False,
+    nclusters: int = -1.0,
 ):
     """
     DESCRIPTION
@@ -1416,7 +1417,7 @@ def plot_multivariate_hca(
     
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
     X = distance.pdist(p, dist_method)
-    dendro, medoids = plot_hca_base(X, labels, linkage_method, color_threshold, only_medoids, annotate, plot, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs, no_plot=no_plot)
+    dendro, medoids = plot_hca_base(X, labels, linkage_method, only_medoids, color_threshold, annotate, plot, enable_heatmap=enable_heatmap, rename_leafs=rename_leafs, no_plot=no_plot, nclusters=nclusters)
     return X, object_list, dendro, medoids
 
 
