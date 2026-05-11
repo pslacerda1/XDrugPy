@@ -11,15 +11,16 @@ from functools import lru_cache
 
 import numpy as np
 import pandas as pd
+from scipy.stats import pearsonr
 from scipy.spatial import distance_matrix, distance, cKDTree
 from scipy.cluster.hierarchy import linkage, leaves_list
 from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
-import pyKVFinder
 from pymol import cmd as pm
-
+from pymol.exporting import _resn_to_aa as RESN_TO_AA
 from pymol_new_command import new_command
+
 from .utils import (
     Selection,
     plot_hca_base,
@@ -611,8 +612,8 @@ def _load_ftmap(
     filename: Path,
     group: str = "",
     cd_to_anchor: bool = False,
-    combinatory_search: bool = False,
-    allow_nested: bool = False,
+    combinatory_search: bool = True,
+    allow_nested: bool = True,
     max_collisions: float = 0.15,
 ):
     if not group:
@@ -897,154 +898,6 @@ class LinkageMethod(StrEnum):
     COMPLETE = "complete"
     AVERAGE = "average"
     WARD = "ward"
-
-
-@new_command
-def get_ho(
-    hs1: Selection,
-    hs2: Selection,
-    radius: float = 2.0,
-    quiet: bool = True,
-):
-    """
-    DESCRIPTION
-
-        Calculates the Hotspot Overlap (HO) between two selections.
-        Unlike FO, HO is a symmetric metric that considers the overlap 
-        relative to the combined size of both selections.
-
-    ARGUMENTS
-
-        hs1, hs2:
-            Typically FTMap hotspots or consensus sites.
-
-        radius:
-            The proximity threshold for a contact.
-
-    MATHEMATICS
-
-        HO = (Contacts_in_1 + Contacts_in_2) / (Total_Atoms_1 + Total_Atoms_2)
-        Where a contact is defined as an atom having at least one neighbor 
-        in the opposing selection within the radius.
-    """
-    atoms1 = get_coords(hs1)
-    atoms2 = get_coords(hs2)
-    if atoms1 is None or atoms2 is None:
-        ho = 0
-    else:
-        dist = distance_matrix(atoms1, atoms2) <= radius
-        num_contacts1 = np.sum(np.any(dist, axis=1))
-        num_contacts2 = np.sum(np.any(dist, axis=0))
-        ho = (num_contacts1 + num_contacts2) / (len(atoms1) + len(atoms2))
-    if not quiet:
-        print(f"HO: {ho:.2f}")
-    return ho
-
-
-@new_command
-def calc_multivariate_hca(
-    exprs: Selection,
-    linkage_method: LinkageMethod = LinkageMethod.SINGLE,
-    color_threshold: float = 0.0,
-    nclusters: int = -1,
-    only_medoids: bool = False,
-    annotate: bool = False,
-    enable_heatmap: bool = False,
-    rename_leafs: Optional[Dict[str, str]] = None,
-    no_plot: bool = False,
-):
-    """
-    DESCRIPTION
-
-        Performs a Multivariate Hierarchical Cluster Analysis (HCA) on FTMap
-        consensus sites or hotspots.
-
-        The command automatically extracts properties stored within PyMOL objects
-        and center-of-mass coordinates, then construct standardized feature vectors
-        (Z-score) for each object to calculate high-dimensional distance.
-
-    PROPERTIES EVALUATED
-
-        Feature vectors are built based on the object type:
-        - Hotspots: ST, S0, CD, MD and XYZ (7 variables)
-        - Consensus sites: ST + XYZ Coordinates (4 variables)
-        - ACS (Atomic Contact Surfaces): ST, MD + XYZ Coordinates (5 variables)
-
-    ARGUMENTS
-
-        exprs:
-            A PyMOL selection containing the objects to compare. All objects must
-            be of the same type. All hotspots or all consensus sites.
-
-        linkage_method:
-            The clustering algorithm for the dendrogram. 
-
-        color_threshold:
-            Distance cutoff for coloring dendrogram branches.
-
-        only_medoids:
-            If True, focuses analysis or visualization only on the cluster medoids.
-
-        enable_heatmap:
-            Generates a distance matrix heatmap coupled with the dendrogram.
-
-        rename_leafs:
-            A dictionary mapping PyMOL object names to user-friendly labels.
-
-        no_plot:
-            If True, performs calculations and returns data without 
-            rendering the Matplotlib window.
-
-    RETURNS
-
-        A tuple containing: (Distance Matrix, Object List, Dendrogram, Medoids)
-
-    EXAMPLES
-
-        plot_multivariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
-        plot_multivariate_hca *.CS.*
-    """
-    object_list = pm.get_object_list(exprs)
-    assert object_list is not None and len(object_list) >= 2, "At least two hotspots are required for comparison."
-    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots or only consensus sites are supported in the HCA."
-
-    hs_type = pm.get_property("Type", object_list[0])
-    if hs_type == "HS":
-        n_props = 4
-    elif hs_type == "CS":
-        n_props = 1
-    labels = []
-
-    p = np.zeros((len(object_list), n_props + 3))
-
-    for ix, obj in enumerate(object_list):
-        labels.append(obj)
-        x, y, z = pm.centerofmass(obj)
-        if hs_type == "HS":
-            ST = pm.get_property("ST", obj)
-            S0 = pm.get_property("S0", obj)
-            CD = pm.get_property("CD", obj)
-            MD = pm.get_property("MD", obj)
-            p[ix, :] = np.array([ST, S0, CD, MD, x, y, z])
-        elif hs_type == "CS":
-            ST = pm.get_property("ST", obj)
-            p[ix, :] = np.array([ST, x, y, z])
-        elif hs_type == "ACS":
-            ST = pm.get_property("ST", obj)
-            MD = pm.get_property("MD", obj)
-            p[ix, :] = np.array([ST, MD, x, y, z])
-    
-    p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
-    X = distance.pdist(p)
-    dendro, medoids = plot_hca_base(
-        X, labels, linkage_method, only_medoids, annotate,
-        nclusters=nclusters,
-        color_threshold=color_threshold,
-        enable_heatmap=enable_heatmap,
-        rename_leafs=rename_leafs,
-        no_plot=no_plot
-    )
-    return X, object_list, dendro, medoids
 
 
 class PairwiseFunction(StrEnum):
@@ -1613,6 +1466,454 @@ def fpt_sim(
     
     return fpts, corrs, dendro, medoids
 
+
+class ResidueSimilarityMethod(StrEnum):
+    JACCARD = "jaccard"
+    OVERLAP = "overlap"
+
+
+@new_command
+def res_sim(
+    hs1: Selection,
+    hs2: Selection,
+    radius: float = 4.0,
+    seq_align: bool = False,
+    method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
+    quiet: bool = True,
+):
+    """
+    Compute hotspots similarity by the Jaccard or overlap coefficient of nearby
+    residues.
+
+    OPTIONS
+        hs1     hotspot 1
+        hs2     hotspot 2
+        radius  distance to consider residues near hotspots (default: 2)
+        method  jaccard or overlap (default: jaccard)
+        quiet   define verbosity
+
+    EXAMPLES
+        res_sim 8DSU.D_001*, 6XHM.D_001*
+        res_sim 8DSU.CS_*, 6XHM.CS_*
+    """
+    group1 = pm.get_property("Group", f"first {hs1}")  # FIXME it doesn't works with arbitrary objects
+    group2 = pm.get_property("Group", f"first {hs2}")
+
+    sel1 = f"{group1}.protein within {radius} from ({hs1})"
+    sel2 = f"{group2}.protein within {radius} from ({hs2})"
+
+    resis1 = set()
+    pm.iterate(sel1, "resis1.add((chain, resi))", space={"resis1": resis1})
+
+    if group1 == group2 or not seq_align:
+        resis2 = set()
+        pm.iterate(sel2, "resis2.add((chain, resi))", space={"resis2": resis2})
+    else:
+        try:
+            # FIXME Clustal Omega?
+            aln_obj = pm.get_unused_name()
+            pm.cealign(
+                f"{group1}.protein", f"{group2}.protein", transform=0, object=aln_obj
+            )
+            raw = pm.get_raw_alignment(aln_obj)
+
+            resis = {}
+            pm.iterate(
+                aln_obj, "resis[model, index] = (chain, resi)", space={"resis": resis}
+            )
+
+            site2 = [(a.chain, a.resi) for a in pm.get_model(sel2).atom]
+            resis2 = set()
+            for idx1, idx2 in raw:
+                if resis[idx1] in site2:
+                    resis2.add(resis[idx2])
+        finally:
+            pm.delete(aln_obj)
+
+    try:
+        match method:
+            case ResidueSimilarityMethod.JACCARD:
+                ret = len(resis1.intersection(resis2)) / len(resis1.union(resis2))
+            case ResidueSimilarityMethod.OVERLAP:
+                ret = len(resis1.intersection(resis2)) / min(len(resis1), len(resis2))
+    except ZeroDivisionError:
+        if not quiet:
+            print("Your selection yields zero atoms.")
+        return 0.0
+
+    if not quiet:
+        print(f"{method} similarity: {ret:.2}")
+    return ret
+
+
+class PairwiseFunction(StrEnum):
+    HO = "ho"
+    RESIDUE_JACCARD = "residue_jaccard"
+    RESIDUE_OVERLAP = "residue_overlap"
+
+
+
+class PrioritizationType(StrEnum):
+    RESIDUE = "residue"
+    ATOM = "atom"
+
+
+@new_command
+def hs_proj(
+    sel: Selection,
+    protein: Selection = "",
+    radius: float = 4,
+    type: PrioritizationType = PrioritizationType.RESIDUE,
+    palette: str = "rainbow",
+):
+    """
+    Colour atoms by proximity with FTMap probes.
+
+    OPTIONS:
+        sel         probes selection.
+        protein     object which will be coloured.
+        max_dist    maximum distance in Angstroms (default: 4).
+        type        residue or type (default: residue).
+        palette     spectrum colour palette (default: rainbow).
+    """
+
+    if not protein:
+        group = sel.split(".", maxsplit=1)[0]
+        protein = f"{group}.protein"
+
+    pm.alter(protein, "q=0")
+    for prot_atom in pm.get_model(f"({protein}) within {radius} of ({sel})").atom:
+        match type:
+            case PrioritizationType.RESIDUE:
+                prot_atom_sel = f"byres index {prot_atom.index}"
+            case PrioritizationType.ATOM:
+                prot_atom_sel = f"index {prot_atom.index}"
+        count = count_molecules(f"({sel}) within {radius} of ({prot_atom_sel})")
+        pm.alter(prot_atom_sel, f"q={count}")
+
+    pm.hide("everything", protein)
+    match type:
+        case PrioritizationType.RESIDUE:
+            pm.show("surface", protein)
+        case PrioritizationType.ATOM:
+            pm.show("cartoon", protein)
+            pm.show("sticks", "q>0")
+    pm.spectrum("q", palette=palette, selection=protein)
+
+
+class DistanceMethod(StrEnum):
+    EUCLIDEAN = "euclidean"
+    CITYBLOCK = "cityblock"
+    DICE = "dice"
+
+
+@new_command
+def calc_multivariate_hca(
+    exprs: Selection,
+    linkage_method: LinkageMethod = LinkageMethod.SINGLE,
+    color_threshold: float = -1.0,
+    only_medoids: bool = False,
+    annotate: bool = False,
+    plot: str = None,
+    dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
+    enable_heatmap: bool = False,
+    rename_leafs: Optional[Dict[str, str]] = None,
+    no_plot: bool = False,
+    nclusters: int = -1.0,
+):
+    """
+    DESCRIPTION
+
+        Performs a Multivariate Hierarchical Cluster Analysis (HCA) on FTMap
+        consensus sites or hotspots.
+
+        The command automatically extracts properties stored within PyMOL objects
+        and center-of-mass coordinates, then construct standardized feature vectors
+        (Z-score) for each object to calculate high-dimensional distance.
+
+    PROPERTIES EVALUATED
+
+        Feature vectors are built based on the object type:
+        - Hotspots: ST, S0, CD, MD and XYZ (7 variables)
+        - Consensus sites: ST + XYZ Coordinates (4 variables)
+        - ACS (Atomic Contact Surfaces): ST, MD + XYZ Coordinates (5 variables)
+
+    ARGUMENTS
+
+        exprs:
+            A PyMOL selection containing the objects to compare. All objects must
+            be of the same type. All hotspots or all consensus sites.
+
+        linkage_method:
+            The clustering algorithm for the dendrogram. 
+
+        color_threshold:
+            Distance cutoff for coloring dendrogram branches.
+
+        only_medoids:
+            If True, focuses analysis or visualization only on the cluster medoids.
+
+        enable_heatmap:
+            Generates a distance matrix heatmap coupled with the dendrogram.
+
+        rename_leafs:
+            A dictionary mapping PyMOL object names to user-friendly labels.
+
+        no_plot:
+            If True, performs calculations and returns data without 
+            rendering the Matplotlib window.
+
+    RETURNS
+
+        A tuple containing: (Distance Matrix, Object List, Dendrogram, Medoids)
+
+    EXAMPLES
+
+        plot_multivariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
+        plot_multivariate_hca *.CS.*
+    """
+    object_list = pm.get_object_list(exprs)
+    assert object_list is not None and len(object_list) >= 2, "At least two hotspots are required for comparison."
+    assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots or only consensus sites are supported in the HCA."
+
+    hs_type = pm.get_property("Type", object_list[0])
+    if hs_type == "HS":
+        n_props = 4
+    elif hs_type == "CS":
+        n_props = 1
+    labels = []
+
+    p = np.zeros((len(object_list), n_props + 3))
+
+    for ix, obj in enumerate(object_list):
+        labels.append(obj)
+        x, y, z = pm.centerofmass(obj)
+        if hs_type == "HS":
+            ST = pm.get_property("ST", obj)
+            S0 = pm.get_property("S0", obj)
+            CD = pm.get_property("CD", obj)
+            MD = pm.get_property("MD", obj)
+            p[ix, :] = np.array([ST, S0, CD, MD, x, y, z])
+        elif hs_type == "CS":
+            ST = pm.get_property("ST", obj)
+            p[ix, :] = np.array([ST, x, y, z])
+        elif hs_type == "ACS":
+            ST = pm.get_property("ST", obj)
+            MD = pm.get_property("MD", obj)
+            p[ix, :] = np.array([ST, MD, x, y, z])
+    
+    p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
+    X = distance.pdist(p, dist_method)
+    dendro, medoids = plot_hca_base(
+        X,
+        labels,
+        linkage_method,
+        only_medoids,
+        annotate,
+        plot,
+        enable_heatmap=enable_heatmap,
+        rename_leafs=rename_leafs,
+        nclusters=nclusters,
+        color_threshold=color_threshold,
+        no_plot=no_plot,
+    )
+    return X, object_list, dendro, medoids
+
+
+class OverlapFunction(StrEnum):
+    FO = "fo"
+    DC = "dc"
+    DCE = "dce"
+
+
+@new_command
+def plot_overlap_matrix(
+    sele_a: str,
+    sele_b: Optional[str] = None,
+    function: OverlapFunction = OverlapFunction.FO,
+    radius: float = 2.0,
+    annotate: bool = False
+):
+    """
+    DESCRIPTION
+
+        Generates a heatmap matrix visualizing the overlap or contact 
+        metrics between two groups of PyMOL objects. 
+
+        This is ideal for cross-comparing FTMap hotspots across different 
+        protein conformations or comparing a ligand to a set of probe clusters.
+
+    USAGE
+
+        plot_overlap_matrix sele_a [, sele_b [, function [, radius [, annotate]]]]
+
+    ARGUMENTS
+
+        sele_a: str
+            The selection for the vertical axis (rows).
+
+        sele_b: str, optional
+            The selection for the horizontal axis (columns). If omitted or 
+            blank, it defaults to sele_a (creating a self-comparison matrix).
+
+        function: OverlapFunction, default=OverlapFunction.FO
+            The metric to calculate. Supported values:
+            - 'FO': Fraction of Overlap [0.0 - 1.0]
+            - 'DC': Distance Contacts (raw count)
+            - 'DCE': Distance Contact Efficiency (normalized)
+
+        radius: float, default=2.0
+            The distance cutoff (Angstroms) passed to the overlap function.
+
+        annotate: bool, default=False
+            If True, writes the numerical values directly inside the heatmap 
+            cells. Text color (black/white) is automatically adjusted for 
+            legibility based on the cell intensity.
+
+    RETURNS
+
+        A pandas DataFrame containing the raw data with columns ['A', 'B', 'METRIC'].
+
+    NOTES
+        If function is 'FO', the color scale is fixed between 0.0 and 1.0.
+
+    EXAMPLE
+
+        # Compare hotspots in group 1 vs group 2
+        plot_overlap_matrix group1.D*, group1.B*, function=FO, annotate=True
+
+        # Create a self-similarity matrix for all objects in a session
+        plot_overlap_matrix *, function=DC
+    """
+    objs_a = pm.get_object_list(sele_a)
+    if sele_b.strip():
+        objs_b = pm.get_object_list(sele_b)
+    else:
+        objs_b = objs_a
+    
+    match function:
+        case OverlapFunction.FO:
+            get_value = get_fo
+        case OverlapFunction.DC:
+            get_value = get_dc
+        case OverlapFunction.DCE:
+            get_value = get_dce
+
+    ret = []
+    X = []
+    for i1, a in enumerate(objs_a):
+        row = []
+        for i2, b in enumerate(objs_b):
+            value = get_value(a, b, radius=radius)
+            row.append(value)
+            ret.append([a, b, value])
+        X.append(row)
+    
+    X = np.array(X)
+    fig, ax = plt.subplots(constrained_layout=True)
+    
+    ax.set_yticks(range(len(objs_a)), objs_a)
+    ax.set_xticks(range(len(objs_b)), objs_b)
+
+    ax.tick_params(axis="x", rotation=90)
+    if function == OverlapFunction.FO:
+        vmin = 0.0
+        vmax = 1.0
+    else:
+        vmin = None
+        vmax = None
+    image = ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
+    if not annotate:
+        fig.colorbar(image, ax=ax, shrink=0.8)
+
+    if annotate:
+        nan_mask = np.isnan(X)
+        xmax = vmax or X[~nan_mask].max()
+        xmin = vmin or X[~nan_mask].min()
+        for i1, a in enumerate(objs_a):
+            for i2, b in enumerate(objs_b):
+                y = X[i1, i2]
+                if np.isnan(y):
+                    continue
+                if (y - xmin)/(xmax - xmin) >= 0.5:
+                    color = "black"
+                else:
+                    color = "white"
+                if function == OverlapFunction.DC:
+                    label = f"{y}"
+                else:
+                    label = f"{y:.2f}"
+                ax.text(i2, i1, label, color=color, ha="center", va="center")
+    return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
+
+
+def calc_medchem_bind_metrics(lig_sele: Selection, pki: float):
+    mw = 0
+    for at in pm.get_model(lig_sele).atom:
+        mw += at.get_mass()
+    ha = pm.count_atoms(f"({lig_sele}) and !elem H")
+    bei = pki / mw
+    le = pki / ha
+    fq = le / (0.0715 + 7.5328/ha + 25.7079/ha**2 - 361.4722/ha**3)
+    return {
+        'sele': lig_sele,
+        'ha': ha,
+        'mw': mw,
+        'pki': pki,
+        'bei': bei,
+        'le': le,
+        'fq': fq
+    }
+
+
+class BindMetric(StrEnum):
+    PKI = "pki"
+    LE = "le"
+    BEI = "bei"
+    FQ = "fq"
+
+
+def plot_ligand_fit(
+    hs_sele: Selection,
+    ligs_sele: Selection,
+    function: OverlapFunction,
+    radius: float,
+    annotate: bool,
+    lig_metric: BindMetric,
+    bind_df
+):
+    if len(pm.get_object_list(hs_sele)) != 1:
+        raise ValueError("Only one hotspot can be analyzed at time.")
+    overlap_df = plot_overlap_matrix(
+        sele_a=hs_sele,
+        sele_b=ligs_sele,
+        function=function,
+        radius=radius,
+        annotate=annotate
+    ).rename(columns={'B': 'Ligand'})
+    plt.close()
+
+    # identify the fragment
+    ix_frag = np.argmin(bind_df['HA'])
+    
+    # merge dataframes
+    bind_df.rename(columns={'sele': 'Ligand'})
+    df = overlap_df.join(bind_df, on='Ligand', how='left')
+    function_col = function.upper()
+
+    # do the actual plot
+    lig_metric = lig_metric.upper()
+    fig, ax = plt.subplots(constrained_layout=True)
+    x = df[function_col] / df[function_col].iloc[ix_frag]
+    y = df[lig_metric] / df[lig_metric].iloc[ix_frag]
+    ax.scatter(x, y)
+    rows = zip(x, y, df['Ligand'], df['Label'])
+    for x, y, obj, label in rows:
+        s = label.strip() or obj
+        ax.text(x, y, s)
+    ax.set_xlabel(f"{function_col} / {function_col}_ref")
+    ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
+
 #
 # GRAPHICAL USER INTERFACE
 #
@@ -2035,26 +2336,26 @@ class HcaWidget(QWidget):
         mainLayout.addWidget(container)
         
         groupBox = QGroupBox("Univariate analysis")
-        if EXPERIMENTAL_XDRUGPY:
-            layout.addWidget(groupBox)
-            boxLayout = QFormLayout()
-            groupBox.setLayout(boxLayout)
+        
+        layout.addWidget(groupBox)
+        boxLayout = QFormLayout()
+        groupBox.setLayout(boxLayout)
 
-            self.univariateFunctionCombo = QComboBox()
-            self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
-            boxLayout.addRow("Function:", self.univariateFunctionCombo)
+        self.univariateFunctionCombo = QComboBox()
+        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+        boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
-            self.radiusSpin = QDoubleSpinBox()
-            self.radiusSpin.setValue(2)
-            self.radiusSpin.setSingleStep(0.5)
-            self.radiusSpin.setDecimals(2)
-            self.radiusSpin.setMinimum(1)
-            self.radiusSpin.setMaximum(10)
-            boxLayout.addRow("Radius:", self.radiusSpin)
+        self.radiusSpin = QDoubleSpinBox()
+        self.radiusSpin.setValue(2)
+        self.radiusSpin.setSingleStep(0.5)
+        self.radiusSpin.setDecimals(2)
+        self.radiusSpin.setMinimum(1)
+        self.radiusSpin.setMaximum(10)
+        boxLayout.addRow("Radius:", self.radiusSpin)
 
-            plotButton = QPushButton("Plot")
-            plotButton.clicked.connect(self.plot_univariate_hca)
-            boxLayout.addWidget(plotButton)
+        plotButton = QPushButton("Plot")
+        plotButton.clicked.connect(self.plot_univariate_hca)
+        boxLayout.addWidget(plotButton)
 
         groupBox = QGroupBox("Multivariate analysis")
         
@@ -2486,7 +2787,7 @@ class OverlapWidget(QWidget):
 
 
 
-class CountWidget(QWidget):
+class FingerprintWidget(QWidget):
 
     def __init__(self):
         super().__init__()
@@ -2494,7 +2795,7 @@ class CountWidget(QWidget):
         layout = QHBoxLayout()
         self.setLayout(layout)
 
-        groupBox = QGroupBox("Color projection")
+        groupBox = QGroupBox("Visualization")
         layout.addWidget(groupBox)
         projBox = QFormLayout()
         groupBox.setLayout(projBox)
@@ -2720,6 +3021,7 @@ class MainDialog(QDialog):
         tab.addTab(HcaWidget(), "Hotspot Similarity")
         tab.addTab(OverlapWidget(), "Overlap Matrix")
         tab.addTab(LigandFitWidget(), "Ligand Fit")
+        tab.addTab(FingerprintWidget(), "Fingerprints")
 
         layout.addWidget(tab)
 

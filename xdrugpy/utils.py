@@ -6,11 +6,20 @@ from collections import defaultdict
 from shutil import rmtree
 from matplotlib import pyplot as plt, axes
 from scipy.spatial import distance
-from scipy.cluster.hierarchy import linkage
+from scipy.cluster.hierarchy import linkage, fcluster
+from collections import namedtuple
+from functools import lru_cache
 from strenum import StrEnum
 from pymol.parser import __file__ as _parser_filename
 
 from pymol import Qt, cmd as pm
+
+
+class Selection(str):
+    pass
+
+Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
+
 
 
 @pm.extend
@@ -66,8 +75,6 @@ def run(command, log=True, cwd=None, env=os.environ):
     return output, success
 
 
-class Selection(str):
-    pass
 
 
 def get_color_threshold(Z, k):
@@ -100,6 +107,17 @@ def get_color_threshold(Z, k):
     
     return (dist_k + dist_k_minus_1) / 2
 
+
+def threshold_for_k_clusters(Z, k):
+    """
+    Retorna um color_threshold para obter k clusters.
+
+    """
+    if k <= 1:
+        return float('inf')
+
+    k = min(k, len(Z))
+    return (Z[-(k - 1), 2] + Z[-k, 2]) / 2
 
 def plot_hca_base(
     dists,
@@ -135,12 +153,13 @@ def plot_hca_base(
     for leaf_node, new_label in (rename_leafs or {}).items():
         idx = labels.index(leaf_node)
         labels[idx] = new_label
-    
-    if nclusters != -1 and color_threshold != -1.0:
-        raise ValueError("Cant set kclusters and color_threshold at the same time")
+    if nclusters != -1.0 and color_threshold != -1.0:
+        raise ValueError("Cannot specify both nclusters and color_threshold.")
     Z = linkage(dists, method=linkage_method)
-    if nclusters >= 0:
-        color_threshold = get_color_threshold(Z, nclusters)
+    if nclusters != -1.0:
+        # Calculate the distance threshold that corresponds to the desired number of clusters
+        Z = linkage(dists, method=linkage_method)
+        color_threshold = threshold_for_k_clusters(Z, nclusters)
     dendro = sch.dendrogram(
         Z,
         labels=labels,
@@ -247,3 +266,77 @@ def plot_hca_base(
                 if label.get_text() not in medoids_labels:
                     label.set_visible(False)
     return dendro, medoids
+
+
+
+def clustal_omega(seles, conservation, titles=None):
+    replaced_dict = {}
+    replaced_list = []
+    if not titles:
+        titles = seles
+    input_fasta = ''
+    for sele, title in zip(seles, titles):
+        query = f'({sele}) and present and guide and polymer'
+
+        title_replaced = title.replace(' ', '_')
+        replaced_dict[title_replaced] = title
+        replaced_list.append(title_replaced)
+
+        input_fasta += (
+            ">" + title_replaced + 
+            pm
+            .get_fastastr(query, key='model')
+            .removeprefix(f'>{sele}')
+        )
+    
+    proc = subprocess.Popen(
+        "clustalo -i - --outfmt=clustal",
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        shell=True,
+        text=True,
+    )
+    output, err = proc.communicate(input_fasta)
+    if err:
+        raise Exception(f"Clustal Omega error: {err}")
+    
+    # joining multiline sequences
+    output = output.split('\n')[3:]
+    sequences = {}
+    while output:
+        line = output.pop(0)
+        if line.strip() == "":
+            continue
+        if line[0] != ' ':
+            name, seq = line.split()
+        else:
+            name = 'CLUSTALO'
+            seq = line[-len(seq):]
+        sequences[name] = sequences.get(name, "") + seq
+
+    # skiping gaps and keeping counters ok
+    clu = sequences.pop('CLUSTALO')
+    len_aln = len(clu)
+    omega = {}
+    for (title, seq), sele in zip(sequences.items(), seles):
+        local_ix = 0
+        atoms = [a for a in pm.get_model(f"%{sele} & present & guide & polymer").atom]
+        for aln_ix in range(len_aln):
+            seq_char = seq[aln_ix]
+            clu_char = clu[aln_ix]
+            if seq_char != '-':
+                if clu_char in conservation:
+                    assert local_ix < len(atoms)
+                    at = atoms[local_ix]
+                    if title not in omega:
+                        omega[title] = []
+                    omega[title].append(Residue(
+                        at.model, at.index, int(at.resi), at.chain, at.resn, seq_char, clu_char
+                    ))
+                local_ix += 1
+    
+    omega = {
+        replaced_dict[title]: omega[title]
+        for title in sorted(omega, key=replaced_list.index)
+    }
+    return omega
