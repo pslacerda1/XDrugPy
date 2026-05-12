@@ -34,10 +34,11 @@ except ImportError:
             "pyKVFinder==0.9.0",
         ])
         check_call([
-            sys.executable, "-m", "pip", "install", "/home/peu/Desktop/XDrugPy"
+            sys.executable, "-m", "pip", "install",
+            "https://github.com/pslacerda1/XDrugPy/archive/refs/heads/DRUGpy_CAMLDDD.zip"
         ])
     except Exception as e:
-        print(f"XDrugPy: Install pyKVFinder failed: {e}")
+        print(f"XDrugPy: Installation failed: {e}")
 
 
 def __init_plugin__(app=None):
