@@ -242,13 +242,79 @@ class Hotspot:
             assert obj.startswith(f"{group}.CS.")
             clu = Cluster(
                 obj,
-                get_coords(obj),
+                pm.get_coordset(obj),
                 count_molecules(obj)
             )
             pm.group(group, obj, action='add')
             clusters.append(clu)
         return Hotspot.from_clusters(group, clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-        
+            
+    def show(self, plot_graph: bool=False):
+        group = self.group
+        base_name = f"{group}.diagnose"
+        pm.delete(f'{base_name}*')
+
+        # create surface object
+        surf_sele = f"{group}.protein near_to 5 of ({self.cluster_list})"
+        surf_name = f"{base_name}.surf"
+        pm.create(surf_name, surf_sele)
+        pm.hide(selection=surf_name)
+        pm.show(representation="surface", selection=surf_name)
+        pm.set("transparency", 0.4, surf_name)
+
+        for ix, clu in enumerate(self.clusters):
+            clu = self.clusters[ix]
+            S = clu.ST
+            label_ps = pm.get_unused_name(f'{base_name}.label_ps_')
+            pm.pseudoatom(
+                label_ps,
+                selection=clu.selection,
+                label=f"{clu.selection}\nS={S}"
+            )
+            pm.set("float_label", 0, label_ps)
+
+            if ix != 0:
+                measure_name = pm.get_unused_name(f'{group}.diagnose_dist_')
+                pm.distance(
+                    measure_name,
+                    self.clusters[0].selection,
+                    self.clusters[ix].selection,
+                    mode=4
+                )
+                pm.group(group, base_name, action='add')
+            
+            if plot_graph:
+                for ix1, clu1 in enumerate(self.clusters):
+                    for ix2, clu2 in enumerate(self.clusters):
+                        if ix1 >= ix2:
+                            continue
+                        e = (clu1.selection, clu2.selection)
+                        if e not in self.graph.edges:
+                            measure_name = pm.get_unused_name(f'{group}.diagnose_graph_')
+                            pm.distance(measure_name, e[0], e[1], mode=4)
+                            pm.color('cyan', measure_name)
+    
+@new_command
+def show_hs(selections: List[str],
+            cd_to_anchor: bool = True,
+            max_collisions: float = 0.15) -> Hotspot:
+    hs = Hotspot.from_cluster_selections(
+        selections,
+        cd_to_anchor=cd_to_anchor,
+        max_collisions=max_collisions
+    )
+    hs.show()
+    print(hs)
+
+
+
+@dataclass
+class Kozakov15BasedAlgorithm:
+
+    def __init__(self, group):
+        self.prot_xyz = pm.get_coordset(f'{group}.protein', copy=0)
+        self.tree = cKDTree(self.prot_xyz)
+    
     @staticmethod
     def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=True, max_collisions: float=0.10) -> Hotspot:
         coms = [pm.centerofmass(c.selection) for c in clusters]
@@ -336,11 +402,10 @@ class Hotspot:
             if hs.nComponents > 1:
                 hs.klass = None
         return hs
-    
+
     @staticmethod
     def find_hotspots(
         group: str,
-        pocket_residues: Dict[str, Any],
         clusters: List[Cluster],
         cd_to_anchor: bool,
         combinatory_search: bool,
@@ -354,10 +419,11 @@ class Hotspot:
 
         # identify hotspots from pockets and consensus sites
         spots = []
-        pockets = find_occupied_pockets(group, pocket_residues, clusters)
+        pykvf_pocket = find_pykvf_pockets(f"{group}.protein")
+        pockets = find_occupied_pockets(group, pykvf_pocket, clusters)
         for hs_sele, pocket_clusters in pockets.items():
             if pocket_clusters:
-                hs = Hotspot.from_clusters(group, pocket_clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
+                hs = Kozakov15BasedAlgorithm.from_clusters(group, pocket_clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
                 if hs.klass:
                     hs.selection = hs_sele
                     spots.append(hs)
@@ -367,7 +433,7 @@ class Hotspot:
             for r in range(1, 4):
                 for comb in combinations(clusters, r):
                     comb = list(comb)
-                    hs = Hotspot.from_clusters(group, comb, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
+                    hs = Kozakov15BasedAlgorithm.from_clusters(group, comb, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
                     if hs.klass:
                         spots.append(hs)
         
@@ -425,8 +491,7 @@ class Hotspot:
         
         return spots
     
-    def show(self, plot_graph: bool=False):
-        group = self.group
+    def show(self, group, plot_graph: bool=False):
         base_name = f"{group}.diagnose"
         pm.delete(f'{base_name}*')
 
@@ -479,7 +544,7 @@ class Hotspot:
             for ix2, c2 in enumerate(clusters):
                 if ix1 >= ix2:
                     continue
-                collisions = Hotspot.detect_collisions(f'{group}.protein', c1.selection, c2.selection, radius, samples)
+                collisions = Kozakov15BasedAlgorithm.detect_collisions(f'{group}.protein', c1.selection, c2.selection, radius, samples)
                 # Lógica de Conectividade:
                 # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
                 # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
@@ -521,18 +586,6 @@ class Hotspot:
         # Um caminho entre o átomo i e o átomo j é CONSIDERADO LIVRE se não houver colisões em 'samples'
         has_collision = np.any(has_collision, axis=2) # Matriz (N, M)
         return has_collision
-    
-@new_command
-def show_hs(selections: List[str],
-            cd_to_anchor: bool = True,
-            max_collisions: float = 0.15) -> Hotspot:
-    hs = Hotspot.from_cluster_selections(
-        selections,
-        cd_to_anchor=cd_to_anchor,
-        max_collisions=max_collisions
-    )
-    hs.show()
-    print(hs)
 
 
 @new_command
@@ -540,8 +593,8 @@ def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     cd_to_anchor: bool = False,
-    combinatory_search: bool = True,
-    allow_nested: bool = True,
+    allow_nested: bool = False,
+    combinatory_search: bool = False,
     max_collisions: float = 0.15,
 ):
     """
@@ -567,13 +620,12 @@ def load_ftmap(
             Whether to calculate Hotspot centers relative to the anchor 
             consensus site (Center of Mass vs. Anchor consensus site).
 
-        combinatory_search:
-            If True, performs an exhaustive search across all potential 
-            cluster combinations to define hotspots.
-
         allow_nested:
             Determines if hotspots can overlap/nest within larger 
             defined volumes.
+
+        combinatory_search:
+            Do exaustive search up to 3 consensus sites.
 
         max_collisions:
             The tolerance percentage for steric clashes allowed when
@@ -591,7 +643,6 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 cd_to_anchor=cd_to_anchor,
-                combinatory_search=combinatory_search,
                 allow_nested=allow_nested,
                 max_collisions=max_collisions
             )
@@ -600,7 +651,6 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 cd_to_anchor=cd_to_anchor,
-                combinatory_search=combinatory_search,
                 allow_nested=allow_nested,
                 max_collisions=max_collisions
             )
@@ -612,8 +662,8 @@ def _load_ftmap(
     filename: Path,
     group: str = "",
     cd_to_anchor: bool = False,
-    combinatory_search: bool = True,
-    allow_nested: bool = True,
+    allow_nested: bool = False,
+    combinatory_search: bool = False,
     max_collisions: float = 0.15,
 ):
     if not group:
@@ -633,11 +683,10 @@ def _load_ftmap(
     clusters, eclusters = get_clusters()
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
-    pocket_residues = find_pykvf_pockets(f"{group}.protein")
-    hotspots = Hotspot.find_hotspots(
-        group,
-        pocket_residues,
-        clusters,
+    
+    hotspots = Kozakov15BasedAlgorithm(group).find_hotspots(  
+        group,  
+        clusters=clusters,
         cd_to_anchor=cd_to_anchor,
         combinatory_search=combinatory_search,
         allow_nested=allow_nested,
@@ -1985,7 +2034,19 @@ class LoadWidget(QWidget):
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
-            
+
+        self.cdToAnchor = QCheckBox()
+        self.cdToAnchor.setChecked(False)
+        boxLayout.addRow("Use satellite-to-anchor CD:", self.cdToAnchor)
+        
+        self.allowNested = QCheckBox()
+        self.allowNested.setChecked(True)
+        boxLayout.addRow("Allow nested hotspots:", self.allowNested)
+
+        self.combinatorySearch = QCheckBox()
+        self.combinatorySearch.setChecked(True)
+        boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
+        
         self.maxCollisions = QDoubleSpinBox()
         self.maxCollisions.setRange(0.0, 1.0)
         self.maxCollisions.setSingleStep(0.05)
@@ -2021,9 +2082,9 @@ class LoadWidget(QWidget):
         self.table.setRowCount(0)
 
     def load(self):
-        cd_to_anchor = False
-        combinatory_search = True
-        allow_nested = True
+        cd_to_anchor = self.cdToAnchor.isChecked()
+        combinatory_search = self.combinatorySearch.isChecked()
+        allow_nested = self.allowNested.isChecked
         max_collisions = self.maxCollisions.value()
         try:
             filenames = []
