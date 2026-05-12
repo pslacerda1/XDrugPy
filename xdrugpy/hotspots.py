@@ -105,56 +105,6 @@ def set_properties(obj, obj_name, properties):
         pm.set_atom_property(prop, value, obj_name)
         setattr(obj, prop, value)
 
-
-def find_occupied_pockets(
-        group: str,
-        pocket_residues: Dict[str, List[Any]],
-        clusters: List[Cluster],
-) -> List[Tuple[str, List[Cluster]]]:
-    pockets = {}
-    for key, pocket in pocket_residues.items():
-        p_sele = ''
-        for resi, chain, _ in pocket:
-            p_sele += f'(chain {chain} & resi {resi}) | '
-        p_sele += 'none'
-        p_sele = f'{group}.protein & ({p_sele})'
-
-        levels = []
-        for radius in [4, 8]:
-            hs_sele = f"{group}.CS.* near_to {radius} of ({p_sele})"
-            sele_cnt = 0
-            while True:
-                new_sele_cnt = pm.count_atoms(hs_sele)
-                if new_sele_cnt != sele_cnt:
-                    sele_cnt = new_sele_cnt
-                else:
-                    break
-                levels.append(hs_sele)
-                hs_sele = f"{group}.CS.* within {radius} of ({hs_sele})"
-        
-        for hs_sele in levels:
-            hs_objs = pm.get_object_list(hs_sele)
-
-            if not hs_objs:
-                continue
-
-            pocket_clusters = [c for c in clusters if c.selection in hs_objs]
-            hs_sele = ' | '.join([c.selection for c in pocket_clusters])
-            pockets[hs_sele] = pocket_clusters
-    return pockets
-
-
-def find_pykvf_pockets(protein):
-    with tempfile.TemporaryDirectory() as tempdir:
-        protein_pdb = f"{tempdir}/protein.pdb"
-        pm.save(protein_pdb, selection=protein)
-        atomic = pyKVFinder.read_pdb(protein_pdb)
-        
-    vertices = pyKVFinder.get_vertices(atomic)
-    _, cavities = pyKVFinder.detect(atomic, vertices)
-    residues = pyKVFinder.constitutional(cavities, atomic, vertices)
-    return residues
-
 def process_clusters(group, clusters):
     for idx, cs in enumerate(clusters):
         new_name = f"{group}.CS.{idx:02}"
@@ -198,6 +148,194 @@ def process_eclusters(group, eclusters):
             },
         )
     pm.delete("clust.*")
+
+
+class Kozakov15BasedAlgorithm:
+
+    def __init__(self, group):
+        self.prot_xyz = pm.get_coordset(f'{group}.protein', copy=0)
+        self.tree = cKDTree(self.prot_xyz)
+    
+    @staticmethod
+    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=True, max_collisions: float=0.10) -> Hotspot:
+        coms = [pm.centerofmass(c.selection) for c in clusters]
+        cd = [distance.euclidean(coms[0], com) for com in coms]
+        cd0 = np.max(cd) if len(cd) > 0 else 0.0
+
+        if cd_to_anchor:
+
+            cd16 = [] 
+            coms16 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 16]
+            for com in coms:
+                min_d = 0.0
+                for com16 in coms16:
+                    d = distance.euclidean(com, com16)
+                    if min_d == 0.0 or d < min_d:
+                        min_d = d
+                cd16.append(min_d)
+        
+            cd13 = []
+            coms13 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 13]
+            for com in coms:
+                min_d = 0.0
+                for com13 in coms13:
+                    d = distance.euclidean(com, com13)
+                    if min_d == 0.0 or d < min_d:
+                        min_d = d
+                cd13.append(min_d)
+            
+            cd16 = np.max(cd16) if len(cd16) > 0 else 0.0
+            cd13 = np.max(cd13) if cd16 == 0.0 and len(cd13) > 0 else 0.0
+        else:
+            cd16 = 0.0
+            cd13 = 0.0
+
+        coords = np.concatenate([c.coords for c in clusters])
+        max_dist = distance_matrix(coords, coords).max()
+
+        selection = " ".join(c.selection for c in clusters)
+        hs = Hotspot(
+            group=group,
+            selection=selection,
+            clusters=clusters,
+            cluster_list=selection,
+            klass=None,
+            ST=sum(c.ST for c in clusters),
+            S0=clusters[0].ST,
+            S1=clusters[1].ST if len(clusters) >= 2 else 0,
+            SZ=clusters[-1].ST,
+            CD0=cd0,
+            CD16=cd16,
+            CD13=cd13,
+            CD=0.0,
+            MD=max_dist,
+            length=len(clusters),
+            nComponents=-1,
+        )
+        
+        s0 = hs.S0
+        if cd_to_anchor:
+            cd = (
+                cd16 if cd16 > 0 else
+                cd13 if cd13 > 0 else
+                cd0
+            )
+        else:
+            cd = cd0
+        hs.CD = cd
+        md = hs.MD
+
+        if s0 >= 16 and cd < 8 and md >= 10:
+            hs.klass = "D"
+        if s0 >= 16 and cd < 8 and 7 <= md < 10:
+            hs.klass = "DS"
+        if 13 <= s0 < 16 and cd < 8 and md >= 10:
+            hs.klass = "B"
+        if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
+            hs.klass = "BS"
+        if 13 <= s0 < 16 and cd >= 8 and md >= 10:
+            hs.klass = "BL" 
+        if s0 >= 16 and cd >= 8 and md >= 10:
+            hs.klass = "DL"
+        return hs
+    
+    def find_hotspots(
+        self,
+        group: str,
+        clusters: List[Cluster],
+        cd_to_anchor: bool,
+        allow_nested: bool,
+        max_collisions: float=0.10
+    ) -> List[Hotspot]:
+
+        # Adiciona todos os nomes de clusters como nodes (essencial para contar isolados)
+        h = nx.Graph()
+        h.add_nodes_from([c.selection for c in clusters])
+        for ix1, cl_i in enumerate([c.selection for c in clusters]):
+            for ix2, cl_j in enumerate([c.selection for c in clusters]):
+                if ix1 < ix2:
+                    collisions = self.detect_collisions(cl_i, cl_j, radius=1.7, samples=50)
+                    # Lógica de Conectividade:
+                    # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
+                    # Se mais de 90% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
+                    if np.sum(collisions) < max_collisions*collisions.shape[0]*collisions.shape[1]:
+                        h.add_edge(cl_i, cl_j)
+        sg = [
+            h.subgraph(c).copy()
+            for c in nx.connected_components(h)
+        ]
+        spots = []
+        for h in sg:
+            hs = [c for c in clusters if c.selection in h]
+            if np.any(c.ST >= 13 for c in clusters if c.selection in h):
+                hs = self.from_clusters(group, hs, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
+                if hs.klass:
+                    spots.append(hs)
+        
+        # remove hotspot objects when they totally fit inside another (and are of the same class)
+        if not allow_nested:
+            nested = set()
+            for ix1, hs1 in enumerate(spots):
+                for ix2, hs2 in enumerate(spots):
+                    if ix1 == ix2:
+                        continue
+                    if hs1.klass != hs2.klass:
+                        continue
+                    if get_fo(hs1.selection, hs2.selection) == 1:
+                        nested.add(hs1.selection)
+                        continue
+            for hs in spots.copy():
+                if hs.selection in nested:
+                    spots.remove(hs)
+                
+        # rename and renumber hotspots
+        spots = sorted(spots, key=lambda hs: (-hs.ST, -hs.S0, -hs.S1, -hs.SZ))
+        spots = sorted(spots, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
+        spots = list(spots)
+
+        ix_class = 0
+        last_class = None
+        for hs in spots.copy():
+            if hs.klass != last_class:
+                last_class = hs.klass
+                ix_class = 0
+            new_name = f"{group}.{hs.klass}.{ix_class:02}"
+            pm.create(new_name, hs.selection)
+            hs.selection = new_name
+            ix_class += 1
+        
+        for hs in spots:
+            hs.copy_into_properties()
+        return spots
+
+    def detect_collisions(self, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
+        list_a = pm.get_coordset(clu_sele1, copy=0)
+        list_b = pm.get_coordset(clu_sele2, copy=0)
+                
+        t = np.linspace(0, 1, samples)
+
+        # Broadcasting para gerar pontos intermediários
+        # Mágica avançada da IA
+        A = list_a[:, np.newaxis, np.newaxis, :]
+        B = list_b[np.newaxis, :, np.newaxis, :]
+        T = t[np.newaxis, np.newaxis, :, np.newaxis]
+        
+        # Matriz (N, M, samples, 3)
+        inter_points = A + T * (B - A)
+        c1c2_xyz = inter_points.reshape(-1, 3)
+        
+        # Checa colisões com a proteína
+        collisions = self.tree.query_ball_point(c1c2_xyz, r=radius)
+        
+        # True se o ponto i->j no frame k colide
+        has_collision = np.array([
+            len(c) > 0 for c in collisions
+        ]).reshape(len(list_a), len(list_b), samples)
+        
+        # Um caminho entre o átomo i e o átomo j é CONSIDERADO LIVRE se não houver colisões em 'samples'
+        has_collision = np.any(has_collision, axis=2) # Matriz (N, M)
+        return has_collision
+
 
 
 @dataclass
@@ -256,183 +394,7 @@ class Hotspot:
             pm.group(group, obj, action='add')
             clusters.append(clu)
         return Hotspot.from_clusters(group, clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-        
-    @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=True, max_collisions: float=0.10) -> Hotspot:
-        coms = [pm.centerofmass(c.selection) for c in clusters]
-        cd = [distance.euclidean(coms[0], com) for com in coms]
-        cd0 = np.max(cd) if len(cd) > 0 else 0.0
-
-        if cd_to_anchor:
-
-            cd16 = [] 
-            coms16 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 16]
-            for com in coms:
-                min_d = 0.0
-                for com16 in coms16:
-                    d = distance.euclidean(com, com16)
-                    if min_d == 0.0 or d < min_d:
-                        min_d = d
-                cd16.append(min_d)
-        
-            cd13 = []
-            coms13 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 13]
-            for com in coms:
-                min_d = 0.0
-                for com13 in coms13:
-                    d = distance.euclidean(com, com13)
-                    if min_d == 0.0 or d < min_d:
-                        min_d = d
-                cd13.append(min_d)
             
-            cd16 = np.max(cd16) if len(cd16) > 0 else 0.0
-            cd13 = np.max(cd13) if cd16 == 0.0 and len(cd13) > 0 else 0.0
-        else:
-            cd16 = 0.0
-            cd13 = 0.0
-
-        coords = np.concatenate([c.coords for c in clusters])
-        max_dist = distance_matrix(coords, coords).max()
-
-        selection = " ".join(c.selection for c in clusters)
-        hs = Hotspot(
-            group=group,
-            selection=selection,
-            clusters=clusters,
-            cluster_list=selection,
-            klass=None,
-            ST=sum(c.ST for c in clusters),
-            S0=clusters[0].ST,
-            S1=clusters[1].ST if len(clusters) >= 2 else 0,
-            SZ=clusters[-1].ST,
-            CD0=cd0,
-            CD16=cd16,
-            CD13=cd13,
-            CD=0.0,
-            MD=max_dist,
-            length=len(clusters),
-            nComponents=-1,
-        )   
-        
-        s0 = hs.S0
-        if cd_to_anchor:
-            cd = (
-                cd16 if cd16 > 0 else
-                cd13 if cd13 > 0 else
-                cd0
-            )
-        else:
-            cd = cd0
-        hs.CD = cd
-        md = hs.MD
-
-        if s0 >= 16 and cd < 8 and md >= 10:
-            hs.klass = "D"
-        if s0 >= 16 and cd < 8 and 7 <= md < 10:
-            hs.klass = "DS"
-        if 13 <= s0 < 16 and cd < 8 and md >= 10:
-            hs.klass = "B"
-        if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
-            hs.klass = "BS"
-        if 13 <= s0 < 16 and cd >= 8 and md >= 10:
-            hs.klass = "BL" 
-        if s0 >= 16 and cd >= 8 and md >= 10:
-            hs.klass = "DL"
-        
-        if hs.klass:
-            hs.nComponents = Hotspot.make_graph(group, clusters, max_collisions=max_collisions)
-            if hs.nComponents > 1:
-                hs.klass = None
-        return hs
-    
-    @staticmethod
-    def find_hotspots(
-        group: str,
-        pocket_residues: Dict[str, Any],
-        clusters: List[Cluster],
-        cd_to_anchor: bool,
-        combinatory_search: bool,
-        allow_nested: bool,
-        max_collisions: float=0.10
-    ) -> List[Hotspot]:
-        
-        # filter out weak clusters
-        ix_ignore = next((i for i, c in enumerate(clusters) if c.ST<5), -1)
-        clusters = clusters[:ix_ignore]
-
-        # identify hotspots from pockets and consensus sites
-        spots = []
-        pockets = find_occupied_pockets(group, pocket_residues, clusters)
-        for hs_sele, pocket_clusters in pockets.items():
-            if pocket_clusters:
-                hs = Hotspot.from_clusters(group, pocket_clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-                if hs.klass:
-                    hs.selection = hs_sele
-                    spots.append(hs)
-        
-        # identify hotspots from combinations of consensus sites
-        if combinatory_search:
-            for r in range(1, 4):
-                for comb in combinations(clusters, r):
-                    comb = list(comb)
-                    hs = Hotspot.from_clusters(group, comb, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-                    if hs.klass:
-                        spots.append(hs)
-        
-        # remove identical repeated hotspots
-        repeated = set()
-        for ix1, hs1 in enumerate(spots):
-            for ix2, hs2 in enumerate(spots):
-                if ix1 != ix2:
-                    if ix1 < ix2:
-                        continue
-                    if len(hs1.clusters) == len(hs2.clusters):
-                        if all(c1 == c2 for c1, c2 in zip(hs1.clusters, hs2.clusters)):
-                            repeated.add(hs2.selection)
-        
-        for hs in spots.copy():
-            if hs.selection in repeated:
-                spots.remove(hs)
-
-        # remove hotspot objects when they totally fit inside another (and are of the same class)
-        if not allow_nested:
-            nested = set()
-            for ix1, hs1 in enumerate(spots):
-                for ix2, hs2 in enumerate(spots):
-                    if ix1 == ix2:
-                        continue
-                    if hs1.klass != hs2.klass:
-                        continue
-                    if get_fo(hs1.selection, hs2.selection) == 1:
-                        nested.add(hs1.selection)
-                        continue
-
-            for hs in spots.copy():
-                if hs.selection in nested:
-                    spots.remove(hs)
-                
-
-        # rename and renumber hotspots
-        spots = sorted(spots, key=lambda hs: (-hs.ST, -hs.S0, -hs.S1, -hs.SZ))
-        spots = sorted(spots, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
-        spots = list(spots)
-
-        ix_class = 0
-        last_class = None
-        for hs in spots.copy():
-            if hs.klass != last_class:
-                last_class = hs.klass
-                ix_class = 0
-            new_name = f"{group}.{hs.klass}.{ix_class:02}"
-            pm.create(new_name, hs.selection)
-            hs.selection = new_name
-            ix_class += 1
-        
-        for hs in spots:
-            hs.copy_into_properties()
-        
-        return spots
-    
     def show(self, plot_graph: bool=False):
         group = self.group
         base_name = f"{group}.diagnose"
@@ -477,58 +439,6 @@ class Hotspot:
                             measure_name = pm.get_unused_name(f'{group}.diagnose_graph_')
                             pm.distance(measure_name, e[0], e[1], mode=4)
                             pm.color('cyan', measure_name)
-
-    def make_graph(group: str, clusters: List[Cluster], radius: float=1.7, samples: int=50, max_collisions: float=0.15) -> int:
-        g = nx.Graph()
-        # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
-        g.add_nodes_from([c.selection for c in clusters])
-
-        for ix1, c1 in enumerate(clusters):
-            for ix2, c2 in enumerate(clusters):
-                if ix1 >= ix2:
-                    continue
-                collisions = Hotspot.detect_collisions(group, c1.selection, c2.selection, radius, samples)
-                # Lógica de Conectividade:
-                # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
-                # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
-                if np.sum(collisions) < max_collisions*collisions.shape[0]*collisions.shape[1]:
-                    g.add_edge(c1.selection, c2.selection)
-                
-        return nx.number_connected_components(g)
-
-    @staticmethod
-    @lru_cache
-    def detect_collisions(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
-
-        list_a = get_coords(clu_sele1)
-        list_b = get_coords(clu_sele2)
-        
-        prot_xyz = get_coords(f'{group}.protein')
-        tree = cKDTree(prot_xyz)
-        
-        t = np.linspace(0, 1, samples)
-
-        # Broadcasting para gerar pontos intermediários
-        # Mágica avançada da IA
-        A = list_a[:, np.newaxis, np.newaxis, :]
-        B = list_b[np.newaxis, :, np.newaxis, :]
-        T = t[np.newaxis, np.newaxis, :, np.newaxis]
-        
-        # Matriz (N, M, samples, 3)
-        inter_points = A + T * (B - A)
-        c1c2_xyz = inter_points.reshape(-1, 3)
-        
-        # Checa colisões com a proteína
-        collisions = tree.query_ball_point(c1c2_xyz, r=radius)
-        
-        # True se o ponto i->j no frame k colide
-        has_collision = np.array([
-            len(c) > 0 for c in collisions
-        ]).reshape(len(list_a), len(list_b), samples)
-        
-        # Um caminho entre o átomo i e o átomo j é CONSIDERADO LIVRE se não houver colisões em 'samples'
-        has_collision = np.any(has_collision, axis=2) # Matriz (N, M)
-        return has_collision
     
 @new_command
 def show_hs(selections: List[str],
@@ -548,7 +458,6 @@ def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     cd_to_anchor: bool = True,
-    combinatory_search: bool = False,
     allow_nested: bool = False,
     max_collisions: float = 0.15,
 ):
@@ -575,10 +484,6 @@ def load_ftmap(
             Whether to calculate Hotspot centers relative to the anchor 
             consensus site (Center of Mass vs. Anchor consensus site).
 
-        combinatory_search:
-            If True, performs an exhaustive search across all potential 
-            cluster combinations to define hotspots.
-
         allow_nested:
             Determines if hotspots can overlap/nest within larger 
             defined volumes.
@@ -599,7 +504,6 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 cd_to_anchor=cd_to_anchor,
-                combinatory_search=combinatory_search,
                 allow_nested=allow_nested,
                 max_collisions=max_collisions
             )
@@ -608,7 +512,6 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 cd_to_anchor=cd_to_anchor,
-                combinatory_search=combinatory_search,
                 allow_nested=allow_nested,
                 max_collisions=max_collisions
             )
@@ -620,7 +523,6 @@ def _load_ftmap(
     filename: Path,
     group: str = "",
     cd_to_anchor: bool = False,
-    combinatory_search: bool = True,
     allow_nested: bool = True,
     max_collisions: float = 0.15,
 ):
@@ -641,13 +543,10 @@ def _load_ftmap(
     clusters, eclusters = get_clusters()
     process_clusters(group, clusters)
     process_eclusters(group, eclusters)
-    pocket_residues = find_pykvf_pockets(f"{group}.protein")
-    hotspots = Hotspot.find_hotspots(
+    hotspots = Kozakov15BasedAlgorithm(group).find_hotspots(
         group,
-        pocket_residues,
         clusters,
         cd_to_anchor=cd_to_anchor,
-        combinatory_search=combinatory_search,
         allow_nested=allow_nested,
         max_collisions=max_collisions
     )
@@ -1692,11 +1591,6 @@ class LoadWidget(QWidget):
         if XDRUGPY_EXPERIMENTAL_VERSION:
             boxLayout.addRow("Use satellite-to-anchor CD:", self.cdToAnchor)
         
-        self.combinatorySearch = QCheckBox()
-        self.combinatorySearch.setChecked(True)
-        if XDRUGPY_EXPERIMENTAL_VERSION:
-            boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
-
         self.allowNested = QCheckBox()
         self.allowNested.setChecked(True)
         if XDRUGPY_EXPERIMENTAL_VERSION:
@@ -1756,7 +1650,6 @@ class LoadWidget(QWidget):
             filenames,
             groups=groups,
             cd_to_anchor=cd_to_anchor,
-            combinatory_search=combinatory_search,
             allow_nested=allow_nested,
             max_collisions=max_collisions,
         )
