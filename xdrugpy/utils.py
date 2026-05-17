@@ -4,6 +4,7 @@ import sys
 import shlex
 import inspect
 import scipy.cluster.hierarchy as sch
+import numpy as np
 from functools import wraps
 from textwrap import dedent
 from typing import get_args, Union, Any, get_origin, get_type_hints
@@ -64,6 +65,35 @@ class AligMethod(StrEnum):
 class Selection(str):
     pass
 
+def get_color_threshold(Z, k):
+    """
+    Calculates the color_threshold for a dendrogram to visualize k clusters.
+    
+    Args:
+        Z: The linkage matrix (from scipy.cluster.hierarchy.linkage)
+        k: The desired number of clusters
+        
+    Returns:
+        float: The threshold value to pass to the dendrogram function
+    
+    Author:
+        Gemini
+    """
+    if k < 2:
+        # If k=1, the threshold must be higher than the maximum distance
+        return Z[-1, 2] + 1.0
+    
+    # The (k-1)th merge from the end creates the k-th cluster.
+    # We take the average between the distance that creates k-1 clusters 
+    # and the distance that creates k clusters.
+    
+    # Distance that results in k clusters
+    dist_k = Z[-k, 2]
+    
+    # Distance that results in k-1 clusters
+    dist_k_minus_1 = Z[-(k-1), 2]
+    
+    return (dist_k + dist_k_minus_1) / 2
 
 @pm.new_command
 def align_groups(
@@ -87,9 +117,10 @@ def plot_hca_base(
     dists,
     labels,
     linkage_method,
-    color_threshold,
     only_medoids,
     annotate,
+    color_threshold=-1.0,
+    kclusters=-1,
     axis=None,
     vmin=None,
     vmax=None,
@@ -117,7 +148,11 @@ def plot_hca_base(
         idx = labels.index(leaf_node)
         labels[idx] = new_label
     
-    Z = linkage(dists, method=linkage_method, optimal_ordering=True)
+    if kclusters == -1 and color_threshold == -1.0:
+        raise ValueError("Cant set kclusters and color_threshold at the same time")
+    Z = linkage(dists, method=linkage_method)
+    if kclusters > 0:
+        color_threshold = get_color_threshold(Z, kclusters)
     dendro = sch.dendrogram(
         Z,
         labels=labels,
@@ -129,7 +164,7 @@ def plot_hca_base(
         no_labels=enable_heatmap,
         no_plot=no_plot,
     )
-    if not no_plot and color_threshold is not None and color_threshold > 0:
+    if not no_plot and color_threshold > 0:
         ax_dend_top.axhline(color_threshold, color="gray", ls="--")
         ax_dend_top.set_ylim(bottom=-0.005)
 

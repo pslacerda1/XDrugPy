@@ -12,7 +12,7 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 from scipy.spatial import distance_matrix, distance, cKDTree
-
+from scipy.cluster.hierarchy import linkage, leaves_list
 from matplotlib import pyplot as plt
 from strenum import StrEnum
 import networkx as nx
@@ -299,7 +299,7 @@ class Hotspot:
             MD=max_dist,
             length=len(clusters),
             nComponents=-1,
-        )   
+        )
         
         s0 = hs.S0
         if cd_to_anchor:
@@ -615,7 +615,7 @@ def _load_ftmap(
         group = os.path.splitext(os.path.basename(filename))[0]
     group = pm.get_legal_name(group)
     
-    pm.load(str(filename), quiet=1, discrete=1)
+    pm.load(str(filename), quiet=1)
 
     if objs := pm.get_object_list("*_protein"):
         assert len(objs) == 1
@@ -926,6 +926,7 @@ def calc_multivariate_hca(
     exprs: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
+    kclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = False,
     enable_heatmap: bool = False,
@@ -1016,7 +1017,9 @@ def calc_multivariate_hca(
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
     X = distance.pdist(p)
     dendro, medoids = plot_hca_base(
-        X, labels, linkage_method, color_threshold, only_medoids, annotate,
+        X, labels, linkage_method, only_medoids, annotate,
+        kclusters=kclusters,
+        color_threshold=color_threshold,
         enable_heatmap=enable_heatmap,
         rename_leafs=rename_leafs,
         no_plot=no_plot
@@ -1026,6 +1029,7 @@ def calc_multivariate_hca(
 
 class OverlapFunction(StrEnum):
     FO = "fo"
+    FO_MEAN = "fo_mean"
     DC = "dc"
     DCE = "dce"
 
@@ -1098,6 +1102,8 @@ def calc_overlap_matrix(
     match function:
         case OverlapFunction.FO:
             get_value = get_fo
+        case OverlapFunction.FO_MEAN:
+            get_value = lambda a, b, radius=radius: (get_fo(a, b, radius)+get_fo(b, a, radius))/2
         case OverlapFunction.DC:
             get_value = get_dc
         case OverlapFunction.DCE:
@@ -1114,10 +1120,18 @@ def calc_overlap_matrix(
         X.append(row)
     
     X = np.array(X)
+    Z_rows = linkage(X, method='ward')
+    idx_rows = leaves_list(Z_rows)
+
+    Z_cols = linkage(X.T, method='ward')
+    idx_cols = leaves_list(Z_cols)
+
+    X = X[idx_rows, :][:, idx_cols]
+
     fig, ax = plt.subplots(constrained_layout=True)
     
-    ax.set_yticks(range(len(objs_a)), objs_a)
-    ax.set_xticks(range(len(objs_b)), objs_b)
+    ax.set_yticks(range(len(objs_a)), np.array(objs_a)[idx_rows])
+    ax.set_xticks(range(len(objs_b)), np.array(objs_b)[idx_cols])
 
     ax.tick_params(axis="x", rotation=90)
     if function == OverlapFunction.FO:
