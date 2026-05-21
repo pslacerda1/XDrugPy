@@ -1,8 +1,6 @@
 import sys
 from subprocess import check_call
 from pymol import cmd as pm
-import pymol_new_command
-
 
 __ALL__ = [
     # hotspots
@@ -19,11 +17,12 @@ __ALL__ = [
     "BindMetric",
 
     # utils
-    "new_command",
     "ArgumentParsingError",
     "configure_matplotlib",
     "plot",
 ]
+
+
 
 try:
     import pyKVFinder

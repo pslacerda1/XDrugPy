@@ -95,24 +95,6 @@ def get_color_threshold(Z, k):
     
     return (dist_k + dist_k_minus_1) / 2
 
-@pm.new_command
-def align_groups(
-    mobile_groups: Selection,
-    target: Selection,
-    align_method: AligMethod = AligMethod.CEALIGN,
-):
-    for mobile in mobile_groups.split():
-        pm.extra_fit(
-            f"{mobile}.protein",
-            f"{target}.protein",
-            method=align_method
-        )
-        for inner in pm.get_object_list(f"{mobile}.*"):
-            if ".protein" in inner:
-                continue
-            pm.matrix_copy(f"{mobile}.protein", inner)
-
-
 def plot_hca_base(
     dists,
     labels,
@@ -120,7 +102,7 @@ def plot_hca_base(
     only_medoids,
     annotate,
     color_threshold=-1.0,
-    kclusters=-1,
+    nclusters=-1,
     axis=None,
     vmin=None,
     vmax=None,
@@ -148,11 +130,11 @@ def plot_hca_base(
         idx = labels.index(leaf_node)
         labels[idx] = new_label
     
-    if kclusters == -1 and color_threshold == -1.0:
+    if nclusters == -1 and color_threshold == -1.0:
         raise ValueError("Cant set kclusters and color_threshold at the same time")
     Z = linkage(dists, method=linkage_method)
-    if kclusters > 0:
-        color_threshold = get_color_threshold(Z, kclusters)
+    if nclusters > 0:
+        color_threshold = get_color_threshold(Z, nclusters)
     dendro = sch.dendrogram(
         Z,
         labels=labels,

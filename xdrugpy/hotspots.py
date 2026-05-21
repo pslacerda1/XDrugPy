@@ -18,6 +18,7 @@ from strenum import StrEnum
 import networkx as nx
 from pymol import cmd as pm
 
+from pymol_new_command import new_command
 from .utils import (
     Selection,
     plot_hca_base,
@@ -474,7 +475,7 @@ class Hotspot:
             for ix2, c2 in enumerate(clusters):
                 if ix1 >= ix2:
                     continue
-                collisions = Hotspot.detect_collisions(group, c1.selection, c2.selection, radius, samples)
+                collisions = Hotspot.detect_collisions(f'{group}.protein', c1.selection, c2.selection, radius, samples)
                 # Lógica de Conectividade:
                 # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
                 # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
@@ -483,14 +484,14 @@ class Hotspot:
                 
         return nx.number_connected_components(g)
 
-    @staticmethod
     @lru_cache
-    def detect_collisions(group: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
+    @staticmethod
+    def detect_collisions(protein: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
 
         list_a = get_coords(clu_sele1)
         list_b = get_coords(clu_sele2)
         
-        prot_xyz = get_coords(f'{group}.protein')
+        prot_xyz = get_coords(protein)
         tree = cKDTree(prot_xyz)
         
         t = np.linspace(0, 1, samples)
@@ -517,7 +518,7 @@ class Hotspot:
         has_collision = np.any(has_collision, axis=2) # Matriz (N, M)
         return has_collision
     
-@pm.new_command
+@new_command
 def show_hs(selections: List[str],
             cd_to_anchor: bool = True,
             max_collisions: float = 0.15) -> Hotspot:
@@ -530,7 +531,7 @@ def show_hs(selections: List[str],
     print(hs)
 
 
-@pm.new_command
+@new_command
 def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
@@ -725,7 +726,7 @@ def _load_ftmap(
     return ret
 
 
-@pm.new_command
+@new_command
 def count_molecules(sel: Selection, quiet: bool = True) -> int:
     """
     Returns the number of distinct molecules in a given selection.
@@ -743,8 +744,8 @@ def count_molecules(sel: Selection, quiet: bool = True) -> int:
         print(f"Number of molecules: {num_objs}")
     return num_objs
 
-
-@pm.new_command
+    
+@new_command
 def get_fo(
     sel1: Selection,
     sel2: Selection,
@@ -777,8 +778,14 @@ def get_fo(
         Value ranges from 0.0 to 1.0. An FO of 1.0 means every atom in sel1 
         is within the radius of sel2.
     """
-    xyz1 = get_coords(sel1, state=state1)
-    xyz2 = get_coords(sel2, state=state2)
+    if isinstance(sel1, np.ndarray):
+        xyz1 = sel1
+    else:
+        xyz1 = pm.get_coords(sel1, state=state1)
+    if isinstance(sel2, np.ndarray):
+        xyz2 = sel2
+    else:
+        xyz2 = pm.get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         fo = 0
     else:
@@ -791,7 +798,7 @@ def get_fo(
     return fo
 
 
-@pm.new_command
+@new_command
 def get_dc(
     sel1: Selection,
     sel2: Selection,
@@ -819,8 +826,10 @@ def get_dc(
 
         The total count of atom-atom pair count within the radius.
     """
-    xyz1 = get_coords(sel1, state=state1)
-    xyz2 = get_coords(sel2, state=state2)
+    if not isinstance(sel1, np.ndarray):
+        xyz1 = pm.get_coords(sel1, state=state1)
+    if not isinstance(sel2, np.ndarray):
+        xyz2 = pm.get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         dc = 0
     else:
@@ -830,7 +839,7 @@ def get_dc(
     return dc
 
 
-@pm.new_command
+@new_command
 def get_dce(
     sel1: Selection,
     sel2: Selection,
@@ -879,7 +888,7 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-@pm.new_command
+@new_command
 def get_ho(
     hs1: Selection,
     hs2: Selection,
@@ -921,12 +930,12 @@ def get_ho(
     return ho
 
 
-@pm.new_command
+@new_command
 def calc_multivariate_hca(
     exprs: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = 0.0,
-    kclusters: int = -1,
+    nclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = False,
     enable_heatmap: bool = False,
@@ -1018,7 +1027,7 @@ def calc_multivariate_hca(
     X = distance.pdist(p)
     dendro, medoids = plot_hca_base(
         X, labels, linkage_method, only_medoids, annotate,
-        kclusters=kclusters,
+        nclusters=nclusters,
         color_threshold=color_threshold,
         enable_heatmap=enable_heatmap,
         rename_leafs=rename_leafs,
@@ -1034,13 +1043,14 @@ class OverlapFunction(StrEnum):
     DCE = "dce"
 
 
-@pm.new_command
+@new_command
 def calc_overlap_matrix(
     sele_a: str,
     sele_b: Optional[str] = None,
     function: OverlapFunction = OverlapFunction.FO,
     radius: float = 2.0,
-    annotate: bool = False
+    annotate: bool = False,
+    rename_labels = None
 ):
     """
     DESCRIPTION
@@ -1077,6 +1087,9 @@ def calc_overlap_matrix(
             If True, writes the numerical values directly inside the heatmap 
             cells. Text color (black/white) is automatically adjusted for 
             legibility based on the cell intensity.
+        
+        rename_labels: list[str]
+            lorem ipsum!!!
 
     RETURNS
 
@@ -1094,10 +1107,10 @@ def calc_overlap_matrix(
         plot_overlap_matrix *, function=DC
     """
     objs_a = pm.get_object_list(sele_a)
-    if sele_b.strip():
-        objs_b = pm.get_object_list(sele_b)
+    if isinstance(sele_b, str) and sele_b.strip():
+        objs_b = pm.get_object_list(sele_b) or []
     else:
-        objs_b = objs_a
+        objs_b = objs_a or []
     
     match function:
         case OverlapFunction.FO:
@@ -1111,10 +1124,16 @@ def calc_overlap_matrix(
 
     ret = []
     X = []
+    
+    obj_coords = {}
+    for obj in [*objs_a, *objs_b]:
+        if obj not in obj_coords:
+            obj_coords[obj] = pm.get_coords(obj)
+    
     for i1, a in enumerate(objs_a):
         row = []
         for i2, b in enumerate(objs_b):
-            value = get_value(a, b, radius=radius)
+            value = get_value(obj_coords[a], obj_coords[b], radius=radius)
             row.append(value)
             ret.append([a, b, value])
         X.append(row)
