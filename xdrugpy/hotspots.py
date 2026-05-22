@@ -535,9 +535,9 @@ def show_hs(selections: List[str],
 def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
-    cd_to_anchor: bool = True,
-    combinatory_search: bool = False,
-    allow_nested: bool = False,
+    cd_to_anchor: bool = False,
+    combinatory_search: bool = True,
+    allow_nested: bool = True,
     max_collisions: float = 0.15,
 ):
     """
