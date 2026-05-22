@@ -24,21 +24,18 @@ __ALL__ = [
 
 
 @pm.extend
-def _xdrugpy_install():
+def xdrugpy_install():
     try:
-        import pyKVFinder
-    except ImportError:
-        try:
-            check_call([
-                sys.executable, "-m", "pip", "install", "--no-deps",
-                "pyKVFinder==0.9.0",
-            ])
-            check_call([
-                sys.executable, "-m", "pip", "install",
-                "https://github.com/pslacerda1/XDrugPy/archive/refs/heads/DRUGpy_CAMLDDD.zip"
-            ])
-        except Exception as e:
-            print(f"XDrugPy: Installation failed: {e}")
+        check_call([
+            sys.executable, "-m", "pip", "install", "--no-deps",
+            "pyKVFinder==0.9.0",
+        ])
+        check_call([
+            sys.executable, "-m", "pip", "install",
+            "https://github.com/pslacerda1/XDrugPy/archive/refs/heads/DRUGpy_CAMLDDD.zip"
+        ])
+    except Exception as e:
+        print(f"XDrugPy: Installation failed: {e}")
 
 
 def __init_plugin__(app=None):
