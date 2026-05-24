@@ -1385,20 +1385,19 @@ class LoadWidget(QWidget):
 
 
 class SortableItem(QTableWidgetItem):
-    def __init__(self, obj):
+    def __init__(self, obj, stringfy):
         super().__init__()
-        self.setFlags(self.flags() & ~QtCore.Qt.ItemIsEditable)
-        try:
-            self.setData(QtCore.Qt.ItemDataRole.EditRole, float(obj))
-        except:
-            self.setData(QtCore.Qt.ItemDataRole.EditRole, str(obj))
-        try:
-            self.setData(QtCore.Qt.ItemDataRole.DisplayRole, f"{obj:.2f}")
-        except (ValueError, TypeError):
-            self.setData(QtCore.Qt.ItemDataRole.DisplayRole, str(obj))
+        self.setData(QtCore.Qt.ItemDataRole.EditRole, obj)
+        self.setData(QtCore.Qt.ItemDataRole.DisplayRole, stringfy(obj))
+            
+    def __lt__(self, other):
+        this = self.data(QtCore.Qt.ItemDataRole.EditRole)
+        that = other.data(QtCore.Qt.ItemDataRole.EditRole)
+        return this < that
 
 
 class OptionalPositiveDoubleDelegate(QStyledItemDelegate):
+    """For the winner of ugliest API design championshop ever."""
     class Validator(QDoubleValidator):
         def validate(self, string, pos):
             # Se a string estiver vazia, permitimos (retornamos Acceptable)
@@ -1422,9 +1421,6 @@ class OptionalPositiveDoubleDelegate(QStyledItemDelegate):
         editor.setValidator(validator)
         return editor
 
-
-
-    
 
 class TableWidget(QWidget):
 
@@ -1521,19 +1517,23 @@ class TableWidget(QWidget):
                 obj_type = pm.get_property("Type", obj)
                 if obj_type == key:
                     if obj in self.selected_objs:
-                        self.appendRow(title, key, obj)
+                        if isinstance(obj, float):
+                            stringfy = lambda o: f'{o:.2f}'
+                        else:
+                            stringfy = str
+                        self.appendRow(title, key, obj, stringfy)
 
             self.tables[title].setSortingEnabled(True)
 
-    def appendRow(self, title, key, obj):
+    def appendRow(self, title, key, obj, stringfy):
         self.tables[title].insertRow(self.tables[title].rowCount())
         line = self.tables[title].rowCount() - 1
 
-        self.tables[title].setItem(line, 0, SortableItem(obj))
+        self.tables[title].setItem(line, 0, SortableItem(obj, stringfy))
 
         for idx, prop in enumerate(self.hotspotsMap[(title, key)]):
             prop_value = pm.get_property(prop, obj)
-            self.tables[title].setItem(line, idx + 1, SortableItem(prop_value))
+            self.tables[title].setItem(line, idx + 1, SortableItem(prop_value, stringfy))
 
     def updateCurrentList(self):
         sele = self.filter_line.text()
