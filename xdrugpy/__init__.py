@@ -27,12 +27,12 @@ __ALL__ = [
 def xdrugpy_install():
     try:
         check_call([
-            sys.executable, "-m", "pip", "install", "--no-deps",
-            "pyKVFinder==0.9.0",
-        ])
-        check_call([
             sys.executable, "-m", "pip", "install",
             "https://github.com/pslacerda1/XDrugPy/archive/refs/heads/DRUGpy_CAMLDDD.zip"
+        ])
+        check_call([
+            sys.executable, "-m", "pip", "install", "--no-deps",
+            "pyKVFinder==0.9.0",
         ])
     except Exception as e:
         print(f"XDrugPy: Installation failed: {e}")
