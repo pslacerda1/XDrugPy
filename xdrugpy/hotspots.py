@@ -1050,7 +1050,8 @@ def calc_overlap_matrix(
     function: OverlapFunction = OverlapFunction.FO,
     radius: float = 2.0,
     annotate: bool = False,
-    rename_labels = None
+    rename_labels = None,
+    linkage_method: Optional[LinkageMethod] = None,
 ):
     """
     DESCRIPTION
@@ -1090,6 +1091,9 @@ def calc_overlap_matrix(
         
         rename_labels: list[str]
             lorem ipsum!!!
+        
+        linkage_method:
+            Optional clustering algorithm.
 
     RETURNS
 
@@ -1137,6 +1141,9 @@ def calc_overlap_matrix(
             row.append(value)
             ret.append([a, b, value])
         X.append(row)
+    
+    if not linkage_method:
+        return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
     
     X = np.array(X)
     Z_rows = linkage(X, method='ward')
