@@ -22,6 +22,7 @@ from pymol_new_command import new_command
 from .utils import (
     Selection,
     plot_hca_base,
+    EXPERIMENTAL_XDRUGPY
 )
 
 @dataclass
@@ -1050,10 +1051,16 @@ class PairwiseFunction(StrEnum):
     # RESIDUE_OVERLAP = "residue_overlap"
 
 
+
+class DistanceMethod(StrEnum):
+    EUCLIDEAN = "euclidean"
+    # RESIDUE_JACCARD = "residue_jaccard"
+    # RESIDUE_OVERLAP = "residue_overlap"
+
+
 @new_command
 def calc_univariate_hca(
     sele: Selection,
-    function: PairwiseFunction = PairwiseFunction.FO_MEAN,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     radius: float = 2.0,
     color_threshold: float = 0.0,
@@ -1065,18 +1072,57 @@ def calc_univariate_hca(
     no_plot: bool = False,
 ):
     """
-    Compute the similarity between matching objects using a similarity function.
+    DESCRIPTION
+        Performs an Univariate Hierarchical Analysis (HCA) on consensus sites
+        or hotspot.
 
-    OPTIONS
-        objs        space separated list of object expressions
-        method      ho, residue_jaccard, or residue_overlap (default: ho)
-        radius      the radius to consider atoms in contact (default: 2.0)
-        annotate    fill the cells with values
+    ARGUMENTS
+
+        exprs:
+            A PyMOL selection containing the objects to compare. All objects must
+            be of the same type. All hotspots or all consensus sites.
+
+        linkage_method:
+            The clustering algorithm for the dendrogram. 
+
+        radius: float
+            The distance cutoff (Angstroms) passed to the overlap function.
+
+        color_threshold:
+            Distance cutoff for cluster dendrogram branches. Disabled by default.
+
+        ncluters:
+            Cutoff only a number of cluster dendrogram branchs. Disabled by default.
+
+        only_medoids:
+            If True, focuses analysis or visualization only on the cluster medoids.
+            
+        annotate:
+            If True, writes the numerical values directly inside the heatmap 
+            cells. Text color (black/white) is automatically adjusted for 
+            legibility based on the cell intensity.
+
+        enable_heatmap:
+            Generates a distance matrix heatmap coupled with the dendrogram.
+
+        rename_leafs:
+            A dictionary mapping PyMOL object names to user-friendly labels.
+
+        no_plot:
+            If True, performs calculations and returns data without 
+            rendering the Matplotlib window.
+
+    RETURNS
+
+        A tuple containing: (Distance Matrix, Object List, Dendrogram, Medoids)
 
     EXAMPLES
-        plot_pairwise_similarity *.D_000_*_*, function=residue_jaccard
-        plot_pairwise_similarity *.D_*. align=True
-        plot_pairwise_similarity *.D_000_*_* *.DS_*
+
+        calc_univariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
+        calc_univariate_hca *.CS.*
+    
+    SEE ALSO
+        calc_mutivariate_hca
     """
 
     if '/' in sele:
@@ -1097,27 +1143,25 @@ def calc_univariate_hca(
                 continue
             coords1 = obj_coords[obj1]
             coords2 = obj_coords[obj2]
-            match function:
-                case PairwiseFunction.FO_MEAN:
-                    fo1 = get_fo(coords1, coords2, radius=radius)
-                    fo2 = get_fo(coords2, coords1, radius=radius)
-                    ret = (fo1 + fo2) / 2
-                # case PairwiseFunction.RESIDUE_JACCARD:
-                #     ret = res_sim(
-                #         obj1,
-                #         obj2,
-                #         radius=radius,
-                #         method=ResidueSimilarityMethod.JACCARD,
-                #         seq_align=align,
-                #     )
-                # case PairwiseFunction.RESIDUE_OVERLAP:
-                #     ret = res_sim(
-                #         obj1,
-                #         obj2,
-                #         radius=radius,
-                #         method=ResidueSimilarityMethod.OVERLAP,
-                #         seq_align=align,
-                #     )
+            fo1 = get_fo(coords1, coords2, radius=radius)
+            fo2 = get_fo(coords2, coords1, radius=radius)
+            ret = (fo1 + fo2) / 2
+            # case PairwiseFunction.RESIDUE_JACCARD:
+            #     ret = res_sim(
+            #         obj1,
+            #         obj2,
+            #         radius=radius,
+            #         method=ResidueSimilarityMethod.JACCARD,
+            #         seq_align=align,
+            #     )
+            # case PairwiseFunction.RESIDUE_OVERLAP:
+            #     ret = res_sim(
+            #         obj1,
+            #         obj2,
+            #         radius=radius,
+            #         method=ResidueSimilarityMethod.OVERLAP,
+            #         seq_align=align,
+            #     )
             X.append(1 - ret)
     dendro, medoids = plot_hca_base(
         X, objects, linkage_method,
@@ -1738,7 +1782,7 @@ class HcaWidget(QWidget):
         groupBox.setLayout(boxLayout)
         tab.addTab(groupBox, "General")
 
-        self.hotspotSeleLine = QLineEdit("*")
+        self.hotspotSeleLine = QLineEdit("")
         self.hotspotSeleLine.setPlaceholderText("PyMOL Selection Algebra")
         boxLayout.addRow("Hotspots:", self.hotspotSeleLine)
 
@@ -1805,29 +1849,26 @@ class HcaWidget(QWidget):
         mainLayout.addWidget(container)
         
         groupBox = QGroupBox("Univariate analysis")
-        layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
+        if EXPERIMENTAL_XDRUGPY:
+            layout.addWidget(groupBox)
+            boxLayout = QFormLayout()
+            groupBox.setLayout(boxLayout)
 
-        self.univariateFunctionCombo = QComboBox()
-        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
-        boxLayout.addRow("Function:", self.univariateFunctionCombo)
+            self.univariateFunctionCombo = QComboBox()
+            self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+            boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
-        self.radiusSpin = QDoubleSpinBox()
-        self.radiusSpin.setValue(2)
-        self.radiusSpin.setSingleStep(0.5)
-        self.radiusSpin.setDecimals(2)
-        self.radiusSpin.setMinimum(1)
-        self.radiusSpin.setMaximum(10)
-        boxLayout.addRow("Radius:", self.radiusSpin)
+            self.radiusSpin = QDoubleSpinBox()
+            self.radiusSpin.setValue(2)
+            self.radiusSpin.setSingleStep(0.5)
+            self.radiusSpin.setDecimals(2)
+            self.radiusSpin.setMinimum(1)
+            self.radiusSpin.setMaximum(10)
+            boxLayout.addRow("Radius:", self.radiusSpin)
 
-        self.pairwiseSeqAlignCheck = QCheckBox()
-        self.pairwiseSeqAlignCheck.setChecked(False)
-        boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
-
-        plotButton = QPushButton("Plot")
-        plotButton.clicked.connect(self.plot_univariate)
-        boxLayout.addWidget(plotButton)
+            plotButton = QPushButton("Plot")
+            plotButton.clicked.connect(self.plot_univariate_hca)
+            boxLayout.addWidget(plotButton)
 
         groupBox = QGroupBox("Multivariate analysis")
         
@@ -1835,7 +1876,7 @@ class HcaWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
         self.multivariateFunctionCombo = QComboBox()
-        self.multivariateFunctionCombo.addItems(["euclidean"])
+        self.multivariateFunctionCombo.addItems([e.value for e in DistanceMethod])
         boxLayout.addRow("Distance function:", self.multivariateFunctionCombo)
 
         plotButton = QPushButton("Plot")
@@ -1901,11 +1942,9 @@ class HcaWidget(QWidget):
         )
         plt.show()
     
-    def plot_univariate(self):
+    def plot_univariate_hca(self):
         sele = self.hotspotSeleLine.text()
-        function = self.univariateFunctionCombo.currentText()
         radius = self.radiusSpin.value()
-        align = self.pairwiseSeqAlignCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
@@ -1914,9 +1953,7 @@ class HcaWidget(QWidget):
 
         calc_univariate_hca(
             sele=sele,
-            function=function,
             radius=radius,
-            align=align,
             annotate=annotate,
             linkage_method=linkage_method,
             color_threshold=color_threshold,

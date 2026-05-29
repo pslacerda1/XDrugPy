@@ -21,6 +21,7 @@ __ALL__ = [
     "ArgumentParsingError",
     "configure_matplotlib",
     "plot",
+    "EXPERIMENTAL_XDRUGPY"
 ]
 
 
@@ -61,4 +62,4 @@ from .hotspots import (
     calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
     LinkageMethod, OverlapFunction
 )
-from .utils import configure_matplotlib, plot
+from .utils import configure_matplotlib, plot, EXPERIMENTAL_XDRUGPY

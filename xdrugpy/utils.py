@@ -1,29 +1,20 @@
-import builtins
 import itertools
-import sys
-import shlex
-import inspect
+import os
 import scipy.cluster.hierarchy as sch
-import numpy as np
-from functools import wraps
-from textwrap import dedent
-from typing import get_args, Union, Any, get_origin, get_type_hints
-from types import UnionType
-from collections import namedtuple, defaultdict
+from collections import defaultdict
 from shutil import rmtree
-from tempfile import mkdtemp
-from pathlib import Path
-from matplotlib.axes import Axes
 from matplotlib import pyplot as plt, axes
 from scipy.spatial import distance
 from scipy.cluster.hierarchy import linkage
-from collections import namedtuple
 from strenum import StrEnum
-from enum import Enum
 from pymol.parser import __file__ as _parser_filename
 
-from pymol import Qt, cmd as pm, parsing
+from pymol import Qt, cmd as pm
 
+if 'EXPERIMENTAL_XDRUGPY' in os.environ:
+    EXPERIMENTAL_XDRUGPY = True
+else:
+    EXPERIMENTAL_XDRUGPY = False
 
 @pm.extend
 def plot(filename: str | None = None):
