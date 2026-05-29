@@ -10,6 +10,7 @@ __ALL__ = [
     "get_dce",
     "get_ho",
     "calc_multivariate_hca",
+    "calc_univariate_hca",
     "calc_overlap_matrix",
     "calc_ligand_fit",
     "LinkageMethod",
@@ -57,7 +58,7 @@ def __init_plugin__(app=None):
 
 from .hotspots import (
     load_ftmap, get_fo, get_dc, get_dce, get_ho,
-    calc_multivariate_hca, calc_overlap_matrix,
+    calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
     LinkageMethod, OverlapFunction
 )
 from .utils import configure_matplotlib, plot

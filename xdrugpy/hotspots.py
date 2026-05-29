@@ -1044,6 +1044,97 @@ def calc_multivariate_hca(
     return X, object_list, dendro, medoids
 
 
+class PairwiseFunction(StrEnum):
+    FO_MEAN = "fo_mean"
+    # RESIDUE_JACCARD = "residue_jaccard"
+    # RESIDUE_OVERLAP = "residue_overlap"
+
+
+@new_command
+def calc_univariate_hca(
+    sele: Selection,
+    function: PairwiseFunction = PairwiseFunction.FO_MEAN,
+    linkage_method: LinkageMethod = LinkageMethod.WARD,
+    radius: float = 2.0,
+    color_threshold: float = 0.0,
+    nclusters: int = -1,
+    only_medoids: bool = False,
+    annotate: bool = False,
+    enable_heatmap: bool = False,
+    rename_leafs: Optional[Dict[str, str]] = None,
+    no_plot: bool = False,
+):
+    """
+    Compute the similarity between matching objects using a similarity function.
+
+    OPTIONS
+        objs        space separated list of object expressions
+        method      ho, residue_jaccard, or residue_overlap (default: ho)
+        radius      the radius to consider atoms in contact (default: 2.0)
+        annotate    fill the cells with values
+
+    EXAMPLES
+        plot_pairwise_similarity *.D_000_*_*, function=residue_jaccard
+        plot_pairwise_similarity *.D_*. align=True
+        plot_pairwise_similarity *.D_000_*_* *.DS_*
+    """
+
+    if '/' in sele:
+        objects = [s.strip() for s in sele.split('/')]
+    else:
+        objects = pm.get_object_list(sele)
+    assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
+
+    X = []
+    obj_coords = {}
+    for obj in objects:
+        if obj not in obj_coords:
+            obj_coords[obj] = get_coords(obj)
+    
+    for idx1, obj1 in enumerate(objects):
+        for idx2, obj2 in enumerate(objects):
+            if idx1 >= idx2:
+                continue
+            coords1 = obj_coords[obj1]
+            coords2 = obj_coords[obj2]
+            match function:
+                case PairwiseFunction.FO_MEAN:
+                    fo1 = get_fo(coords1, coords2, radius=radius)
+                    fo2 = get_fo(coords2, coords1, radius=radius)
+                    ret = (fo1 + fo2) / 2
+                # case PairwiseFunction.RESIDUE_JACCARD:
+                #     ret = res_sim(
+                #         obj1,
+                #         obj2,
+                #         radius=radius,
+                #         method=ResidueSimilarityMethod.JACCARD,
+                #         seq_align=align,
+                #     )
+                # case PairwiseFunction.RESIDUE_OVERLAP:
+                #     ret = res_sim(
+                #         obj1,
+                #         obj2,
+                #         radius=radius,
+                #         method=ResidueSimilarityMethod.OVERLAP,
+                #         seq_align=align,
+                #     )
+            X.append(1 - ret)
+    dendro, medoids = plot_hca_base(
+        X, objects, linkage_method,
+        nclusters=nclusters,
+        color_threshold=color_threshold,
+        only_medoids=only_medoids,
+        annotate=annotate,
+        vmin=0,
+        vmax=1,
+        enable_heatmap=enable_heatmap,
+        rename_leafs=rename_leafs,
+        no_plot=no_plot
+    )
+    return X, objects, dendro, medoids
+
+
+
 class OverlapFunction(StrEnum):
     FO = "fo"
     FO_MEAN = "fo_mean"
@@ -1647,8 +1738,8 @@ class HcaWidget(QWidget):
         groupBox.setLayout(boxLayout)
         tab.addTab(groupBox, "General")
 
-        self.hotspotSeleLine = QLineEdit()
-        self.hotspotSeleLine.setPlaceholderText("Objects or selection")
+        self.hotspotSeleLine = QLineEdit("*")
+        self.hotspotSeleLine.setPlaceholderText("PyMOL Selection Algebra")
         boxLayout.addRow("Hotspots:", self.hotspotSeleLine)
 
         self.linkageMethodCombo = QComboBox()
@@ -1713,14 +1804,39 @@ class HcaWidget(QWidget):
         container.setLayout(layout)
         mainLayout.addWidget(container)
         
+        groupBox = QGroupBox("Univariate analysis")
+        layout.addWidget(groupBox)
+        boxLayout = QFormLayout()
+        groupBox.setLayout(boxLayout)
+
+        self.univariateFunctionCombo = QComboBox()
+        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+        boxLayout.addRow("Function:", self.univariateFunctionCombo)
+
+        self.radiusSpin = QDoubleSpinBox()
+        self.radiusSpin.setValue(2)
+        self.radiusSpin.setSingleStep(0.5)
+        self.radiusSpin.setDecimals(2)
+        self.radiusSpin.setMinimum(1)
+        self.radiusSpin.setMaximum(10)
+        boxLayout.addRow("Radius:", self.radiusSpin)
+
+        self.pairwiseSeqAlignCheck = QCheckBox()
+        self.pairwiseSeqAlignCheck.setChecked(False)
+        boxLayout.addRow("Sequence align:", self.pairwiseSeqAlignCheck)
+
+        plotButton = QPushButton("Plot")
+        plotButton.clicked.connect(self.plot_univariate)
+        boxLayout.addWidget(plotButton)
+
         groupBox = QGroupBox("Multivariate analysis")
         
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
-
         self.multivariateFunctionCombo = QComboBox()
         self.multivariateFunctionCombo.addItems(["euclidean"])
+        boxLayout.addRow("Distance function:", self.multivariateFunctionCombo)
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_multivariate_hca)
@@ -1780,6 +1896,31 @@ class HcaWidget(QWidget):
             color_threshold=color_threshold,
             only_medoids=only_medoids,
             annotate=annotate,
+            enable_heatmap=enable_heatmap,
+            rename_leafs=self.getLeafLabels(),
+        )
+        plt.show()
+    
+    def plot_univariate(self):
+        sele = self.hotspotSeleLine.text()
+        function = self.univariateFunctionCombo.currentText()
+        radius = self.radiusSpin.value()
+        align = self.pairwiseSeqAlignCheck.isChecked()
+        linkage_method = self.linkageMethodCombo.currentText()
+        color_threshold = self.colorThresholdSpin.value()
+        only_medoids = self.onlyMedoidsCheck.isChecked()
+        annotate = self.annotateCheck.isChecked()
+        enable_heatmap = self.enableHeatmapCheck.isChecked()
+
+        calc_univariate_hca(
+            sele=sele,
+            function=function,
+            radius=radius,
+            align=align,
+            annotate=annotate,
+            linkage_method=linkage_method,
+            color_threshold=color_threshold,
+            only_medoids=only_medoids,
             enable_heatmap=enable_heatmap,
             rename_leafs=self.getLeafLabels(),
         )
