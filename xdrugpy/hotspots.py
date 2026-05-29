@@ -1424,8 +1424,8 @@ def calc_ligand_fit(
         for x, y, obj, label in rows:
             s = label.strip() or obj
             ax.text(x, y, s)
-        ax.set_xlabel(f"{function_col} / {function_col}_ref")
-        ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
+    ax.set_xlabel(f"{function_col} / {function_col}_ref")
+    ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
 
 #
 # GRAPHICAL USER INTERFACE
