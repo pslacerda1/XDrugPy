@@ -1150,23 +1150,26 @@ def calc_overlap_matrix(
             ret.append([a, b, value])
         X.append(row)
     
-    if not linkage_method:
-        return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
-    
     X = np.array(X)
-    Z_rows = linkage(X, method='ward')
-    idx_rows = leaves_list(Z_rows)
+    if linkage_method and len(X) > 2:
+        Z_rows = linkage(X, method=linkage_method)
+        idx_rows = leaves_list(Z_rows)
+    else:
+        idx_rows = np.arange(len(X))
 
-    Z_cols = linkage(X.T, method='ward')
-    idx_cols = leaves_list(Z_cols)
-
+    if linkage_method and len(X.T) > 2:
+        Z_cols = linkage(X.T, method=linkage_method)
+        idx_cols = leaves_list(Z_cols)
+    else:
+        idx_cols = np.arange(len(X.T))
+    
     X = X[idx_rows, :][:, idx_cols]
 
     fig, ax = plt.subplots(constrained_layout=True)
     
     ax.set_yticks(range(len(objs_a)), np.array(objs_a)[idx_rows])
     ax.set_xticks(range(len(objs_b)), np.array(objs_b)[idx_cols])
-
+    
     ax.tick_params(axis="x", rotation=90)
     if function == OverlapFunction.FO:
         vmin = 0.0
@@ -1182,8 +1185,8 @@ def calc_overlap_matrix(
         nan_mask = np.isnan(X)
         xmax = vmax or X[~nan_mask].max()
         xmin = vmin or X[~nan_mask].min()
-        for i1, a in enumerate(objs_a):
-            for i2, b in enumerate(objs_b):
+        for i1 in range(len(objs_a)):
+            for i2 in range(len(objs_b)):
                 y = X[i1, i2]
                 if np.isnan(y):
                     continue
@@ -1236,15 +1239,37 @@ def calc_ligand_fit(
 ):
     if len(pm.get_object_list(hs_sele)) != 1:
         raise ValueError("Only one hotspot can be analyzed at time.")
-    overlap_df = calc_overlap_matrix(
-        sele_a=hs_sele,
-        sele_b=ligs_sele,
-        function=function,
-        radius=radius,
-        annotate=annotate
-    ).rename(columns={'B': 'Ligand'})
-    plt.close()
-
+    
+    
+    objs_hss = pm.get_object_list(hs_sele)
+    objs_ligs = pm.get_object_list(ligs_sele)
+    
+    match function:
+        case OverlapFunction.FO:
+            get_value = get_fo
+        case OverlapFunction.FO_MEAN:
+            get_value = lambda a, b, radius=radius: (get_fo(a, b, radius)+get_fo(b, a, radius))/2
+        case OverlapFunction.DC:
+            get_value = get_dc
+        case OverlapFunction.DCE:
+            get_value = get_dce
+    ret = []
+    X = []
+    obj_coords = {}
+    for obj in [*objs_hss, *objs_ligs]:
+        if obj not in obj_coords:
+            obj_coords[obj] = get_coords(obj)
+    
+    for i1, a in enumerate(objs_hss):
+        row = []
+        for i2, b in enumerate(objs_ligs):
+            value = get_value(obj_coords[a], obj_coords[b], radius=radius)
+            row.append(value)
+            ret.append([a, b, value])
+        X.append(row)
+    
+    overlap_df = pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
+    overlap_df = overlap_df.rename(columns={'B': 'Ligand'})
     # identify the fragment
     ix_frag = np.argmin(bind_df['HA'])
     
@@ -1259,12 +1284,13 @@ def calc_ligand_fit(
     x = df[function_col] / df[function_col].iloc[ix_frag]
     y = df[lig_metric] / df[lig_metric].iloc[ix_frag]
     ax.scatter(x, y)
-    rows = zip(x, y, df['Ligand'], df['Label'])
-    for x, y, obj, label in rows:
-        s = label.strip() or obj
-        ax.text(x, y, s)
-    ax.set_xlabel(f"{function_col} / {function_col}_ref")
-    ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
+    if annotate:
+        rows = zip(x, y, df['Ligand'], df['Label'])
+        for x, y, obj, label in rows:
+            s = label.strip() or obj
+            ax.text(x, y, s)
+        ax.set_xlabel(f"{function_col} / {function_col}_ref")
+        ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
 
 #
 # GRAPHICAL USER INTERFACE
@@ -2031,6 +2057,10 @@ class OverlapWidget(QWidget):
         self.annotateCheck.setChecked(True)
         layout.addRow("Annotate:", self.annotateCheck)
 
+        self.linkageMethodCombo = QComboBox()
+        self.linkageMethodCombo.addItems(['none'] + [e.value for e in LinkageMethod])
+        layout.addRow("Linkage method:", self.linkageMethodCombo)
+
         self.container1 = QWidget()
         hLayout1 = QHBoxLayout(self.container1)
         layout.addRow(self.container1)
@@ -2049,13 +2079,17 @@ class OverlapWidget(QWidget):
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
         annotate = self.annotateCheck.isChecked()
-        
+        linkage_method = self.linkageMethodCombo.currentText()
+        if linkage_method.lower() == 'none':
+            linkage_method = None
+
         calc_overlap_matrix(
             sele_a=sele_a,
             sele_b=sele_b,
             function=function,
             radius=radius,
-            annotate=annotate
+            annotate=annotate,
+            linkage_method=linkage_method
         )
         plt.show()
     
