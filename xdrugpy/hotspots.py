@@ -2038,7 +2038,7 @@ class LigandFitWidget(QWidget):
         layout.addRow("Ligands:", self.ligandsSeleLine)
         
         self.ligMetricCombo = QComboBox()
-        self.ligMetricCombo.addItems([e.value for e in BindMetric if e != BindMetric.PKI])
+        self.ligMetricCombo.addItems([e.value for e in BindMetric])
         layout.addRow("Binding metric:", self.ligMetricCombo)
         
         self.functionCombo = QComboBox()
