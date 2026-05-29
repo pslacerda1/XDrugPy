@@ -826,9 +826,13 @@ def get_dc(
 
         The total count of atom-atom pair count within the radius.
     """
-    if not isinstance(sel1, np.ndarray):
+    if isinstance(sel1, np.ndarray):
+        xyz1 = sel1
+    else:
         xyz1 = get_coords(sel1, state=state1)
-    if not isinstance(sel2, np.ndarray):
+    if isinstance(sel2, np.ndarray):
+        xyz2 = sel2
+    else:
         xyz2 = get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         dc = 0
@@ -863,19 +867,23 @@ def get_dce(
         radius:
             Distance cutoff.
             
-    NOTES
+    NOTES   
 
         DCE = get_dc(sel1, sel2) / count_atoms(sel1)
         This is useful for comparing binding efficiency across ligands 
         of different sizes.
     """
+    if isinstance(sel1, np.ndarray):
+        xyz1 = sel1
+    else:
+        xyz1 = get_coords(sel1, state=state1)
     dce = get_dc(
-        sel1,
+        xyz1,
         sel2,
         radius=radius,
         state1=state1,
         state2=state2
-    ) / pm.count_atoms(sel1)
+    ) / len(xyz1)
     if not quiet:
         print(f"DCE: {dce:.2f}")
     return dce
