@@ -2022,11 +2022,11 @@ class LigandTableWidget(QTableWidget):
         ]
         data = []
         for r in range(rows):
-            obj = self.item(r, 0).text()
-            pki = self.item(r, 1).text()
-            ha = self.item(r, 5).text()
-            mw = self.item(r, 6).text()
-            label = self.item(r, 7).text()
+            obj = self.item(r, 0).text().strip()
+            pki = self.item(r, 1).text().strip()
+            ha = self.item(r, 5).text().strip()
+            mw = self.item(r, 6).text().strip()
+            label = self.item(r, 7).text().strip()
             if not pki:
                 data.append([
                     obj,
@@ -2039,9 +2039,9 @@ class LigandTableWidget(QTableWidget):
                     label,
                 ])
             else:
-                le = self.item(r, 2).text()
-                bei = self.item(r, 3).text()
-                fq = self.item(r, 4).text()
+                le = self.item(r, 2).text().strip()
+                bei = self.item(r, 3).text().strip()
+                fq = self.item(r, 4).text().strip()
                 
                 data.append([
                     obj,
