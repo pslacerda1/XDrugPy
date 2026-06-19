@@ -239,7 +239,7 @@ class Hotspot:
             assert obj.startswith(f"{group}.CS.")
             clu = Cluster(
                 obj,
-                get_coordset(obj),
+                get_coords(obj),
                 count_molecules(obj)
             )
             pm.group(group, obj, action='add')
@@ -608,7 +608,7 @@ def load_ftmap(
 def _load_ftmap(
     filename: Path,
     group: str = "",
-    cd_to_anchor: bool = True,
+    cd_to_anchor: bool = False,
     combinatory_search: bool = False,
     allow_nested: bool = False,
     max_collisions: float = 0.15,
