@@ -1,16 +1,17 @@
 #
-# Hierarchical Cluster Analysis (HCA) of a large number of hotspots
+# Hierarchical Cluster Analysis (HCA) of a (potentially) large number of hotspots
 #
 from os.path import expanduser
 from glob import glob
+from pymol import cmd as pm
 from xdrugpy import (
     load_ftmap,
     calc_multivariate_hca,
+    calc_univariate_hca,
     LinkageMethod,
     configure_matplotlib,
     plot,
 )
-from pymol import cmd as pm
 
 # Change the default Matplotlib style and parameters to improve
 # the aesthetics of generated figures.
@@ -55,4 +56,16 @@ calc_multivariate_hca(
     only_medoids=True,
     annotate=False,
 )
-plot() # or plot("~/MyFolder/hca.png") to save the figure instead of showing it
+plot() # or plot("~/standard_hca.png") to save the figure instead of showing it
+
+# Univariate analysis on the distance between hotspot properties, including
+# coordinates of center-of-mass.
+calc_univariate_hca(
+    '*.D* AND p.S0>20',
+    linkage_method=LinkageMethod.AVERAGE,
+    nclusters=3,
+    only_medoids=False,
+    annotate=False,
+    enable_heatmap=True,
+)
+plot() # or plot("~/univariate_hca.png") to save the figure instead of showing it

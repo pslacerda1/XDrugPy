@@ -398,7 +398,7 @@ class Kozakov15BasedAlgorithm:
             hs.klass = "DL"
         
         if hs.klass:
-            hs.nComponents = Hotspot.make_graph(group, clusters, max_collisions=max_collisions)
+            hs.nComponents = Kozakov15BasedAlgorithm.make_graph(group, clusters, max_collisions=max_collisions)
             if hs.nComponents > 1:
                 hs.klass = None
         return hs
@@ -644,6 +644,7 @@ def load_ftmap(
                 group=group,
                 cd_to_anchor=cd_to_anchor,
                 allow_nested=allow_nested,
+                combinatory_search=combinatory_search,
                 max_collisions=max_collisions
             )
         except:
@@ -652,6 +653,7 @@ def load_ftmap(
                 group=group,
                 cd_to_anchor=cd_to_anchor,
                 allow_nested=allow_nested,
+                combinatory_search=combinatory_search,
                 max_collisions=max_collisions
             )
     finally:
@@ -667,7 +669,7 @@ def _load_ftmap(
     max_collisions: float = 0.15,
 ):
     if not group:
-        group = os.path.splitext(os.path.basename(filename))[0]
+        group = os.path.splitext(os.path.basename(str(filename)))[0]
     group = pm.get_legal_name(group)
     
     pm.load(str(filename), quiet=1)
@@ -956,18 +958,12 @@ class PairwiseFunction(StrEnum):
 
 
 
-class DistanceMethod(StrEnum):
-    EUCLIDEAN = "euclidean"
-    # RESIDUE_JACCARD = "residue_jaccard"
-    # RESIDUE_OVERLAP = "residue_overlap"
-
-
 @new_command
 def calc_univariate_hca(
     sele: Selection,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     radius: float = 2.0,
-    color_threshold: float = 0.0,
+    color_threshold: float = -1.0,
     nclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = False,
@@ -1097,7 +1093,7 @@ def calc_overlap_matrix(
     function: OverlapFunction = OverlapFunction.FO,
     radius: float = 2.0,
     annotate: bool = False,
-    rename_labels = None,
+    rename_leafs = None,
     linkage_method: Optional[LinkageMethod] = None,
 ):
     """
@@ -1136,7 +1132,7 @@ def calc_overlap_matrix(
             cells. Text color (black/white) is automatically adjusted for 
             legibility based on the cell intensity.
         
-        rename_labels: list[str]
+        rename_leafs: list[str]
             lorem ipsum!!! TODO
         
         linkage_method:
@@ -1333,7 +1329,7 @@ def calc_ligand_fit(
 
 
 @new_command
-def fpt_sim(
+def calc_fingerprints(
     multi_seles: Selection,
     site: Selection = "*",
     site_radius: float = 5.0,
@@ -1400,7 +1396,7 @@ def fpt_sim(
         ref_map = []
         for at in ref_model.atom:
             ref_map.append(Residue(
-                at.model, at.index, int(at.resi), at.chain,
+                at.model, at.index, at.resi, at.chain,
                 at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
             ))
         mapping[ref_sele] = ref_map
@@ -1408,21 +1404,21 @@ def fpt_sim(
             if sele == ref_sele:
                 continue
             current_model = pm.get_model(f"{poly} & present & guide & polymer")
-            lookup = {(int(at.resi), at.chain): at for at in current_model.atom}
+            lookup = {(at.resi, at.chain): at for at in current_model.atom}
             current_map = []
             for ref_res in ref_map:
-                match = lookup.get((int(ref_res.resi), ref_res.chain))
+                match = lookup.get((ref_res.resi, ref_res.chain))
                 if match:
                     at = match
                     current_map.append(
                         Residue(
-                            at.model, at.index, int(at.resi), at.chain,
+                            at.model, at.index, at.resi, at.chain,
                             at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
                         )
                     )
                 else:
                     current_map.append(
-                        Residue(None, -1, int(ref_res.resi), ref_res.chain, 'GAP', '-', ''))
+                        Residue(None, -1, ref_res.resi, ref_res.chain, 'GAP', '-', ''))
             mapping[sele] = current_map
 
     ref_map = mapping[ref_sele]
@@ -1458,8 +1454,8 @@ def fpt_sim(
             elif sharex and ix + 1 == len(seles):
                 labels = shared_labels
             arange = np.arange(len(fpt))
-            max_val = max(max(fpt.values()), max_val)
-            ax.bar(arange, fpt.values(), color="C0")
+            max_val = max(max(fpt.values() or 0), max_val)
+            ax.bar(arange, fpt.values())
             ax.set_title(sele)
             ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
             if not sharex or sharex and ix + 1 == len(seles):
@@ -3044,7 +3040,7 @@ class FingerprintWidget(QWidget):
         color_threshold = self.colorThresholdSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
 
-        fpt_sim(
+        calc_fingerprints(
             multi_seles,
             site,
             site_radius,

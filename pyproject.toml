@@ -12,6 +12,12 @@ dependencies = [
   "scipy==1.15",
   "strenum==0.4",
   "networkx==3.4",
+  "watchdog==6.0.0",
   "openpyxl==3.1",
-  "pymol_new_command @ https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip"
+  "rcsb-api==1.7.3",
+  "pdb2pqr==3.6.2",
+  "propka==3.5.1",
+  "molscrub==0.2.2",
+  "pymol_new_command @ https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip",
+  "meeko @ https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
 ]

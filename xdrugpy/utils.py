@@ -1,6 +1,8 @@
 import itertools
 import os
 import subprocess
+import signal
+import sys
 import scipy.cluster.hierarchy as sch
 from collections import defaultdict
 from shutil import rmtree
@@ -331,7 +333,7 @@ def clustal_omega(seles, conservation, titles=None):
                     if title not in omega:
                         omega[title] = []
                     omega[title].append(Residue(
-                        at.model, at.index, int(at.resi), at.chain, at.resn, seq_char, clu_char
+                        at.model, at.index, at.resi, at.chain, at.resn, seq_char, clu_char
                     ))
                 local_ix += 1
     
@@ -340,3 +342,88 @@ def clustal_omega(seles, conservation, titles=None):
         for title in sorted(omega, key=replaced_list.index)
     }
     return omega
+
+
+
+from pymol import Qt
+
+QWidget = Qt.QtWidgets.QWidget
+QFileDialog = Qt.QtWidgets.QFileDialog
+QFormLayout = Qt.QtWidgets.QFormLayout
+QPushButton = Qt.QtWidgets.QPushButton
+QSpinBox = Qt.QtWidgets.QSpinBox
+QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
+QLineEdit = Qt.QtWidgets.QLineEdit
+QCheckBox = Qt.QtWidgets.QCheckBox
+QVBoxLayout = Qt.QtWidgets.QVBoxLayout
+QHBoxLayout = Qt.QtWidgets.QHBoxLayout
+QDialog = Qt.QtWidgets.QDialog
+QComboBox = Qt.QtWidgets.QComboBox
+QTabWidget = Qt.QtWidgets.QTabWidget
+QLabel = Qt.QtWidgets.QLabel
+QTableWidget = Qt.QtWidgets.QTableWidget
+QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
+QGroupBox = Qt.QtWidgets.QGroupBox
+QHeaderView = Qt.QtWidgets.QHeaderView
+QTextEdit = Qt.QtWidgets.QTextEdit
+
+QtCore = Qt.QtCore
+QIcon = Qt.QtGui.QIcon
+QTextCursor = Qt.QtGui.QTextCursor
+
+
+
+def kill_process(proc):
+    """
+    Mata o processo corretamente, incluindo subprocessos
+    """
+    if proc.poll() is not None:
+        return  # Já terminou
+    
+    try:
+        if sys.platform == 'win32':
+            # Windows - usar taskkill para matar árvore
+            subprocess.call(
+                ['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        else:
+            # Unix - matar grupo de processos
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Se não terminou, força
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait()
+    
+    except ProcessLookupError:
+        pass  # Processo já morreu
+    except Exception as e:
+        print(f"Error killing process: {e}")
+        # Último recurso
+        try:
+            proc.kill()
+            proc.wait()
+        except:
+            pass
+
+class PyMOLComboObjectBox(QComboBox):
+
+    def __init__(self):
+        super().__init__()
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self.setEditText("")
+
+    def showPopup(self):
+        currentText = self.currentText().strip()
+        selections = pm.get_names("selections", enabled_only=False)
+        objects = pm.get_names("objects", enabled_only=False)
+        self.clear()
+        self.addItems("(%s)" % s for s in selections)
+        self.addItems(objects)
+        if currentText != "":
+            self.setCurrentText(currentText)
+        super().showPopup()
