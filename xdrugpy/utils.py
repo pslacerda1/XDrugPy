@@ -121,10 +121,10 @@ def plot_hca_base(
         idx = labels.index(leaf_node)
         labels[idx] = new_label
     
-    if nclusters == -1 and color_threshold == -1.0:
+    if nclusters != -1 and color_threshold != -1.0:
         raise ValueError("Cant set kclusters and color_threshold at the same time")
     Z = linkage(dists, method=linkage_method)
-    if nclusters > 0:
+    if nclusters >= 0:
         color_threshold = get_color_threshold(Z, nclusters)
     dendro = sch.dendrogram(
         Z,
