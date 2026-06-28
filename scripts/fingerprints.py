@@ -10,10 +10,10 @@ from xdrugpy import (
 )
 
 # my opinion
-configure_matplotlib('default', {
-    'font.size': 14,            # small font
-    'figure.figsize': (10, 8),  # good dimensions
-    'svg.fonttype': 'none'      # editable with notepad
+configure_matplotlib('default', {   # the style
+    'font.size': 14,                # small font
+    'figure.figsize': (10, 8),      # good dimensions
+    'svg.fonttype': 'none'          # editable with notepad
 })
 
 
@@ -34,14 +34,15 @@ calc_fingerprints(
         2W0H.CS.* / 2WPF.CS.* / 6BU7.CS.*
     """,
     # Focus the analysis to a site. Because the
-    # first object is 1JNK, the site can be given
+    # first object is 1BZL, the site can be given
     # by a ligand or residue index of that 
     # structure also.
         #site='resi 207-209+187-189',
         # site='*',
     site='resi 436',
     # How many angstroms will be given around the
-    # site? It can be 0, 5, any value.
+    # site? It can be 0 (exclusively resi 436),
+    # 5 (a large padding), or any other value.
     site_radius=5,
     # Apply multiple sequence alignment
     seq_align_omega=True,
