@@ -247,7 +247,7 @@ class Hotspot:
             )
             pm.group(group, obj, action='add')
             clusters.append(clu)
-        return Hotspot.from_clusters(group, clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
+        return Kozakov15BasedAlgorithm.from_clusters(group, clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
             
     def show(self, plot_graph: bool=False):
         group = self.group
@@ -293,19 +293,6 @@ class Hotspot:
                             measure_name = pm.get_unused_name(f'{group}.diagnose_graph_')
                             pm.distance(measure_name, e[0], e[1], mode=4)
                             pm.color('cyan', measure_name)
-    
-@new_command
-def show_hs(selections: List[str],
-            cd_to_anchor: bool = True,
-            max_collisions: float = 0.15) -> Hotspot:
-    hs = Hotspot.from_cluster_selections(
-        selections,
-        cd_to_anchor=cd_to_anchor,
-        max_collisions=max_collisions
-    )
-    hs.show()
-    print(hs)
-
 
 
 @dataclass
@@ -316,7 +303,7 @@ class Kozakov15BasedAlgorithm:
         self.tree = cKDTree(self.prot_xyz)
     
     @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=True, max_collisions: float=0.10) -> Hotspot:
+    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=False, max_collisions: float=0.10) -> Hotspot:
         coms = [pm.centerofmass(c.selection) for c in clusters]
         cd = [distance.euclidean(coms[0], com) for com in coms]
         cd0 = np.max(cd) if len(cd) > 0 else 0.0
@@ -690,8 +677,8 @@ def _load_ftmap(
         group,  
         clusters=clusters,
         cd_to_anchor=cd_to_anchor,
-        combinatory_search=combinatory_search,
         allow_nested=allow_nested,
+        combinatory_search=combinatory_search,
         max_collisions=max_collisions
     )
 
@@ -951,25 +938,26 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-class PairwiseFunction(StrEnum):
+class PairwiseSimilarityFunction(StrEnum):
     FO_MEAN = "fo_mean"
-    # RESIDUE_JACCARD = "residue_jaccard"
-    # RESIDUE_OVERLAP = "residue_overlap"
-
+    JACCARD = "jaccard"
+    OVERLAP = "overlap"
 
 
 @new_command
 def calc_univariate_hca(
     sele: Selection,
-    linkage_method: LinkageMethod = LinkageMethod.WARD,
+    overlap_function: PairwiseSimilarityFunction.FO_MEAN = PairwiseSimilarityFunction.FO_MEAN,
+    seq_align_before_overlap: bool = False,
     radius: float = 2.0,
+    linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = -1.0,
     nclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = False,
-    enable_heatmap: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
-    no_plot: bool = False,
+    dendrogram_axis: str = '',
+    heatmap_axis: str = '',
 ):
     """
     DESCRIPTION
@@ -982,6 +970,12 @@ def calc_univariate_hca(
             A PyMOL selection containing the objects to compare. All objects must
             be of the same type. All hotspots or all consensus sites.
 
+        overlap_function:
+            The overlap function to measure the similarity between two objects.
+
+        seq_align_before_overlap:
+            Do alignment before comparing the polymer residues near the two objects.
+            
         linkage_method:
             The clustering algorithm for the dendrogram. 
 
@@ -1008,16 +1002,10 @@ def calc_univariate_hca(
         rename_leafs:
             A dictionary mapping PyMOL object names to user-friendly labels.
 
-        no_plot:
-            If True, performs calculations and returns data without 
-            rendering the Matplotlib window.
-
     RETURNS
-
         A tuple containing: (Distance Matrix, Object List, Dendrogram, Medoids)
 
     EXAMPLES
-
         calc_univariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
         calc_univariate_hca *.CS.*
     
@@ -1025,10 +1013,7 @@ def calc_univariate_hca(
         calc_mutivariate_hca
     """
 
-    if '/' in sele:
-        objects = [s.strip() for s in sele.split('/')]
-    else:
-        objects = pm.get_object_list(sele)
+    objects = pm.get_object_list(sele)
     assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
 
     X = []
@@ -1043,25 +1028,27 @@ def calc_univariate_hca(
                 continue
             coords1 = obj_coords[obj1]
             coords2 = obj_coords[obj2]
-            fo1 = get_fo(coords1, coords2, radius=radius)
-            fo2 = get_fo(coords2, coords1, radius=radius)
-            ret = (fo1 + fo2) / 2
-            # case PairwiseFunction.RESIDUE_JACCARD:
-            #     ret = res_sim(
-            #         obj1,
-            #         obj2,
-            #         radius=radius,
-            #         method=ResidueSimilarityMethod.JACCARD,
-            #         seq_align=align,
-            #     )
-            # case PairwiseFunction.RESIDUE_OVERLAP:
-            #     ret = res_sim(
-            #         obj1,
-            #         obj2,
-            #         radius=radius,
-            #         method=ResidueSimilarityMethod.OVERLAP,
-            #         seq_align=align,
-            #     )
+            match overlap_function:
+                case PairwiseSimilarityFunction.FO_MEAN:
+                    fo1 = get_fo(coords1, coords2, radius=radius)
+                    fo2 = get_fo(coords2, coords1, radius=radius)
+                    ret = (fo1 + fo2) / 2
+                case PairwiseSimilarityFunction.JACCARD:
+                    ret = res_sim(
+                        obj1,
+                        obj2,
+                        radius=radius,
+                        method=ResidueSimilarityMethod.JACCARD,
+                        seq_align=seq_align_before_overlap,
+                    )
+                case PairwiseSimilarityFunction.OVERLAP:
+                    ret = res_sim(
+                        obj1,
+                        obj2,
+                        radius=radius,
+                        method=ResidueSimilarityMethod.OVERLAP,
+                        seq_align=seq_align_before_overlap,
+                    )
             X.append(1 - ret)
     dendro, medoids = plot_hca_base(
         X, objects, linkage_method,
@@ -1071,9 +1058,9 @@ def calc_univariate_hca(
         annotate=annotate,
         vmin=0,
         vmax=1,
-        enable_heatmap=enable_heatmap,
         rename_leafs=rename_leafs,
-        no_plot=no_plot
+        dendrogram_axis=dendrogram_axis,
+        heatmap_axis=heatmap_axis,
     )
     return X, objects, dendro, medoids
 
@@ -1093,7 +1080,7 @@ def calc_overlap_matrix(
     function: OverlapFunction = OverlapFunction.FO,
     radius: float = 2.0,
     annotate: bool = False,
-    rename_leafs = None,
+    rename_leafs: Optional[Dict[str, str]] = None,
     linkage_method: Optional[LinkageMethod] = None,
 ):
     """
@@ -1132,8 +1119,8 @@ def calc_overlap_matrix(
             cells. Text color (black/white) is automatically adjusted for 
             legibility based on the cell intensity.
         
-        rename_leafs: list[str]
-            lorem ipsum!!! TODO
+        rename_leafs:
+            A dictionary mapping PyMOL object names to user-friendly labels.
         
         linkage_method:
             Optional clustering algorithm.
@@ -1202,11 +1189,21 @@ def calc_overlap_matrix(
 
     fig, ax = plt.subplots(constrained_layout=True)
     
-    ax.set_yticks(range(len(objs_a)), np.array(objs_a)[idx_rows])
-    ax.set_xticks(range(len(objs_b)), np.array(objs_b)[idx_cols])
+    objs_a_lbl = []
+    for obj_a in objs_a:
+        substitution = rename_leafs.get(obj_a, obj_a)
+        objs_a_lbl.append(obj_a.replace(substitution))
+    
+    objs_b_lbl = []
+    for obj_b in objs_b:
+        substitution = rename_leafs.get(obj_b, obj_b)
+        objs_b_lbl.append(obj_b.replace(substitution))
+        
+    ax.set_yticks(range(len(objs_a)), np.array(objs_a_lbl)[idx_rows])
+    ax.set_xticks(range(len(objs_b)), np.array(objs_b_lbl)[idx_cols])
     
     ax.tick_params(axis="x", rotation=90)
-    if function == OverlapFunction.FO:
+    if function in [OverlapFunction.FO, OverlapFunction.FO_MEAN]:
         vmin = 0.0
         vmax = 1.0
     else:
@@ -1340,11 +1337,13 @@ def calc_fingerprints(
     sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = -1.0,
+    nclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = True,
-    plot_fingerprints: str = "",
+    fingerprints_axis: str = "",
     share_ylim: bool = True,
-    plot_hca: str = "",
+    dendrogram_axis: str = '',
+    heatmap_axis: str = '',
     quiet: bool = True,
 ):
     """
@@ -1381,8 +1380,8 @@ def calc_fingerprints(
     polymers = [f"{g}.protein" for g in groups]
     assert len(polymers) > 0, "Please review your selections"
     
-    ref_polymer = polymers[0]
     ref_sele = seles[0]
+    ref_polymer = polymers[0]
     site_sele = f"{ref_polymer} & ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
@@ -1434,44 +1433,57 @@ def calc_fingerprints(
             )
             fpt[lbl] = fpt.get(lbl, 0) + cnt
         fpts.append(fpt)
-    
-    if plot_fingerprints:
-        fig, axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
+
+    if fingerprints_axis:
+        if isinstance(fingerprints_axis, (str, Path)):
+            fig, fpt_axs = plt.subplots(nrows=len(seles))
+
+        elif isinstance(fingerprints_axis, axes.Axes):
+            fpt_axs = []
+            height = 1/len(fpt)
+            for i, _ in enumerate(sele):
+                ax = fingerprints_axis.inset_axes([0, (i+1)*height], 1, height)
+                fpt_axs.append(ax)
+    else:
+        fig, fpt_axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
         fig.supylabel('Atom Counts')
-        if not isinstance(axs, (np.ndarray, list)):
-            axs = [axs]
-        if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
-            raise ValueError(
-                "All fingerprints must have the same length. "
-                "Do you have incomplete structures?"
-            )
+    
+    if not isinstance(fpt_axs, (np.ndarray, list)):
+        fpt_axs = [fpt_axs]
         
-        max_val = 0
-        for ix, (ax, fpt, sele) in enumerate(zip(axs, fpts, seles)):
-            labels = ["%s%s %s_%s" % k for k in fpt]
-            if sharex and ix == 0:
-                shared_labels = labels
-            elif sharex and ix + 1 == len(seles):
-                labels = shared_labels
-            arange = np.arange(len(fpt))
-            max_val = max(max(fpt.values() or 0), max_val)
-            ax.bar(arange, fpt.values())
-            ax.set_title(sele)
-            ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-            if not sharex or sharex and ix + 1 == len(seles):
-                ax.set_xticks(arange, labels=labels, rotation=90)
-                ax.locator_params(axis="x", tight=True, nbins=nbins)
-                for label in ax.xaxis.get_majorticklabels():
-                    label.set_verticalalignment("top")
-        if share_ylim:
-            for ax in axs:
-                ax.set_ylim(0, max_val * 1.05)
-        
-        if isinstance(plot_fingerprints, (str, Path)):
-            fig.savefig(plot_fingerprints, dpi=300)
-            if not quiet:
-                print(f"Fingerprint figure saved to {plot_fingerprints}")
-        
+    if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
+        raise ValueError(
+            "All fingerprints must have the same length. "
+            "Do you have incomplete structures?"
+        )
+    
+    max_val = 0
+    for ix, (ax, fpt, sele) in enumerate(zip(fpt_axs, fpts, seles)):
+        labels = ["%s%s %s_%s" % k for k in fpt]
+        if sharex and ix == 0:
+            shared_labels = labels
+        elif sharex and ix + 1 == len(seles):
+            labels = shared_labels
+        arange = np.arange(len(fpt))
+        max_val = max(max(fpt.values() or 0), max_val)
+        ax.bar(arange, fpt.values())
+        ax.set_title(sele)
+        ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
+        if not sharex or sharex and ix + 1 == len(seles):
+            ax.set_xticks(arange, labels=labels, rotation=90)
+            ax.locator_params(axis="x", tight=True, nbins=nbins)
+            for label in ax.xaxis.get_majorticklabels():
+                label.set_verticalalignment("top")
+    if share_ylim:
+        for ax in fpt_axs:
+            ax.set_ylim(0, max_val * 1.05)
+    
+    if fingerprints_axis:
+        fig = fpt_axs[0].get_figure(True)
+        fig.set_layout_engine('compressed')
+        if isinstance(fingerprints_axis, (str, Path)):
+            fig.savefig(str(fingerprints_axis))
+
     corrs = []
     labels = []
     for i1, (fp1, sele1) in enumerate(zip(fpts, seles)):
@@ -1485,30 +1497,21 @@ def calc_fingerprints(
             corrs.append(1 - corr)
             if not quiet:
                 print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
+
     
-    dendro, medoids = None, None
-    if plot_hca:
-        fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=True)
-        assert len(fpts) > 1, "Clustering requires multiple fingerprints, please add more selections."
-        
-        dendro, medoids = plot_hca_base(
-            corrs,
-            labels,
-            linkage_method=linkage_method,
-            color_threshold=color_threshold,
-            only_medoids=only_medoids,
-            annotate=annotate,
-            axis=ax,
-            vmin=0,
-            vmax=2,
-        )
-        for label in ax.xaxis.get_majorticklabels():
-            label.set_horizontalalignment("right")
-        if isinstance(plot_hca, (str, Path)):
-            fig.savefig(plot_hca, dpi=300)
-            if not quiet:
-                print(f"Clusters figure saved to {plot_hca}")
-    
+    dendro, medoids = plot_hca_base(
+        corrs,
+        labels,
+        linkage_method=linkage_method,
+        color_threshold=color_threshold,
+        nclusters=nclusters,
+        only_medoids=only_medoids,
+        annotate=annotate,
+        vmin=0,
+        vmax=2,
+        dendrogram_axis=dendrogram_axis,
+        heatmap_axis=heatmap_axis
+    )
     return fpts, corrs, dendro, medoids
 
 
@@ -1541,8 +1544,8 @@ def res_sim(
         res_sim 8DSU.D_001*, 6XHM.D_001*
         res_sim 8DSU.CS_*, 6XHM.CS_*
     """
-    group1 = pm.get_property("Group", f"first {hs1}")  # FIXME it doesn't works with arbitrary objects
-    group2 = pm.get_property("Group", f"first {hs2}")
+    group1 = pm.get_property("Group", hs1)  # FIXME it doesn't works with arbitrary objects
+    group2 = pm.get_property("Group", hs2)
 
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
     sel2 = f"{group2}.protein within {radius} from ({hs2})"
@@ -1589,13 +1592,6 @@ def res_sim(
     if not quiet:
         print(f"{method} similarity: {ret:.2}")
     return ret
-
-
-class PairwiseFunction(StrEnum):
-    HO = "ho"
-    RESIDUE_JACCARD = "residue_jaccard"
-    RESIDUE_OVERLAP = "residue_overlap"
-
 
 
 class PrioritizationType(StrEnum):
@@ -1654,17 +1650,17 @@ class DistanceMethod(StrEnum):
 
 @new_command
 def calc_multivariate_hca(
-    exprs: Selection,
+    sele: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = -1.0,
+    nclusters: int = -1.0,
     only_medoids: bool = False,
     annotate: bool = False,
     plot: str = None,
     dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
-    enable_heatmap: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
-    no_plot: bool = False,
-    nclusters: int = -1.0,
+    dendrogram_axis: str = '',
+    heatmap_axis: str = '',
 ):
     """
     DESCRIPTION
@@ -1717,7 +1713,7 @@ def calc_multivariate_hca(
         plot_multivariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
         plot_multivariate_hca *.CS.*
     """
-    object_list = pm.get_object_list(exprs)
+    object_list = pm.get_object_list(sele)
     assert object_list is not None and len(object_list) >= 2, "At least two hotspots are required for comparison."
     assert len(set(pm.get_property("Type", o) for o in object_list)) == 1, "Only hotspots or only consensus sites are supported in the HCA."
 
@@ -1751,24 +1747,17 @@ def calc_multivariate_hca(
     X = distance.pdist(p, dist_method)
     dendro, medoids = plot_hca_base(
         X,
-        labels,
-        linkage_method,
-        only_medoids,
-        annotate,
-        plot,
-        enable_heatmap=enable_heatmap,
-        rename_leafs=rename_leafs,
-        nclusters=nclusters,
+        labels=labels,
+        linkage_method=linkage_method,
         color_threshold=color_threshold,
-        no_plot=no_plot,
+        nclusters=nclusters,
+        only_medoids=only_medoids,
+        annotate=annotate,
+        rename_leafs=rename_leafs,
+        heatmap_axis=heatmap_axis,
+        dendrogram_axis=dendrogram_axis,
     )
     return X, object_list, dendro, medoids
-
-
-class OverlapFunction(StrEnum):
-    FO = "fo"
-    DC = "dc"
-    DCE = "dce"
 
 
 @new_command
@@ -2399,7 +2388,7 @@ class HcaWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.univariateFunctionCombo = QComboBox()
-        self.univariateFunctionCombo.addItems([e.value for e in PairwiseFunction])
+        self.univariateFunctionCombo.addItems([e.value for e in PairwiseSimilarityFunction])
         boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
@@ -2476,7 +2465,7 @@ class HcaWidget(QWidget):
         enable_heatmap = self.enableHeatmapCheck.isChecked()
 
         calc_multivariate_hca(
-            exprs=sele,
+            sele=sele,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
             only_medoids=only_medoids,
@@ -2488,6 +2477,7 @@ class HcaWidget(QWidget):
     
     def plot_univariate_hca(self):
         sele = self.hotspotSeleLine.text()
+        overlap_function = self.univariateFunctionCombo.currentText()
         radius = self.radiusSpin.value()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
@@ -2498,6 +2488,7 @@ class HcaWidget(QWidget):
         calc_univariate_hca(
             sele=sele,
             radius=radius,
+            overlap_function=overlap_function,
             annotate=annotate,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
@@ -3045,7 +3036,7 @@ class FingerprintWidget(QWidget):
             site,
             site_radius,
             contact_radius=contact_radius,
-            plot_fingerprints=plot_fingerprints,
+            fingerprints_axis=plot_fingerprints,
             plot_hca=plot_hca,
             seq_align_omega=seq_align_omega,
             omega_conservation=omega_conservation,

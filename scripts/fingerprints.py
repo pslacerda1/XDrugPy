@@ -49,7 +49,7 @@ calc_fingerprints(
     # How far from residues to look for probes.
     contact_radius=4.0,
     # Do plot fingerprints.
-    plot_fingerprints=True,
+    fingerprints_axis=True,
     # Fingerprints will have 40 labels.
     nbins=40,
     # Fingerprints will share the the x axis and

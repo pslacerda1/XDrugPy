@@ -9,7 +9,7 @@ from pymol import cmd as pm
 chdir(expanduser('~/Desktop/DHODH/'))
 data = [
     (
-        '229','229.pdb',
+        '229', '229.pdb',
         'LbDHODH_TAP229_refine_60.pdb',
         'TXX', 131, 'B'
     ),

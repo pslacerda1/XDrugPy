@@ -3,6 +3,7 @@ import os
 import subprocess
 import signal
 import sys
+from pathlib import Path
 import scipy.cluster.hierarchy as sch
 from collections import defaultdict
 from shutil import rmtree
@@ -127,31 +128,14 @@ def plot_hca_base(
     linkage_method,
     only_medoids,
     annotate,
-    axis=None,
     vmin=None,
     vmax=None,
-    enable_heatmap=False,
     rename_leafs=None,
     nclusters=-1,
     color_threshold=-1.0,
-    no_plot=False
+    dendrogram_axis=None,
+    heatmap_axis=None,
 ):
-    if isinstance(axis, axes.Axes):
-        fig = axis.get_figure()
-        fig.clear()
-    elif not no_plot:
-        fig, ax = plt.subplots(constrained_layout=True)
-        ax.remove()
-        
-    ax_dend_top = None
-    if enable_heatmap:
-        gs = fig.add_gridspec(2, 1, height_ratios=[0.5, 1], wspace=0.01, hspace=0.01)
-        ax_dend_top = fig.add_subplot(gs[0])
-        ax_heat = fig.add_subplot(gs[1])
-    elif not no_plot:
-        gs = fig.add_gridspec(1, 1, height_ratios=[1], wspace=0.01, hspace=0.01)
-        ax_dend_top = fig.add_subplot(gs[0])
-    
     for leaf_node, new_label in (rename_leafs or {}).items():
         idx = labels.index(leaf_node)
         labels[idx] = new_label
@@ -160,37 +144,53 @@ def plot_hca_base(
     Z = linkage(dists, method=linkage_method)
     if nclusters != -1.0:
         # Calculate the distance threshold that corresponds to the desired number of clusters
-        Z = linkage(dists, method=linkage_method)
         color_threshold = threshold_for_k_clusters(Z, nclusters)
+
+    if dendrogram_axis:
+        if isinstance(dendrogram_axis, str):
+            _, dendro_ax = plt.subplots()
+
+        elif isinstance(dendrogram_axis, axes.Axes):
+            dendro_ax = dendrogram_axis
+    else:
+        dendro_ax = None
+
     dendro = sch.dendrogram(
         Z,
         labels=labels,
-        orientation="top",
         color_threshold=color_threshold,
         distance_sort=True,
         leaf_rotation=90,
-        ax=ax_dend_top,
-        no_labels=enable_heatmap,
-        no_plot=no_plot,
+        ax=dendro_ax,
+        no_plot=not dendro_ax
     )
-    if not no_plot and color_threshold > 0:
-        ax_dend_top.axhline(color_threshold, color="gray", ls="--")
-        ax_dend_top.set_ylim(bottom=-0.005)
+    if dendro_ax and color_threshold > 0:
+        dendro_ax.axhline(color_threshold, color="gray", ls="--")
+        dendro_ax.set_ylim(bottom=-0.005)
 
     dists = distance.squareform(dists)
     X = dists
     X = X[dendro["leaves"], :]
     X = X[:, dendro["leaves"]]
 
-    if enable_heatmap:
-        ax_heat.set_xticks(range(len(dendro["ivl"])), dendro["ivl"])
-        ax_heat.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
-        ax_heat.tick_params(axis="x", rotation=90)
-        ax_heat.yaxis.tick_right()
-        image = ax_heat.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
+    if heatmap_axis:
+        if isinstance(heatmap_axis, (str, Path)):
+            _, heat_ax = plt.subplots()
+
+        elif isinstance(heatmap_axis, axes.Axes):
+            heat_ax = heatmap_axis
+    else:
+        heat_ax = None
+    
+    if heat_ax:
+        heat_ax.set_xticks(range(len(dendro["ivl"])), dendro["ivl"])
+        heat_ax.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
+        heat_ax.tick_params(axis="x", rotation=90)
+        heat_ax.yaxis.tick_right()
+        image = heat_ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
         
         if not annotate:
-            fig.colorbar(image, ax=ax_heat, shrink=0.8)
+            heat_ax.get_figure().colorbar(image, ax=heat_ax, shrink=0.8)
         if annotate:
             xmin = vmin or X.min()
             xmax = vmax or X.max()
@@ -202,8 +202,8 @@ def plot_hca_base(
                         color = "black"
                     else:
                         color = "white"
-                    label = f"{y:.2f}"
-                    ax_heat.text(i2, i1, label, color=color, ha="center", va="center")
+                    ticklabel = f"{y:.2f}"
+                    heat_ax.text(i2, i1, ticklabel, color=color, ha="center", va="center")
 
     # Calcular a soma das distâncias para cada ponto do cluster
     cl_d_sums = defaultdict(float)
@@ -249,24 +249,49 @@ def plot_hca_base(
                 if color not in medoids:
                     medoids[color] = set()
                 medoids[color].add(leaf_label1)
-    if not no_plot:
-        medoids_labels = set(itertools.chain.from_iterable(medoids.values()))
-        label_to_color = dict(zip(dendro["ivl"], dendro["leaves_color_list"]))
-        if enable_heatmap:
-            ticklabels = [*ax_heat.get_xticklabels(), *ax_heat.get_yticklabels()]
-        else:
-            ticklabels = ax_dend_top.get_xticklabels()
 
-        for label in ticklabels:
-            color = label_to_color[label.get_text()]
-            label.set_color(color)
-            if color in medoids and label.get_text() in medoids[color]:
-                label.set_fontstyle("italic")
-                label.set_fontweight('bold')
-        
-            if only_medoids and color_threshold > 0.0:
-                if label.get_text() not in medoids_labels:
-                    label.set_visible(False)
+
+
+    ticklabels = []
+    if dendro_ax:
+        ticklabels = [
+            *ticklabels,
+            *dendro_ax.get_xticklabels()
+        ]
+    if heat_ax:
+        ticklabels = [
+            *ticklabels,
+            *heat_ax.get_xticklabels(),
+            *heat_ax.get_yticklabels()
+        ]
+
+    medoids_labels = set(itertools.chain.from_iterable(medoids.values()))
+    label_to_color = dict(zip(dendro["ivl"], dendro["leaves_color_list"]))
+    for ticklabel in ticklabels:
+        color = label_to_color[ticklabel.get_text()]
+        ticklabel.set_color(color)
+        if color in medoids and ticklabel.get_text() in medoids[color]:
+            ticklabel.set_fontstyle("italic")
+            ticklabel.set_fontweight('bold')
+    
+        if only_medoids and color_threshold > 0.0:
+            if ticklabel.get_text() not in medoids_labels:
+                ticklabel.set_visible(False)
+
+    if dendrogram_axis:
+        fig = dendro_ax.get_figure(True)
+        fig.set_layout_engine('compressed')
+        if isinstance(dendrogram_axis, str):
+            fig.savefig(dendrogram_axis)
+        elif isinstance(dendro_ax, axes.Axes):
+            fig.show()
+    
+    if heatmap_axis:
+        fig = heat_ax.get_figure(True)
+        fig.set_layout_engine('compressed')
+        if isinstance(heatmap_axis, (str, Path)):
+            fig.savefig(str(heatmap_axis))
+    
     return dendro, medoids
 
 
@@ -292,25 +317,25 @@ def clustal_omega(seles, conservation, titles=None):
         )
     
     proc = subprocess.Popen(
-        "clustalo -i - --outfmt=clustal",
+        "clustalo -i - --outfmt=clu --wrap=99999",
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         shell=True,
         text=True,
     )
-    output, err = proc.communicate(input_fasta)
+    output_fasta, err = proc.communicate(input_fasta)
     if err:
         raise Exception(f"Clustal Omega error: {err}")
     
     # joining multiline sequences
-    output = output.split('\n')[3:]
+    output = output_fasta.split('\n')[3:]
     sequences = {}
     while output:
         line = output.pop(0)
         if line.strip() == "":
             continue
         if line[0] != ' ':
-            name, seq = line.split()
+            name, seq = line.split(maxsplit=1)
         else:
             name = 'CLUSTALO'
             seq = line[-len(seq):]
@@ -322,7 +347,7 @@ def clustal_omega(seles, conservation, titles=None):
     omega = {}
     for (title, seq), sele in zip(sequences.items(), seles):
         local_ix = 0
-        atoms = [a for a in pm.get_model(f"%{sele} & present & guide & polymer").atom]
+        atoms = [a for a in pm.get_model(f"({sele}) & present & guide & polymer").atom]
         for aln_ix in range(len_aln):
             seq_char = seq[aln_ix]
             clu_char = clu[aln_ix]
@@ -335,7 +360,7 @@ def clustal_omega(seles, conservation, titles=None):
                     omega[title].append(Residue(
                         at.model, at.index, at.resi, at.chain, at.resn, seq_char, clu_char
                     ))
-                local_ix += 1
+                    local_ix += 1
     
     omega = {
         replaced_dict[title]: omega[title]

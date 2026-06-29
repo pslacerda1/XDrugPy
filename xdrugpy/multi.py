@@ -1,12 +1,15 @@
 import time
 import logging
+from pathlib import Path
 from pymol import cmd as pm
 import numpy as np
 from collections import Counter
 from strenum import StrEnum
 import matplotlib.pyplot as plt
+import matplotlib.axes
 from pymol import CmdException
-from pymol_new_command import new_command
+from pymol.exporting import _resn_to_aa as RESN_TO_AA
+from pymol_new_command import new_command, Any
 
 from .utils import (
     PyMOLComboObjectBox,
@@ -42,7 +45,7 @@ def fetch_similar(
     check_ligands: bool = False,
     check_peptides: bool = False,
     site_sele: str = None,
-    site_margin: float = 4.0,
+    site_radius: float = 4.0,
     max_peptide_length: int = 25,
     align_method: AligMethod = AligMethod.CEALIGN,
     ignore_ligands: str = PROSTHETIC_GROUPS,
@@ -129,7 +132,7 @@ def fetch_similar(
             if check_ligands:
                 # Ligands were required to be explicitly checked
                 mols = '+'.join(ignore_ligands.split())
-                sele = f"(%{obj} AND NOT (polymer OR resn {mols})) NEAR_TO {site_margin} OF ({site_sele})"
+                sele = f"(%{obj} AND NOT (polymer OR resn {mols})) NEAR_TO {site_radius} OF ({site_sele})"
                 for at in pm.get_model(sele).atom:
                     ligands.add((at.resn, at.chain, at.resi))
             
@@ -137,7 +140,7 @@ def fetch_similar(
                 # Peptides of length <=25 are deemed ligands
                 this_peptides = set()
                 pm.iterate(
-                    f"(%{obj} & polymer) NEAR_TO {site_margin} OF ({site_sele})",
+                    f"(%{obj} & polymer) NEAR_TO {site_radius} OF ({site_sele})",
                     "this_peptides.add(chain)",
                     space=locals(),
                 )
@@ -176,14 +179,15 @@ def fetch_similar(
 
 @new_command
 def rmsf(
-    prot_expr: str,
+    selection: str,
+    reference: str,
     ref_site: str = "*",
     site_radius: float = 4.0,
     align_method: AligMethod = AligMethod.CEALIGN,
     qualifier: str = RMSF_DEFAULT_QUALIFIER,
     omega_conservation: str = "*:.",
     pretty: bool = True,
-    axis: str = "",
+    axis: Any = '',
     quiet: bool = False,
 ):
     """
@@ -197,7 +201,7 @@ def rmsf(
 
     OPTIONS
         prot_expr:
-            An expression to select the structures to calculate the RMSF.
+            An expression selecting structures to calculate the RMSF.
         ref_site:
             A site expression to focus the RMSF calculation.
         site_radius:
@@ -208,36 +212,34 @@ def rmsf(
             If True, it will show the RMSF in a pretty way.
     """
     frames = []
-    for obj in pm.get_object_list(prot_expr):
+    for obj in pm.get_object_list(selection):
             frames.append(obj)
     
-    f0 = frames[0]
-    site_sele = f"{f0} & polymer & ({f0} within {site_radius} of ({ref_site}))"
-    if not quiet:
-        print(f'Reference selection: "{site_sele}"')
+    site_sele = f"{reference} & polymer & ({reference} within {site_radius} of ({ref_site}))"
     site_resis = []
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     if not quiet:
-        print(f"Aligning structures to {f0} with method {align_method}...")
+        print(f"Aligning structures to {reference} with method {align_method}...")
     try:
         pm.extra_fit(
-            selection=' '.join(frames[1:]),
+            selection=' '.join(frames),
             reference=site_sele,
             method=str(align_method),
             quiet=False
         )
     except (Exception, CmdException) as exc:
-        raise Exception(f"Failed to align objects to {f0}.") from exc
+        raise Exception(f"Failed to align objects to {reference}.") from exc
 
-    mapping = clustal_omega(frames, omega_conservation)
-    f0_map = mapping[f0]
+    mapping = clustal_omega([reference, *frames], omega_conservation)
+    f0_map = mapping[reference]
     X = {}
     for frame, map in zip(frames, mapping.values()):
         for ref_res, res in zip(f0_map, map):
-            if (f0, ref_res.index) not in site_resis:
+            if (reference, ref_res.index) not in site_resis:
                 continue
-            lbl = (ref_res.resn, ref_res.conservation, ref_res.resi, ref_res.chain)
+            resn = RESN_TO_AA.get(ref_res.resn, ref_res.resn)
+            lbl = (resn, ref_res.conservation, ref_res.resi, ref_res.chain)
             coords = pm.get_coords(
                 f"({qualifier}) & (byres %{frame} & index {res.index})"
             )
@@ -254,25 +256,39 @@ def rmsf(
     # Calculate RMSF
     RMSF = []
     LABELS = []
-    pm.alter(f"{f0} & polymer", "p.rmsf=0.0")
+    pm.alter(f"{reference} & polymer", "p.rmsf=0.0")
     for resi, coords in X.items():
         diff = coords - np.mean(coords, axis=0)
         squared_dist = np.sum(diff**2, axis=1)
         rmsf = np.sqrt(np.mean(squared_dist, axis=0))
         label = "%s%s %s:%s" % resi
-        pm.alter(f"{f0} & i. {resi[2]} & c. {resi[3]}", f"p.rmsf={rmsf}")
+        pm.alter(
+            f"{reference} & i. {resi[2]} & c. {resi[3]}",
+            f"p.rmsf={rmsf}"
+        )
         LABELS.append(label)
         RMSF.append(rmsf)
 
     # Show data
     if pretty:
         pm.hide("everything", site_sele)
-        pm.show_as("line", site_sele)
+        pm.show("line", site_sele)
         pm.spectrum("p.rmsf", "rainbow", site_sele)
-
-    plt.bar(LABELS, RMSF)
-    plt.set_ylabel("RMSF")
-    plt.tick_params(axis="x", rotation=90)
+    
+    if axis:
+        if isinstance(axis, (str, Path)):
+            _, ax = plt.subplots(ncols=1, nrows=1)
+        if isinstance(axis, matplotlib.axes.Axes):
+            ax = axis
+        
+        ax.bar(LABELS, RMSF)
+        ax.set_ylabel("RMSF")
+        ax.tick_params(axis="x", rotation=90)
+        
+        if isinstance(axis, (str, Path)):
+            fig = ax.get_figure(True)
+            fig.set_layout_engine('compressed')
+            fig.savefig(str(axis))
 
     return RMSF, LABELS
 
@@ -339,13 +355,13 @@ class FechSimilarWidget(QWidget):
         self.siteLine = QLineEdit("")
         layout.addRow("Ligands site:", self.siteLine)
 
-        self.siteMarginSpin = QDoubleSpinBox()
-        self.siteMarginSpin.setMinimum(1.0)
-        self.siteMarginSpin.setMaximum(10.0)
-        self.siteMarginSpin.setValue(4.0)
-        self.siteMarginSpin.setSingleStep(0.5)
-        self.siteMarginSpin.setDecimals(1)
-        layout.addRow("Site margin:", self.siteMarginSpin)
+        self.siteRadiusSpin = QDoubleSpinBox()
+        self.siteRadiusSpin.setMinimum(1.0)
+        self.siteRadiusSpin.setMaximum(10.0)
+        self.siteRadiusSpin.setValue(4.0)
+        self.siteRadiusSpin.setSingleStep(0.5)
+        self.siteRadiusSpin.setDecimals(1)
+        layout.addRow("Site radius:", self.siteRadiusSpin)
 
         self.ignoreLigandsLine = QLineEdit(PROSTHETIC_GROUPS)
         layout.addRow("Ignore ligands:", self.ignoreLigandsLine)
@@ -376,7 +392,7 @@ class FechSimilarWidget(QWidget):
             check_ligands=self.checkLigandsCheck.isChecked(),
             check_peptides=self.checkPeptidesCheck.isChecked(),
             site_sele=self.siteLine.text().strip(),
-            site_margin=self.siteMarginSpin.value(),
+            site_radius=self.siteRadiusSpin.value(),
             ignore_ligands=self.ignoreLigandsLine.text().strip(),
             align_method=AligMethod(self.alignMethodCombo.currentText()),
             max_results=self.maxResultsSpin.value(),
@@ -443,7 +459,7 @@ class RmsfWidget(QWidget):
         self.siteRadiusSpin.setValue(3.0)
         self.siteRadiusSpin.setSingleStep(0.5)
         self.siteRadiusSpin.setDecimals(1)
-        layout.addRow("Site margin:", self.siteRadiusSpin)
+        layout.addRow("Site radius:", self.siteRadiusSpin)
 
         self.alignMethodCombo = QComboBox()
         self.alignMethodCombo.addItems(list(map(str, AligMethod)))
