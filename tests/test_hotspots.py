@@ -156,6 +156,11 @@ def test_load():
     assert len(hotspots) == 96
     assert hotspots[0].Class == 'DL'
 
-    ftmap = load_ftmap(f"{pkg_data}/1dqa_atlas.pdb", "1dqa", deep_search=True)
+    ftmap = load_ftmap(
+        f"{pkg_data}/1dqa_atlas.pdb",
+        "1dqa",
+        clash_threshold=0.15,
+        deep_search=True
+    )
     assert len(ftmap.hotspots) == 506
 

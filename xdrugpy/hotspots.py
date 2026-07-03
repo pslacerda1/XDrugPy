@@ -80,7 +80,7 @@ def parse_pdb_string(group: str, pdbstr: str) -> Tuple[List[Cluster], List[Hotsp
 
     clusters = []
     hotspots = []
-    remark_re = re.compile(r'([a-zA-Z0-9_]+)=([a-zA-Z0-9.]+)')
+    remark_re = re.compile(r'([a-zA-Z0-9_]+)=([a-zA-Z0-9._]+)')
     for line in pdbstr.split('\n'):
         
         if not line.startswith('REMARK'):
