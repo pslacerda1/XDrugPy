@@ -44,7 +44,7 @@ def test_rmsf():
     rmsf(
         selection="*.protein",
         reference="1dqa.protein",
-        ref_site="1dqa.BS.00",
+        ref_site="1dqa.CS.0",
         site_radius=5.0,
         axis=img_gen,
     )

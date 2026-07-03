@@ -1,22 +1,23 @@
 from __future__ import annotations
 
 import os.path
-import tempfile
+import re
 from types import SimpleNamespace
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional, Literal, List, Dict, Tuple
-from itertools import combinations
 from functools import lru_cache
+import subprocess
 
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
 from scipy.spatial import distance_matrix, distance, cKDTree
 from scipy.cluster.hierarchy import linkage, leaves_list
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, axes
 from strenum import StrEnum
 import networkx as nx
+import pymol
 from pymol import cmd as pm
 from pymol.exporting import _resn_to_aa as RESN_TO_AA
 from pymol_new_command import new_command
@@ -25,14 +26,10 @@ from .utils import (
     Selection,
     plot_hca_base,
     clustal_omega,
-    Residue
+    Residue,
+    count_molecules,
+    AligMethod
 )
-
-@dataclass
-class Cluster:
-    selection: str
-    coords: Any = field(repr=False, hash=False)
-    ST: int
 
 
 @dataclass
@@ -44,545 +41,165 @@ class ECluster:
     ST: int
 
 
-# @lru_cache(1024)
 def get_coords(sel, state=1):
     return pm.get_coords(sel, state)
 
+# def process_eclusters(group, eclusters):
+#     for acs in eclusters:
+#         new_name = f"{group}.ACS.{acs.probe_type}.{acs.idx:02}"
+#         pm.set_name(acs.selection, new_name)
+#         acs.selection = new_name
+#         pm.group(group, new_name)
 
-def get_clusters():
-    clusters = []
-    eclusters = []
-    for obj in pm.get_object_list():
-        if obj.startswith(f"crosscluster."):
-            _, _, s, _ = obj.split(".", maxsplit=4)
-            pm.remove(f"%{obj} & elem H")
-            coords = get_coords(obj)
-            clusters.append(
-                Cluster(
-                    selection=obj,
-                    coords=coords,
-                    ST=int(s),
-                )
-            )
-        elif obj.startswith("consensus."):
-            _, _, s = obj.split(".", maxsplit=3)
-            pm.remove(f"%{obj} & elem H")
-            coords = get_coords(obj)
-            clusters.append(
-                Cluster(
-                    selection=obj,
-                    coords=coords,
-                    ST=int(s),
-                )
-            )
-        elif obj.startswith("clust."):
-            _, idx, s, probe_type = obj.split(".", maxsplit=4)
-            coords = get_coords(obj)
-            eclusters.append(
-                ECluster(
-                    selection=obj,
-                    probe_type=probe_type,
-                    coords=coords,
-                    idx=int(idx),
-                    ST=int(s),
-                )
-            )
-    return clusters, eclusters
+#         coords = pm.get_coordset(new_name)
+#         md = distance_matrix(coords, coords).max()
+
+#         set_properties(
+#             acs,
+#             new_name,
+#             {
+#                 "Type": "ACS",
+#                 "Group": group,
+#                 "Selection": new_name,
+#                 "Class": acs.probe_type,
+#                 "ST": acs.ST,
+#                 "MD": round(md, 2),
+#             },
+#         )
+#     pm.delete("clust.*")
 
 
-def set_properties(obj, obj_name, properties):
+def set_properties(obj_name, properties):
     for prop, value in properties.items():
         pm.set_property(prop, value, obj_name)
         pm.set_atom_property(prop, value, obj_name)
-        setattr(obj, prop, value)
 
 
-def find_occupied_pockets(
-        group: str,
-        pocket_residues: Dict[str, List[Any]],
-        clusters: List[Cluster],
-) -> List[Tuple[str, List[Cluster]]]:
-    pockets = {}
-    for key, pocket in pocket_residues.items():
-        p_sele = ''
-        for resi, chain, _ in pocket:
-            p_sele += f'(chain {chain} & resi {resi}) | '
-        p_sele += 'none'
-        p_sele = f'{group}.protein & ({p_sele})'
+def parse_pdb_string(group: str, pdbstr: str) -> Tuple[List[Cluster], List[Hotspot]]:
+    pm.read_pdbstr(pdbstr, group)
 
-        levels = []
-        for radius in [4, 8]:
-            hs_sele = f"{group}.CS.* near_to {radius} of ({p_sele})"
-            sele_cnt = 0
-            while True:
-                new_sele_cnt = pm.count_atoms(hs_sele)
-                if new_sele_cnt != sele_cnt:
-                    sele_cnt = new_sele_cnt
-                else:
-                    break
-                levels.append(hs_sele)
-                hs_sele = f"{group}.CS.* within {radius} of ({hs_sele})"
+    clusters = []
+    hotspots = []
+    remark_re = re.compile(r'([a-zA-Z0-9_]+)=([a-zA-Z0-9.]+)')
+    for line in pdbstr.split('\n'):
         
-        for hs_sele in levels:
-            hs_objs = pm.get_object_list(hs_sele)
-
-            if not hs_objs:
-                continue
-
-            pocket_clusters = [c for c in clusters if c.selection in hs_objs]
-            hs_sele = ' | '.join([c.selection for c in pocket_clusters])
-            pockets[hs_sele] = pocket_clusters
-    return pockets
-
-
-def find_pykvf_pockets(protein):
-    import pyKVFinder
-    with tempfile.TemporaryDirectory() as tempdir:
-        protein_pdb = f"{tempdir}/protein.pdb"
-        pm.save(protein_pdb, selection=protein)
-        atomic = pyKVFinder.read_pdb(protein_pdb)
+        if not line.startswith('REMARK'):
+            continue
         
-    vertices = pyKVFinder.get_vertices(atomic)
-    _, cavities = pyKVFinder.detect(atomic, vertices)
-    residues = pyKVFinder.constitutional(cavities, atomic, vertices)
-    return residues
+        d = {}
+        for m in remark_re.finditer(line[7:]):
+            k = m.group(1)
+            v = m.group(2)
+            d[k] = v
+        if not d:
+            continue
 
-def process_clusters(group, clusters):
-    for idx, cs in enumerate(clusters):
-        new_name = f"{group}.CS.{idx:02}"
-        pm.set_name(cs.selection, new_name)
-        cs.selection = new_name
-        pm.group(group, new_name)
-        set_properties(
-            cs,
-            new_name,
-            {
-                "Type": "CS",
-                "Group": group,
-                "Selection": new_name,
-                "ST": cs.ST,
-            },
+        if '.CS.' in d['Object']:
+            cs = Cluster(
+                Group=d['Group'],
+                Object=d['Object'],
+                Coords=pm.get_coordset(d['Object']),
+                S=int(d['S']),
+            )
+            cs.save_into_properties()
+            clusters.append(cs)
+
+        elif not d['Object'].endswith('.protein'):
+            hs = Hotspot(
+                Group=d['Group'],
+                Object=d['Object'],
+                Coords=pm.get_coordset(d['Object']),
+                Class=d['Class'],
+                ST=int(d['ST']),
+                S0=int(d['S0']),
+                S1=int(d['S1']),
+                SZ=int(d['SZ']),
+                CD=float(d['CD']),
+                MD=float(d['MD']),
+                Length=int(d['Len']),
+            )
+            hs.save_into_properties()
+            hotspots.append(hs)
+    return clusters, hotspots
+
+
+@dataclass
+class Cluster:
+    Group: str
+    Object: str
+    S: int
+
+    Coords: Any = field(repr=False, hash=False)
+    Type: Literal["CS"] =  field(default="CS", repr=False)
+
+    def save_into_properties(self):
+        d = asdict(self)
+        del d['Coords']
+        set_properties(self.Object, d)
+    
+    @classmethod
+    def from_object_name(cls, name: str) -> Cluster:
+        assert ".CS." in name
+        assert "CS" in pm.get_property("Type", name)
+        assert name == pm.get_property("Object", name)
+
+        cluster = Cluster(
+            Group=pm.get_property('Group', name),
+            Object=name,
+            S=pm.get_property('S', name),
+            Coords=pm.get_coordset(name),
         )
-    pm.delete("consensus.*")
-    pm.delete("crosscluster.*")
-
-
-def process_eclusters(group, eclusters):
-    for acs in eclusters:
-        new_name = f"{group}.ACS.{acs.probe_type}.{acs.idx:02}"
-        pm.set_name(acs.selection, new_name)
-        acs.selection = new_name
-        pm.group(group, new_name)
-
-        coords = pm.get_coordset(new_name)
-        md = distance_matrix(coords, coords).max()
-
-        set_properties(
-            acs,
-            new_name,
-            {
-                "Type": "ACS",
-                "Group": group,
-                "Selection": new_name,
-                "Class": acs.probe_type,
-                "ST": acs.ST,
-                "MD": round(md, 2),
-            },
-        )
-    pm.delete("clust.*")
+        return cluster
 
 
 @dataclass
 class Hotspot:
-    group: str
-    selection: str
-    clusters: List[Cluster] = field(repr=False, compare=False, hash=False)
-    cluster_list: str = field(repr=False, compare=True)
-
-    klass: Optional[Literal["D", "DS", "DL", "B", "BS", "BL"]]
+    Group: str
+    Object: str
+    
+    Class: Literal["D", "DS", "DL", "B", "BS", "BL", None]
     ST: int
     S0: int
     S1: int
     SZ: int
     CD: float
-    CD0: float
-    CD16: float
-    CD13: float
     MD: float
-    length: int
-    nComponents: int
-    type: Literal["HS"] =  field(default="HS", repr=False)
-    
-    def copy_into_properties(self):
+    Length: int
+
+    Coords: Any = field(repr=False, hash=False)
+    Type: Literal["HS"] =  field(default="HS", repr=False)
+
+    def save_into_properties(self):
         d = asdict(self)
-        del d['clusters'], d['type']
-        set_properties(
-            SimpleNamespace(),
-            self.selection,
-            {
-                **d,
-                'Group': self.group,
-                'Type': 'HS',
-                'Class': self.klass,
-                'Length': self.length,
-                'cluster_list': self.cluster_list,
-            }
-        )
-    
-    @staticmethod
-    def from_cluster_selections(
-        selections: List[str],
-        cd_to_anchor: bool=True,
-        max_collisions: float=0.10
-    ) -> Hotspot:
-        clusters = []
-        objs = pm.get_object_list(' | '.join(selections))
-        for obj in objs:
-            group = obj.split('.')[0]
-            assert obj.startswith(f"{group}.CS.")
-            clu = Cluster(
-                obj,
-                pm.get_coordset(obj),
-                count_molecules(obj)
-            )
-            pm.group(group, obj, action='add')
-            clusters.append(clu)
-        return Kozakov15BasedAlgorithm.from_clusters(group, clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-            
-    def show(self, plot_graph: bool=False):
-        group = self.group
-        base_name = f"{group}.diagnose"
-        pm.delete(f'{base_name}*')
+        del d['Coords']
+        set_properties(self.Object, d)
 
-        # create surface object
-        surf_sele = f"{group}.protein near_to 5 of ({self.cluster_list})"
-        surf_name = f"{base_name}.surf"
-        pm.create(surf_name, surf_sele)
-        pm.hide(selection=surf_name)
-        pm.show(representation="surface", selection=surf_name)
-        pm.set("transparency", 0.4, surf_name)
-
-        for ix, clu in enumerate(self.clusters):
-            clu = self.clusters[ix]
-            S = clu.ST
-            label_ps = pm.get_unused_name(f'{base_name}.label_ps_')
-            pm.pseudoatom(
-                label_ps,
-                selection=clu.selection,
-                label=f"{clu.selection}\nS={S}"
-            )
-            pm.set("float_label", 0, label_ps)
-
-            if ix != 0:
-                measure_name = pm.get_unused_name(f'{group}.diagnose_dist_')
-                pm.distance(
-                    measure_name,
-                    self.clusters[0].selection,
-                    self.clusters[ix].selection,
-                    mode=4
-                )
-                pm.group(group, base_name, action='add')
-            
-            if plot_graph:
-                for ix1, clu1 in enumerate(self.clusters):
-                    for ix2, clu2 in enumerate(self.clusters):
-                        if ix1 >= ix2:
-                            continue
-                        e = (clu1.selection, clu2.selection)
-                        if e not in self.graph.edges:
-                            measure_name = pm.get_unused_name(f'{group}.diagnose_graph_')
-                            pm.distance(measure_name, e[0], e[1], mode=4)
-                            pm.color('cyan', measure_name)
-
-
-@dataclass
-class Kozakov15BasedAlgorithm:
-
-    def __init__(self, group):
-        self.prot_xyz = pm.get_coordset(f'{group}.protein', copy=0)
-        self.tree = cKDTree(self.prot_xyz)
-    
-    @staticmethod
-    def from_clusters(group: str, clusters: List[Cluster], cd_to_anchor: bool=False, max_collisions: float=0.10) -> Hotspot:
-        coms = [pm.centerofmass(c.selection) for c in clusters]
-        cd = [distance.euclidean(coms[0], com) for com in coms]
-        cd0 = np.max(cd) if len(cd) > 0 else 0.0
-
-        if cd_to_anchor:
-
-            cd16 = [] 
-            coms16 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 16]
-            for com in coms:
-                min_d = 0.0
-                for com16 in coms16:
-                    d = distance.euclidean(com, com16)
-                    if min_d == 0.0 or d < min_d:
-                        min_d = d
-                cd16.append(min_d)
-        
-            cd13 = []
-            coms13 = [pm.centerofmass(c.selection) for c in clusters if c.ST >= 13]
-            for com in coms:
-                min_d = 0.0
-                for com13 in coms13:
-                    d = distance.euclidean(com, com13)
-                    if min_d == 0.0 or d < min_d:
-                        min_d = d
-                cd13.append(min_d)
-            
-            cd16 = np.max(cd16) if len(cd16) > 0 else 0.0
-            cd13 = np.max(cd13) if cd16 == 0.0 and len(cd13) > 0 else 0.0
-        else:
-            cd16 = 0.0
-            cd13 = 0.0
-
-        coords = np.concatenate([c.coords for c in clusters])
-        max_dist = distance_matrix(coords, coords).max()
-
-        selection = " ".join(c.selection for c in clusters)
+    @classmethod
+    def from_object_name(cls, name: str) -> Hotspot:
+        assert "HS" == pm.get_property("Type", name)
+        assert name == pm.get_property("Object", name)
         hs = Hotspot(
-            group=group,
-            selection=selection,
-            clusters=clusters,
-            cluster_list=selection,
-            klass=None,
-            ST=sum(c.ST for c in clusters),
-            S0=clusters[0].ST,
-            S1=clusters[1].ST if len(clusters) >= 2 else 0,
-            SZ=clusters[-1].ST,
-            CD0=cd0,
-            CD16=cd16,
-            CD13=cd13,
-            CD=0.0,
-            MD=max_dist,
-            length=len(clusters),
-            nComponents=-1,
+            Group=pm.get_property('Group', name),
+            Object=name,
+            Coords=pm.get_coordset(name),
+            Class=pm.get_property('Class', name),
+            ST=pm.get_property('ST', name),
+            S0=pm.get_property('S0', name),
+            S1=pm.get_property('S1', name),
+            SZ=pm.get_property('SZ', name),
+            CD=pm.get_property('CD', name),
+            MD=pm.get_property('MD', name),
+            Length=pm.get_property('Length', name),
         )
-        
-        s0 = hs.S0
-        if cd_to_anchor:
-            cd = (
-                cd16 if cd16 > 0 else
-                cd13 if cd13 > 0 else
-                cd0
-            )
-        else:
-            cd = cd0
-        hs.CD = cd
-        md = hs.MD
-
-        if s0 >= 16 and cd < 8 and md >= 10:
-            hs.klass = "D"
-        if s0 >= 16 and cd < 8 and 7 <= md < 10:
-            hs.klass = "DS"
-        if 13 <= s0 < 16 and cd < 8 and md >= 10:
-            hs.klass = "B"
-        if 13 <= s0 < 16 and cd < 8 and 7 <= md < 10:
-            hs.klass = "BS"
-        if 13 <= s0 < 16 and cd >= 8 and md >= 10:
-            hs.klass = "BL" 
-        if s0 >= 16 and cd >= 8 and md >= 10:
-            hs.klass = "DL"
-        
-        if hs.klass:
-            hs.nComponents = Kozakov15BasedAlgorithm.make_graph(group, clusters, max_collisions=max_collisions)
-            if hs.nComponents > 1:
-                hs.klass = None
         return hs
 
-    @staticmethod
-    def find_hotspots(
-        group: str,
-        clusters: List[Cluster],
-        cd_to_anchor: bool,
-        combinatory_search: bool,
-        allow_nested: bool,
-        max_collisions: float=0.10
-    ) -> List[Hotspot]:
-        
-        # filter out weak clusters
-        ix_ignore = next((i for i, c in enumerate(clusters) if c.ST<5), -1)
-        clusters = clusters[:ix_ignore]
 
-        # identify hotspots from pockets and consensus sites
-        spots = []
-        pykvf_pocket = find_pykvf_pockets(f"{group}.protein")
-        pockets = find_occupied_pockets(group, pykvf_pocket, clusters)
-        for hs_sele, pocket_clusters in pockets.items():
-            if pocket_clusters:
-                hs = Kozakov15BasedAlgorithm.from_clusters(group, pocket_clusters, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-                if hs.klass:
-                    hs.selection = hs_sele
-                    spots.append(hs)
-        
-        # identify hotspots from combinations of consensus sites
-        if combinatory_search:
-            for r in range(1, 4):
-                for comb in combinations(clusters, r):
-                    comb = list(comb)
-                    hs = Kozakov15BasedAlgorithm.from_clusters(group, comb, cd_to_anchor=cd_to_anchor, max_collisions=max_collisions)
-                    if hs.klass:
-                        spots.append(hs)
-        
-        # remove identical repeated hotspots
-        repeated = set()
-        for ix1, hs1 in enumerate(spots):
-            for ix2, hs2 in enumerate(spots):
-                if ix1 != ix2:
-                    if ix1 < ix2:
-                        continue
-                    if len(hs1.clusters) == len(hs2.clusters):
-                        if all(c1 == c2 for c1, c2 in zip(hs1.clusters, hs2.clusters)):
-                            repeated.add(hs2.selection)
-        
-        for hs in spots.copy():
-            if hs.selection in repeated:
-                spots.remove(hs)
-
-        # remove hotspot objects when they totally fit inside another (and are of the same class)
-        if not allow_nested:
-            nested = set()
-            for ix1, hs1 in enumerate(spots):
-                for ix2, hs2 in enumerate(spots):
-                    if ix1 == ix2:
-                        continue
-                    if hs1.klass != hs2.klass:
-                        continue
-                    if get_fo(hs1.selection, hs2.selection) == 1:
-                        nested.add(hs1.selection)
-                        continue
-
-            for hs in spots.copy():
-                if hs.selection in nested:
-                    spots.remove(hs)
-                
-
-        # rename and renumber hotspots
-        spots = sorted(spots, key=lambda hs: (-hs.ST, -hs.S0, -hs.S1, -hs.SZ))
-        spots = sorted(spots, key=lambda hs: ["D", "DS", "DL", "B", "BS", "BL"].index(hs.klass))
-        spots = list(spots)
-
-        ix_class = 0
-        last_class = None
-        for hs in spots.copy():
-            if hs.klass != last_class:
-                last_class = hs.klass
-                ix_class = 0
-            new_name = f"{group}.{hs.klass}.{ix_class:02}"
-            pm.create(new_name, hs.selection)
-            hs.selection = new_name
-            ix_class += 1
-        
-        for hs in spots:
-            hs.copy_into_properties()
-        
-        return spots
-    
-    def show(self, group, plot_graph: bool=False):
-        base_name = f"{group}.diagnose"
-        pm.delete(f'{base_name}*')
-
-        # create surface object
-        surf_sele = f"{group}.protein near_to 5 of ({self.cluster_list})"
-        surf_name = f"{base_name}.surf"
-        pm.create(surf_name, surf_sele)
-        pm.hide(selection=surf_name)
-        pm.show(representation="surface", selection=surf_name)
-        pm.set("transparency", 0.4, surf_name)
-
-        for ix, clu in enumerate(self.clusters):
-            clu = self.clusters[ix]
-            S = clu.ST
-            label_ps = pm.get_unused_name(f'{base_name}.label_ps_')
-            pm.pseudoatom(
-                label_ps,
-                selection=clu.selection,
-                label=f"{clu.selection}\nS={S}"
-            )
-            pm.set("float_label", 0, label_ps)
-
-            if ix != 0:
-                measure_name = pm.get_unused_name(f'{group}.diagnose_dist_')
-                pm.distance(
-                    measure_name,
-                    self.clusters[0].selection,
-                    self.clusters[ix].selection,
-                    mode=4
-                )
-                pm.group(group, base_name, action='add')
-            
-            if plot_graph:
-                for ix1, clu1 in enumerate(self.clusters):
-                    for ix2, clu2 in enumerate(self.clusters):
-                        if ix1 >= ix2:
-                            continue
-                        e = (clu1.selection, clu2.selection)
-                        if e not in self.graph.edges:
-                            measure_name = pm.get_unused_name(f'{group}.diagnose_graph_')
-                            pm.distance(measure_name, e[0], e[1], mode=4)
-                            pm.color('cyan', measure_name)
-
-    def make_graph(group: str, clusters: List[Cluster], radius: float=1.7, samples: int=50, max_collisions: float=0.15) -> int:
-        g = nx.Graph()
-        # Adiciona todos os nomes de clusters como NÓS (essencial para contar isolados)
-        g.add_nodes_from([c.selection for c in clusters])
-
-        for ix1, c1 in enumerate(clusters):
-            for ix2, c2 in enumerate(clusters):
-                if ix1 >= ix2:
-                    continue
-                collisions = Kozakov15BasedAlgorithm.detect_collisions(f'{group}.protein', c1.selection, c2.selection, radius, samples)
-                # Lógica de Conectividade:
-                # Um átomo em A está 'conectado' a B se ele tem pelo menos UM caminho livre para B
-                # Se mais de 75% dos átomos de ambos os clusters conseguem se 'ver', estão no mesmo bolso
-                if np.sum(collisions) < max_collisions*collisions.shape[0]*collisions.shape[1]:
-                    g.add_edge(c1.selection, c2.selection)
-                
-        return nx.number_connected_components(g)
-
-    @lru_cache
-    @staticmethod
-    def detect_collisions(protein: str, clu_sele1: str, clu_sele2: str, radius: float, samples: int):
-
-        list_a = get_coords(clu_sele1)
-        list_b = get_coords(clu_sele2)
-        
-        prot_xyz = get_coords(protein)
-        tree = cKDTree(prot_xyz)
-        
-        t = np.linspace(0, 1, samples)
-
-        # Broadcasting para gerar pontos intermediários
-        # Mágica avançada da IA
-        A = list_a[:, np.newaxis, np.newaxis, :]
-        B = list_b[np.newaxis, :, np.newaxis, :]
-        T = t[np.newaxis, np.newaxis, :, np.newaxis]
-        
-        # Matriz (N, M, samples, 3)
-        inter_points = A + T * (B - A)
-        c1c2_xyz = inter_points.reshape(-1, 3)
-        
-        # Checa colisões com a proteína
-        collisions = tree.query_ball_point(c1c2_xyz, r=radius)
-        
-        # True se o ponto i->j no frame k colide
-        has_collision = np.array([
-            len(c) > 0 for c in collisions
-        ]).reshape(len(list_a), len(list_b), samples)
-        
-        # Um caminho entre o átomo i e o átomo j é CONSIDERADO LIVRE se não houver colisões em 'samples'
-        has_collision = np.any(has_collision, axis=2) # Matriz (N, M)
-        return has_collision
-
-
-@new_command
 def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
-    cd_to_anchor: bool = False,
-    allow_nested: bool = False,
-    combinatory_search: bool = False,
-    max_collisions: float = 0.15,
+    deep_search: bool = False,
+    clash_threshold: float = 0.15,
+    pretty: bool = False,
 ):
     """
     DESCRIPTION
@@ -603,20 +220,17 @@ def load_ftmap(
             The name of the top-level PyMOL group. If not provided, the 
             basename of the file is used.
 
-        cd_to_anchor:
-            Whether to calculate Hotspot centers relative to the anchor 
-            consensus site (Center of Mass vs. Anchor consensus site).
-
-        allow_nested:
+        deep_search:
             Determines if hotspots can overlap/nest within larger 
             defined volumes.
 
-        combinatory_search:
-            Do exaustive search up to 3 consensus sites.
-
-        max_collisions:
+        clash_threshold:
             The tolerance percentage for steric clashes allowed when
             defining hotspot connectivity.
+        
+        pretty:
+            Enable beautiful visualizations of the loaded FTMap results. Also enable
+            grouping of hotspots by type.
 
     EXAMPLES
 
@@ -629,19 +243,17 @@ def load_ftmap(
             return _load_ftmap(
                 filename=filename,
                 group=group,
-                cd_to_anchor=cd_to_anchor,
-                allow_nested=allow_nested,
-                combinatory_search=combinatory_search,
-                max_collisions=max_collisions
+                deep_search=deep_search,
+                clash_threshold=clash_threshold,
+                pretty=pretty,
             )
         except:
             return _load_ftmap(
                 filename=filename,
                 group=group,
-                cd_to_anchor=cd_to_anchor,
-                allow_nested=allow_nested,
-                combinatory_search=combinatory_search,
-                max_collisions=max_collisions
+                deep_search=deep_search,
+                clash_threshold=clash_threshold,
+                pretty=pretty,
             )
     finally:
         pm.set('defer_updates', 0)
@@ -650,141 +262,110 @@ def load_ftmap(
 def _load_ftmap(
     filename: Path,
     group: str = "",
-    cd_to_anchor: bool = False,
-    allow_nested: bool = False,
-    combinatory_search: bool = False,
-    max_collisions: float = 0.15,
+    deep_search: bool = False,
+    clash_threshold: float = 0.15,
+    pretty: bool = False,
 ):
     if not group:
         group = os.path.splitext(os.path.basename(str(filename)))[0]
     group = pm.get_legal_name(group)
-    
-    pm.load(str(filename), quiet=1)
 
-    if objs := pm.get_object_list("*_protein"):
-        assert len(objs) == 1
-        protein = objs[0]
-    elif pm.get_object_list("protein"):
-        protein = "protein"
-    pm.set_name(protein, f"{group}.protein")
-    pm.group(group, f"{group}.protein")
-
-    clusters, eclusters = get_clusters()
-    process_clusters(group, clusters)
-    process_eclusters(group, eclusters)
-    
-    hotspots = Kozakov15BasedAlgorithm(group).find_hotspots(  
-        group,  
-        clusters=clusters,
-        cd_to_anchor=cd_to_anchor,
-        allow_nested=allow_nested,
-        combinatory_search=combinatory_search,
-        max_collisions=max_collisions
-    )
-
-    pm.hide("everything", f"{group}.*")
-
-    pm.show("cartoon", f"{group}.protein")
-    pm.show("mesh", f"{group}.D* or {group}.B*")
-
-    pm.show("spheres", f"{group}.ACS.*")
-    pm.set("sphere_scale", 0.25, f"{group}.ACS.*")
-
-    pm.color("red", f"{group}.D*")
-    pm.color("salmon", f"{group}.B*")
-
-    pm.color("red", f"{group}.ACS.acceptor.*")
-    pm.color("blue", f"{group}.ACS.donor.*")
-    pm.color("green", f"{group}.ACS.halogen.*")
-    pm.color("orange", f"{group}.ACS.aromatic.*")
-    pm.color("yellow", f"{group}.ACS.apolar.*")
-
-    pm.show("line", f"{group}.CS.*")
-
-    pm.disable(f"{group}.CS.*")
-
-    pm.set("mesh_mode", 1)
-    pm.orient("all")
-
-    pm.order(f"{group}.CS.*", location="top")
-
-    pm.order(f"{group}.BS.*", location="top")
-    pm.order(f"{group}.BL.*", location="top")
-    pm.order(f"{group}.B.*", location="top")
-    pm.order(f"{group}.DS.*", location="top")
-    pm.order(f"{group}.DL.*", location="top")
-    pm.order(f"{group}.D.*", location="top")
-    
-    pm.order(f"{group}.protein", location="top")
-
-    pm.group(group, f"{group}.*", 'add')
-    pm.group(group, f"{group}.protein", 'add')
-
-    pm.group(group, f"{group}.D")
-    pm.group(group, f"{group}.B")
-    pm.group(group, f"{group}.DS")
-    pm.group(group, f"{group}.BS")
-    pm.group(group, f"{group}.DL")
-    pm.group(group, f"{group}.BL")
-
-    pm.group(f"{group}.D", f"{group}.D.*")
-    pm.group(f"{group}.B", f"{group}.B.*")
-    pm.group(f"{group}.DS", f"{group}.DS.*")
-    pm.group(f"{group}.BS", f"{group}.BS.*")
-    pm.group(f"{group}.DL", f"{group}.DL.*")
-    pm.group(f"{group}.BL", f"{group}.BL.*")
-
-    pm.group(f"{group}.CS", f"{group}.CS.*")
-
-    pm.group(group, f"{group}.ACS", 'add')
-    pm.group(f"{group}.ACS", f"{group}.ACS.acceptor")
-    pm.group(f"{group}.ACS", f"{group}.ACS.donor")
-    pm.group(f"{group}.ACS", f"{group}.ACS.halogen")
-    pm.group(f"{group}.ACS", f"{group}.ACS.aromatic")
-    pm.group(f"{group}.ACS", f"{group}.ACS.apolar")
-
-    pm.group(f"{group}.ACS.acceptor", f"{group}.ACS.acceptor.*")
-    pm.group(f"{group}.ACS.donor", f"{group}.ACS.donor.*")
-    pm.group(f"{group}.ACS.halogen", f"{group}.ACS.halogen.*")
-    pm.group(f"{group}.ACS.aromatic", f"{group}.ACS.aromatic.*")
-    pm.group(f"{group}.ACS.apolar", f"{group}.ACS.apolar.*")
-
-    groups = [
-        name
-        for name in pm.get_names()
-        if pm.get_type(name) == 'object:group'
-            and name.startswith(f"{group}.")
-            and pm.count_atoms(f"%{name}") == 0
+    cmd = [
+        'xdrugpy_hotspot_finder',
+        '-g', group,
+        '-i', str(filename),
+        '-c', str(clash_threshold)
     ]
-    for grp in groups:
-        if grp in pm.get_names():
-            pm.delete(grp)
+    if deep_search:
+        cmd.append('--deep-search')
+
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"xdrugpy_hotspot_finder failed with exit code {proc.returncode}\n"
+            f"stderr:\n{proc.stderr}\n"
+        )
+
+    clusters, hotspots = parse_pdb_string(group, proc.stdout)
+    pm.group(group, f"{group}.*")
+
+    if pretty:
+        pm.group(group, f"{group}.protein")
+        
+        pm.hide("everything", f"{group}.*")
+
+        pm.show("cartoon", f"{group}.protein")
+        pm.show("mesh", f"{group}.D* or {group}.B*")
+
+        pm.show("spheres", f"{group}.ACS.*")
+        pm.set("sphere_scale", 0.25, f"{group}.ACS.*")
+
+        pm.color("red", f"{group}.D*")
+        pm.color("salmon", f"{group}.B*")
+
+        pm.color("red", f"{group}.ACS.acceptor.*")
+        pm.color("blue", f"{group}.ACS.donor.*")
+        pm.color("green", f"{group}.ACS.halogen.*")
+        pm.color("orange", f"{group}.ACS.aromatic.*")
+        pm.color("yellow", f"{group}.ACS.apolar.*")
+
+        pm.show("line", f"{group}.CS.*")
+
+        pm.disable(f"{group}.CS.*")
+
+        pm.set("mesh_mode", 1)
+        pm.orient("all")
+
+        pm.order(f"{group}.CS.*", location="top")
+
+        pm.order(f"{group}.BS.*", location="top")
+        pm.order(f"{group}.BL.*", location="top")
+        pm.order(f"{group}.B.*", location="top")
+        pm.order(f"{group}.DS.*", location="top")
+        pm.order(f"{group}.DL.*", location="top")
+        pm.order(f"{group}.D.*", location="top")
+        
+        pm.order(f"{group}.protein", location="top")
+
+        pm.group(group, f"{group}.*", 'add')
+        pm.group(group, f"{group}.protein", 'add')
+
+        pm.group(group, f"{group}.D")
+        pm.group(group, f"{group}.B")
+        pm.group(group, f"{group}.DS")
+        pm.group(group, f"{group}.BS")
+        pm.group(group, f"{group}.DL")
+        pm.group(group, f"{group}.BL")
+
+        pm.group(f"{group}.D", f"{group}.D.*")
+        pm.group(f"{group}.B", f"{group}.B.*")
+        pm.group(f"{group}.DS", f"{group}.DS.*")
+        pm.group(f"{group}.BS", f"{group}.BS.*")
+        pm.group(f"{group}.DL", f"{group}.DL.*")
+        pm.group(f"{group}.BL", f"{group}.BL.*")
+
+        pm.group(f"{group}.CS", f"{group}.CS.*")
+
+        groups = [
+            name
+            for name in pm.get_names()
+            if pm.get_type(name) == 'object:group'
+                and name.startswith(f"{group}.")
+                and pm.count_atoms(f"%{name}") == 0
+        ]
+        for grp in groups:
+            if grp in pm.get_names():
+                pm.delete(grp)
     
-    ret = SimpleNamespace(
+    return SimpleNamespace(
         clusters=clusters,
-        eclusters=eclusters,
         hotspots=hotspots
     )
-    return ret
-
-
-@new_command
-def count_molecules(sel: Selection, quiet: bool = True) -> int:
-    """
-    Returns the number of distinct molecules in a given selection.
-    """
-
-    sel_copy = "__selcopy"
-    pm.select(sel_copy, sel)
-    num_objs = 0
-    atoms_in_sel = pm.count_atoms(sel_copy)
-    while atoms_in_sel > 0:
-        num_objs += 1
-        pm.select(sel_copy, "%s and not (bm. first %s)" % (sel_copy, sel_copy))
-        atoms_in_sel = pm.count_atoms(sel_copy)
-    if not quiet:
-        print(f"Number of molecules: {num_objs}")
-    return num_objs
 
     
 @new_command
@@ -996,9 +577,6 @@ def calc_univariate_hca(
             cells. Text color (black/white) is automatically adjusted for 
             legibility based on the cell intensity.
 
-        enable_heatmap:
-            Generates a distance matrix heatmap coupled with the dendrogram.
-
         rename_leafs:
             A dictionary mapping PyMOL object names to user-friendly labels.
 
@@ -1006,7 +584,7 @@ def calc_univariate_hca(
         A tuple containing: (Distance Matrix, Object List, Dendrogram, Medoids)
 
     EXAMPLES
-        calc_univariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
+        calc_univariate_hca group_name.D.*, linkage_method=ward
         calc_univariate_hca *.CS.*
     
     SEE ALSO
@@ -1034,21 +612,25 @@ def calc_univariate_hca(
                     fo2 = get_fo(coords2, coords1, radius=radius)
                     ret = (fo1 + fo2) / 2
                 case PairwiseSimilarityFunction.JACCARD:
-                    ret = res_sim(
-                        obj1,
-                        obj2,
-                        radius=radius,
-                        method=ResidueSimilarityMethod.JACCARD,
-                        seq_align=seq_align_before_overlap,
-                    )
+                    # ret = res_sim(
+                    #     obj1,
+                    #     obj2,
+                    #     radius=radius,
+                    #     method=ResidueSimilarityMethod.JACCARD,
+                    #     seq_align=seq_align_before_overlap,
+                    # )
+                    raise NotImplementedError("JACCARD similarity is not yet implemented.")
+                    pass
                 case PairwiseSimilarityFunction.OVERLAP:
-                    ret = res_sim(
-                        obj1,
-                        obj2,
-                        radius=radius,
-                        method=ResidueSimilarityMethod.OVERLAP,
-                        seq_align=seq_align_before_overlap,
-                    )
+                    # ret = res_sim(
+                    #     obj1,
+                    #     obj2,
+                    #     radius=radius,
+                    #     method=ResidueSimilarityMethod.OVERLAP,
+                    #     seq_align=seq_align_before_overlap,
+                    # )
+                    raise NotImplementedError("OVERLAP similarity is not yet implemented.")
+                    pass
             X.append(1 - ret)
     dendro, medoids = plot_hca_base(
         X, objects, linkage_method,
@@ -1327,10 +909,9 @@ def calc_ligand_fit(
 
 @new_command
 def calc_fingerprints(
-    multi_seles: Selection,
+    multi_seles: str,
     site: Selection = "*",
     site_radius: float = 5.0,
-    seq_align_omega: bool = False,
     omega_conservation: str = "*:.",
     contact_radius: float = 4.0,
     nbins: int = 5,
@@ -1387,39 +968,8 @@ def calc_fingerprints(
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    if seq_align_omega:
-        mapping = clustal_omega(polymers, omega_conservation.strip(), titles=seles)
-    else:
-        mapping = {}
-        ref_model = pm.get_model(f"{ref_polymer} & present & guide & polymer")
-        ref_map = []
-        for at in ref_model.atom:
-            ref_map.append(Residue(
-                at.model, at.index, at.resi, at.chain,
-                at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
-            ))
-        mapping[ref_sele] = ref_map
-        for poly, sele in zip(polymers, seles):
-            if sele == ref_sele:
-                continue
-            current_model = pm.get_model(f"{poly} & present & guide & polymer")
-            lookup = {(at.resi, at.chain): at for at in current_model.atom}
-            current_map = []
-            for ref_res in ref_map:
-                match = lookup.get((ref_res.resi, ref_res.chain))
-                if match:
-                    at = match
-                    current_map.append(
-                        Residue(
-                            at.model, at.index, at.resi, at.chain,
-                            at.resn, RESN_TO_AA.get(at.resn, at.resn), ''
-                        )
-                    )
-                else:
-                    current_map.append(
-                        Residue(None, -1, ref_res.resi, ref_res.chain, 'GAP', '-', ''))
-            mapping[sele] = current_map
-
+    mapping = clustal_omega(polymers, omega_conservation.strip(), titles=seles)
+    
     ref_map = mapping[ref_sele]
     fpts = []
     for poly, (hs, map) in zip(polymers, mapping.items()):
@@ -1435,9 +985,8 @@ def calc_fingerprints(
         fpts.append(fpt)
 
     if fingerprints_axis:
-        if isinstance(fingerprints_axis, (str, Path)):
+        if isinstance(fingerprints_axis, (bool, str, Path)):
             fig, fpt_axs = plt.subplots(nrows=len(seles))
-
         elif isinstance(fingerprints_axis, axes.Axes):
             fpt_axs = []
             height = 1/len(fpt)
@@ -1469,7 +1018,9 @@ def calc_fingerprints(
         ax.bar(arange, fpt.values())
         ax.set_title(sele)
         ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
-        if not sharex or sharex and ix + 1 == len(seles):
+        if sharex and ix + 1 < len(seles):
+            ax.set_xticks([])
+        if not sharex or ix + 1 == len(seles):
             ax.set_xticks(arange, labels=labels, rotation=90)
             ax.locator_params(axis="x", tight=True, nbins=nbins)
             for label in ax.xaxis.get_majorticklabels():
@@ -1483,6 +1034,8 @@ def calc_fingerprints(
         fig.set_layout_engine('compressed')
         if isinstance(fingerprints_axis, (str, Path)):
             fig.savefig(str(fingerprints_axis))
+        if isinstance(fingerprints_axis, axes.Axes):
+            fig.show()
 
     corrs = []
     labels = []
@@ -1526,6 +1079,7 @@ def res_sim(
     hs2: Selection,
     radius: float = 4.0,
     seq_align: bool = False,
+    align_method: AligMethod = AligMethod.CEALIGN,
     method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
     quiet: bool = True,
 ):
@@ -1544,30 +1098,36 @@ def res_sim(
         res_sim 8DSU.D_001*, 6XHM.D_001*
         res_sim 8DSU.CS_*, 6XHM.CS_*
     """
-    group1 = pm.get_property("Group", hs1)  # FIXME it doesn't works with arbitrary objects
-    group2 = pm.get_property("Group", hs2)
+    group1 = hs1.rsplit(".", maxsplit=2)[0]
+    group2 = hs2.rsplit(".", maxsplit=2)[0]
 
     sel1 = f"{group1}.protein within {radius} from ({hs1})"
     sel2 = f"{group2}.protein within {radius} from ({hs2})"
 
     resis1 = set()
-    pm.iterate(sel1, "resis1.add((chain, resi))", space={"resis1": resis1})
+    for at in pm.get_model(sel1).atom:
+        resis1.add((at.chain, at.resi))
 
     if group1 == group2 or not seq_align:
-        resis2 = set()
-        pm.iterate(sel2, "resis2.add((chain, resi))", space={"resis2": resis2})
+        pymol.stored.resis2 = set()
+        pm.iterate_state(1, sel2, "stored.resis2.add((chain, resi))")
+        resis2 = pymol.stored.resis2
     else:
         try:
             # FIXME Clustal Omega?
             aln_obj = pm.get_unused_name()
-            pm.cealign(
-                f"{group1}.protein", f"{group2}.protein", transform=0, object=aln_obj
+            pm.extra_fit(
+                f"{group1}.protein",
+                f"{group2}.protein",
+                method=str(align_method),
+                transform=0,
+                object=aln_obj
             )
             raw = pm.get_raw_alignment(aln_obj)
 
             resis = {}
-            pm.iterate(
-                aln_obj, "resis[model, index] = (chain, resi)", space={"resis": resis}
+            pm.iterate_state(
+                1, aln_obj, "resis[model, index] = (chain, resi)", space={"resis": resis}
             )
 
             site2 = [(a.chain, a.resi) for a in pm.get_model(sel2).atom]
@@ -1622,24 +1182,26 @@ def hs_proj(
         group = sel.split(".", maxsplit=1)[0]
         protein = f"{group}.protein"
 
-    pm.alter(protein, "q=0")
+    pm.alter(protein, "p.cnt_atoms=0")
     for prot_atom in pm.get_model(f"({protein}) within {radius} of ({sel})").atom:
         match type:
             case PrioritizationType.RESIDUE:
                 prot_atom_sel = f"byres index {prot_atom.index}"
             case PrioritizationType.ATOM:
                 prot_atom_sel = f"index {prot_atom.index}"
-        count = count_molecules(f"({sel}) within {radius} of ({prot_atom_sel})")
-        pm.alter(prot_atom_sel, f"q={count}")
+        cnt = pm.count_atoms(f"({sel}) within {radius} of ({prot_atom_sel})")
+        pm.alter(prot_atom_sel, f"p.cnt_atoms={cnt}")
 
     pm.hide("everything", protein)
+    pm.show("cartoon", protein)
     match type:
         case PrioritizationType.RESIDUE:
-            pm.show("surface", protein)
+            # pm.show("cartoon", protein)
+            # pm.show("surface", protein)
+            pass
         case PrioritizationType.ATOM:
-            pm.show("cartoon", protein)
-            pm.show("sticks", "q>0")
-    pm.spectrum("q", palette=palette, selection=protein)
+            pm.show("sticks", "p.cnt_atoms>0")
+    pm.spectrum("p.cnt_atoms", palette=palette, selection=protein)
 
 
 class DistanceMethod(StrEnum):
@@ -1656,11 +1218,10 @@ def calc_multivariate_hca(
     nclusters: int = -1.0,
     only_medoids: bool = False,
     annotate: bool = False,
-    plot: str = None,
     dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
     rename_leafs: Optional[Dict[str, str]] = None,
-    dendrogram_axis: str = '',
-    heatmap_axis: str = '',
+    dendrogram_axis: str | Path | bool | axes.Axes | None = None,
+    heatmap_axis: str | Path | bool | axes.Axes | None = None,
 ):
     """
     DESCRIPTION
@@ -1676,7 +1237,7 @@ def calc_multivariate_hca(
 
         Feature vectors are built based on the object type:
         - Hotspots: ST, S0, CD, MD and XYZ (7 variables)
-        - Consensus sites: ST + XYZ Coordinates (4 variables)
+        - Consensus sites: S + XYZ Coordinates (4 variables)
         - ACS (Atomic Contact Surfaces): ST, MD + XYZ Coordinates (5 variables)
 
     ARGUMENTS
@@ -1694,9 +1255,6 @@ def calc_multivariate_hca(
         only_medoids:
             If True, focuses analysis or visualization only on the cluster medoids.
 
-        enable_heatmap:
-            Generates a distance matrix heatmap coupled with the dendrogram.
-
         rename_leafs:
             A dictionary mapping PyMOL object names to user-friendly labels.
 
@@ -1710,7 +1268,7 @@ def calc_multivariate_hca(
 
     EXAMPLES
 
-        plot_multivariate_hca group_name.D.*, linkage_method=ward, enable_heatmap=True
+        plot_multivariate_hca group_name.D.*, linkage_method=ward
         plot_multivariate_hca *.CS.*
     """
     object_list = pm.get_object_list(sele)
@@ -1728,7 +1286,7 @@ def calc_multivariate_hca(
 
     for ix, obj in enumerate(object_list):
         labels.append(obj)
-        x, y, z = pm.centerofmass(obj)
+        x, y, z = pm.get_coordset(obj).mean(axis=0) # FIXME use pm.centerofmass instead of mean
         if hs_type == "HS":
             ST = pm.get_property("ST", obj)
             S0 = pm.get_property("S0", obj)
@@ -1736,8 +1294,8 @@ def calc_multivariate_hca(
             MD = pm.get_property("MD", obj)
             p[ix, :] = np.array([ST, S0, CD, MD, x, y, z])
         elif hs_type == "CS":
-            ST = pm.get_property("ST", obj)
-            p[ix, :] = np.array([ST, x, y, z])
+            S = pm.get_property("S", obj)
+            p[ix, :] = np.array([S, x, y, z])
         elif hs_type == "ACS":
             ST = pm.get_property("ST", obj)
             MD = pm.get_property("MD", obj)
@@ -2020,23 +1578,19 @@ class LoadWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.cdToAnchor = QCheckBox()
-        self.cdToAnchor.setChecked(False)
-        boxLayout.addRow("Use satellite-to-anchor CD:", self.cdToAnchor)
-        
-        self.allowNested = QCheckBox()
-        self.allowNested.setChecked(True)
-        boxLayout.addRow("Allow nested hotspots:", self.allowNested)
+        self.deepSearch = QCheckBox()
+        self.deepSearch.setChecked(False)
+        boxLayout.addRow("Enable deep search:", self.deepSearch)
 
-        self.combinatorySearch = QCheckBox()
-        self.combinatorySearch.setChecked(True)
-        boxLayout.addRow("Enable combinatory search:", self.combinatorySearch)
-        
         self.maxCollisions = QDoubleSpinBox()
         self.maxCollisions.setRange(0.0, 1.0)
         self.maxCollisions.setSingleStep(0.05)
         self.maxCollisions.setValue(0.10)
         boxLayout.addRow("Max collisions:", self.maxCollisions)
+        
+        self.pretty = QCheckBox()
+        self.pretty.setChecked(False)
+        boxLayout.addRow("Pretty session:", self.pretty)
         
     def pickFile(self):
         fileDIalog = QFileDialog()
@@ -2067,10 +1621,9 @@ class LoadWidget(QWidget):
         self.table.setRowCount(0)
 
     def load(self):
-        cd_to_anchor = self.cdToAnchor.isChecked()
-        combinatory_search = self.combinatorySearch.isChecked()
-        allow_nested = self.allowNested.isChecked
+        deep_search = self.deepSearch.isChecked()
         max_collisions = self.maxCollisions.value()
+        pretty = self.pretty.isChecked()
         try:
             filenames = []
             groups = []
@@ -2086,10 +1639,9 @@ class LoadWidget(QWidget):
             load_ftmap(
                 filename=filename,
                 group=group,
-                cd_to_anchor=cd_to_anchor,
-                combinatory_search=combinatory_search,
-                allow_nested=allow_nested,
-                max_collisions=max_collisions,
+                deep_search=deep_search,
+                clash_threshold=max_collisions,
+                pretty=pretty
             )
 
 
@@ -2180,11 +1732,13 @@ class TableWidget(QWidget):
                 "Class",
                 "ST",
                 "S0",
+                "S1",
+                "SZ",
                 "CD",
                 "MD",
                 "Length",
             ],
-            ("CS", "CS"): ["ST"],
+            ("CS", "CS"): ["S"],
         }
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
@@ -2462,7 +2016,7 @@ class HcaWidget(QWidget):
         color_threshold = self.colorThresholdSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
-        enable_heatmap = self.enableHeatmapCheck.isChecked()
+        heatmap_axis = self.enableHeatmapCheck.isChecked()
 
         calc_multivariate_hca(
             sele=sele,
@@ -2470,8 +2024,8 @@ class HcaWidget(QWidget):
             color_threshold=color_threshold,
             only_medoids=only_medoids,
             annotate=annotate,
-            enable_heatmap=enable_heatmap,
             rename_leafs=self.getLeafLabels(),
+            heatmap_axis=heatmap_axis
         )
         plt.show()
     
@@ -2483,7 +2037,6 @@ class HcaWidget(QWidget):
         color_threshold = self.colorThresholdSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
-        enable_heatmap = self.enableHeatmapCheck.isChecked()
 
         calc_univariate_hca(
             sele=sele,
@@ -2493,7 +2046,6 @@ class HcaWidget(QWidget):
             linkage_method=linkage_method,
             color_threshold=color_threshold,
             only_medoids=only_medoids,
-            enable_heatmap=enable_heatmap,
             rename_leafs=self.getLeafLabels(),
         )
         plt.show()

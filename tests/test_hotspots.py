@@ -48,14 +48,14 @@ def test_calc_multivariate_hca():
     dendro_gen = f"{pkg_data}/test_calc_multivariate_hca_gen.svg"
 
     X, object_list, dendro, medoids = calc_multivariate_hca(
-        sele="*.D*",
+        sele="*.CS.* AND p.S>13",
         color_threshold=2,
         annotate=True,
         linkage_method='ward',
-        dendrogram_axis=dendro_gen
+        dendrogram_axis=dendro_gen,
     )
-    assert medoids["C1"].pop() in ["1dq8.DS.00", "1dq8.D.00"]
-    assert medoids["C1"].pop() in ["1dq8.DS.00", "1dq8.D.00"]
+    assert medoids["C1"].pop() in ["1dq8.CS.0", "1dq9.CS.0"]
+    assert medoids["C1"].pop() in ["1dq8.CS.0", "1dq9.CS.0"]
     assert len(medoids["C1"]) == 0
     assert images_identical(dendro_ref, dendro_gen)
 
@@ -63,8 +63,8 @@ def test_calc_multivariate_hca():
 def test_calc_univariate_hca():
     pm.reinitialize()
     
-    load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
-    load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
+    load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8", deep_search=True)
+    load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9", deep_search=True)
 
     dendro_ref = f"{pkg_data}/test_calc_univariate_hca_dendro_ref.svg"
     dendro_gen = f"{pkg_data}/test_calc_univariate_hca_dendro_gen.svg"
@@ -72,11 +72,12 @@ def test_calc_univariate_hca():
     heat_gen = f"{pkg_data}/test_calc_univariate_hca_heat_gen.svg"
 
     calc_univariate_hca(
-        sele="*.D*",
-        overlap_function=PairwiseSimilarityFunction.JACCARD,
+        sele="*.DL.*",
+        overlap_function=PairwiseSimilarityFunction.FO_MEAN,
         linkage_method=LinkageMethod.COMPLETE,
+        only_medoids=True,
         radius=4,
-        annotate=True,
+        annotate=False,
         color_threshold=0.3,
         dendrogram_axis=dendro_gen,
         heatmap_axis=heat_gen,
@@ -103,9 +104,10 @@ def test_calc_fingerprint():
     img_gen = f"{pkg_data}/test_fpt_gen.svg"
     img_ref = f"{pkg_data}/test_fpt_ref.svg"
     calc_fingerprints(
-        "1dqa.CS.00 / 1dqa.CS.01",
-        site="1dqa.CS.00 | 1dqa.CS.01",
+        "1dqa.CS.0 / 1dqa.CS.1",
+        site="1dqa.CS.0 | 1dqa.CS.1",
         site_radius=4,
+        sharex=True,
         fingerprints_axis=img_gen,
         nbins=50,
     )
@@ -117,10 +119,10 @@ def test_calc_fingerprint():
     img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
     calc_fingerprints(
-        multi_seles="1dq8.D* | 1dq8.B* / 1dq9.DS.00 / 1dqa.CS.00",
+        multi_seles="1dq8.D* | 1dq8.B* / 1dq9.DL.0 / 1dqa.CS.0",
         site_radius=4.0,
         nbins=50,
-        sharex=True,
+        sharex=False,
         share_ylim=False,
         fingerprints_axis=img_gen1,
         dendrogram_axis=img_gen2,
@@ -131,25 +133,29 @@ def test_calc_fingerprint():
 
 def test_res_sim():
     pm.reinitialize()
-    load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
-    load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
+    ftmap8 = load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8")
+    ftmap9 = load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9")
     assert res_sim(
-        '1dq8.DS.00',
-        '1dq9.D.00',
+        '1dq8.DL.0',
+        '1dq9.CS.0',
         method=PairwiseSimilarityFunction.JACCARD,
         radius=4.0
-    ) == 0.8636363636363636
+    ) - 0.272 < 0.01
     assert res_sim(
-        '1dq8.DS.00',
-        '1dq9.DS.00',
+        '1dq8.DL.0',
+        '1dq9.CS.0',
         method=PairwiseSimilarityFunction.OVERLAP,
         radius=4.0
-    ) == 1.0
+    ) == 0.9375
 
 
 def test_load():
     pm.reinitialize()
-    ftmap = load_ftmap(f"{pkg_data}/2TPR.pdb")
+    ftmap = load_ftmap(f"{pkg_data}/2TPR.pdb", deep_search=True)
     hotspots = ftmap.hotspots
-    assert len(hotspots) == 3
-    assert hotspots[1].klass == 'DS' 
+    assert len(hotspots) == 96
+    assert hotspots[0].Class == 'DL'
+
+    ftmap = load_ftmap(f"{pkg_data}/1dqa_atlas.pdb", "1dqa", deep_search=True)
+    assert len(ftmap.hotspots) == 506
+

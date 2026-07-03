@@ -224,7 +224,7 @@ def rmsf(
     try:
         pm.extra_fit(
             selection=' '.join(frames),
-            reference=site_sele,
+            reference=reference,
             method=str(align_method),
             quiet=False
         )
@@ -261,7 +261,7 @@ def rmsf(
         diff = coords - np.mean(coords, axis=0)
         squared_dist = np.sum(diff**2, axis=1)
         rmsf = np.sqrt(np.mean(squared_dist, axis=0))
-        label = "%s%s %s:%s" % resi
+        label = "%s%s %s_%s" % resi
         pm.alter(
             f"{reference} & i. {resi[2]} & c. {resi[3]}",
             f"p.rmsf={rmsf}"

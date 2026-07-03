@@ -14,8 +14,9 @@ from collections import namedtuple
 from functools import lru_cache
 from strenum import StrEnum
 from pymol.parser import __file__ as _parser_filename
-
+from pymol.exporting import _resn_to_aa as RESN_TO_AA
 from pymol import Qt, cmd as pm
+from pymol_new_command import new_command
 
 
 class Selection(str):
@@ -122,6 +123,26 @@ def threshold_for_k_clusters(Z, k):
     k = min(k, len(Z))
     return (Z[-(k - 1), 2] + Z[-k, 2]) / 2
 
+
+@new_command
+def count_molecules(sel: Selection, quiet: bool = True) -> int:
+    """
+    Returns the number of distinct molecules in a given selection.
+    """
+
+    sel_copy = "__selcopy"
+    pm.select(sel_copy, sel)
+    num_objs = 0
+    atoms_in_sel = pm.count_atoms(sel_copy)
+    while atoms_in_sel > 0:
+        num_objs += 1
+        pm.select(sel_copy, "%s and not (bm. first %s)" % (sel_copy, sel_copy))
+        atoms_in_sel = pm.count_atoms(sel_copy)
+    if not quiet:
+        print(f"Number of molecules: {num_objs}")
+    return num_objs
+
+
 def plot_hca_base(
     dists,
     labels,
@@ -147,7 +168,7 @@ def plot_hca_base(
         color_threshold = threshold_for_k_clusters(Z, nclusters)
 
     if dendrogram_axis:
-        if isinstance(dendrogram_axis, str):
+        if isinstance(dendrogram_axis, (str, Path, bool)):
             _, dendro_ax = plt.subplots()
 
         elif isinstance(dendrogram_axis, axes.Axes):
@@ -281,9 +302,9 @@ def plot_hca_base(
     if dendrogram_axis:
         fig = dendro_ax.get_figure(True)
         fig.set_layout_engine('compressed')
-        if isinstance(dendrogram_axis, str):
+        if isinstance(dendrogram_axis, (str, Path)):
             fig.savefig(dendrogram_axis)
-        elif isinstance(dendro_ax, axes.Axes):
+        else:
             fig.show()
     
     if heatmap_axis:
@@ -291,6 +312,8 @@ def plot_hca_base(
         fig.set_layout_engine('compressed')
         if isinstance(heatmap_axis, (str, Path)):
             fig.savefig(str(heatmap_axis))
+        else:
+            fig.show()
     
     return dendro, medoids
 
@@ -317,9 +340,10 @@ def clustal_omega(seles, conservation, titles=None):
         )
     
     proc = subprocess.Popen(
-        "clustalo -i - --outfmt=clu --wrap=99999",
+        "clustalo -i - --outfmt=clu --wrap=45",
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         shell=True,
         text=True,
     )
@@ -343,25 +367,26 @@ def clustal_omega(seles, conservation, titles=None):
 
     # skiping gaps and keeping counters ok
     clu = sequences.pop('CLUSTALO')
-    len_aln = len(clu)
     omega = {}
     for (title, seq), sele in zip(sequences.items(), seles):
-        local_ix = 0
         atoms = [a for a in pm.get_model(f"({sele}) & present & guide & polymer").atom]
-        for aln_ix in range(len_aln):
-            seq_char = seq[aln_ix]
-            clu_char = clu[aln_ix]
-            if seq_char != '-':
-                if clu_char in conservation:
-                    assert local_ix < len(atoms)
-                    at = atoms[local_ix]
-                    if title not in omega:
-                        omega[title] = []
-                    omega[title].append(Residue(
-                        at.model, at.index, at.resi, at.chain, at.resn, seq_char, clu_char
-                    ))
-                    local_ix += 1
-    
+        at_ix = 0
+        for aln_ix, (seq_char, clu_char) in enumerate(zip(seq, clu)):
+            if seq_char == '-':
+                continue
+            at = atoms[at_ix]
+            if clu_char in conservation:
+                if title not in omega:
+                    omega[title] = []
+                omega[title].append(Residue(
+                    at.model, at.index, at.resi, at.chain, at.resn, seq_char, clu_char
+                ))
+            at_ix += 1
+        
+    assert at_ix == len(atoms), (
+        f"Alignment/atom mismatch for {title}: consumed {at_ix} atoms, "
+        f"but selection has {len(atoms)} guide atoms"
+    )
     omega = {
         replaced_dict[title]: omega[title]
         for title in sorted(omega, key=replaced_list.index)

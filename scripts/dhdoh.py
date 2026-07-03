@@ -30,8 +30,7 @@ for title, ftmap_pdb, crystal_pdb, resn, resid, chain in data:
         ftmap_pdb,
         title,
         cd_to_anchor=False,
-        combinatory_search=True,
-        allow_nested=True
+        deep_search=True
     )
     pm.load(crystal_pdb, 'temp')
     pm.align(

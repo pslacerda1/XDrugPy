@@ -2,6 +2,8 @@ import sys
 import os
 import platform
 import stat
+import zipfile
+from shutil import copyfile
 from tempfile import mkdtemp
 from pathlib import Path
 from urllib.request import urlretrieve
@@ -73,29 +75,29 @@ def xdrugpy_install():
             bin_fname = "vina_1.2.7_linux_x86_64"
         case "darwin":
             bin_fname = "vina_1.2.7_mac_x86_64"
-    vina_url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
-    vina_exe = Path(f'{RESOURCES_DIR}/vina')
+    url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
+    exe = RESOURCES_DIR / 'vina'
     if system == "windows":
-        vina_exe += ".exe"
-    if not vina_exe.exists():
-        print(f"Installing AutoDock Vina on", RESOURCES_DIR)
-        urlretrieve(vina_url, vina_exe)
-        os.chmod(vina_exe, stat.S_IEXEC)
+        exe += ".exe"
+    fname, _ = urlretrieve(url)
+    if exe.exists():
+        os.unlink(exe)
+    copyfile(fname, exe)
+    os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
     #
     # Install Clustal Omega
     #
     if system == "windows":
         web_name = "clustal-omega-1.2.2-win64.zip"
-        local_name = RESOURCES_DIR / web_name
-        if not Path(local_name).exists():
-            urlretrieve(
-                f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}",
-                local_name
-            )
-            import zipfile
-            zipfile.ZipFile(local_name).extractall(RESOURCES_DIR)
-            os.chmod(RESOURCES_DIR / 'clustalo.exe', stat.S_IEXEC)
+        exe = RESOURCES_DIR / 'clustalo.exe'
+        fname, _ = urlretrieve(
+            f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}"
+        )
+        if exe.exists():
+            os.unlink(exe)
+        zipfile.ZipFile(fname).extractall(RESOURCES_DIR)
+        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     else:
         if system == "linux":
             web_name = "clustalo-1.2.4-Ubuntu-x86_64"
@@ -104,19 +106,46 @@ def xdrugpy_install():
         else:
             raise RuntimeError("Unexpected system.")
         
-        clustalo_url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}"
-        clustalo_exe = RESOURCES_DIR / "clustalo"
-        if not clustalo_exe.exists():
-            urlretrieve(clustalo_url, clustalo_exe)
-            os.chmod(clustalo_exe, stat.S_IEXEC)
+        url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}"
+        exe = RESOURCES_DIR / "clustalo"
+        fname, _ = urlretrieve(url)
+        if exe.exists():
+            os.unlink(exe)
+        copyfile(fname, exe)
+        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
+    #
+    # Install My (alpha) Rust Project
+    #
+    if system == "windows":
+        web_name = "xdrugpy_hotspot_finder-windows.exe"
+        exe = RESOURCES_DIR / "xdrugpy_hotspot_finder.exe"
+        fname, _ = urlretrieve(
+            f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/v.24/{web_name}",
+        )
+        if exe.exists():
+            os.unlink(exe)
+        copyfile(fname, exe)
+        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    else:
+        if system == "linux":
+            web_name = "xdrugpy_hotspot_finder-ubuntu"
+        elif system == "darwin":
+            web_name = "xdrugpy_hotspot_finder-macos"
+        else:
+            raise RuntimeError("Unexpected system.")
+        
+        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/v.23/{web_name}"
+        exe = RESOURCES_DIR / "xdrugpy_hotspot_finder"
+        fname, _ = urlretrieve(url)
+        if exe.exists():
+            os.unlink(exe)
+        copyfile(fname, exe)
+        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
 
 def __init_plugin__(app=None):
     from .utils import configure_matplotlib
-    import matplotlib
-    import matplotlib.colors
-    from cycler import cycler
 
     configure_matplotlib("default", {
         'font.size': 14,
@@ -138,12 +167,12 @@ def __init_plugin__(app=None):
 
     from textwrap import dedent
     print(dedent("""
-        DRUGpy version 2.0 (a.k.a. DRUGpy_CAML_DDD).
+        DRUGpy version 3.0 (a.k.a. Newer and Faster).
             Please read and cite: http://doi.com.br
     """))
 
 os.environ["PATH"] = str(RESOURCES_DIR) + os.pathsep + os.environ["PATH"]
-
+os.environ["PATH"] = str(RESOURCES_DIR) + "/PyMOL" + os.pathsep + os.environ["PATH"]
 
 from .hotspots import (
     load_ftmap, get_fo, get_dc, get_dce,

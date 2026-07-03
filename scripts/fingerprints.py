@@ -6,7 +6,8 @@ from xdrugpy import (
     load_ftmap,
     calc_fingerprints,
     LinkageMethod,
-    configure_matplotlib
+    configure_matplotlib,
+    plot
 )
 
 # my opinion
@@ -66,5 +67,5 @@ calc_fingerprints(
     # Ward is cool.
     linkage_method=LinkageMethod.WARD,
 )
-plt.show()
+plot()
 plt.waitforbuttonpress()
