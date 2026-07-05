@@ -70,78 +70,73 @@ def xdrugpy_install():
     system = platform.system().lower()
     match system:
         case "windows":
-            bin_fname = "vina_1.2.7_win.exe"
+            web_name = "vina_1.2.7_win.exe"
         case "linux":
-            bin_fname = "vina_1.2.7_linux_x86_64"
+            web_name = "vina_1.2.7_linux_x86_64"
         case "darwin":
-            bin_fname = "vina_1.2.7_mac_x86_64"
-    url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{bin_fname}"
+            web_name = "vina_1.2.7_mac_x86_64"
+    url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{web_name}"
     exe = RESOURCES_DIR / 'vina'
     if system == "windows":
         exe += ".exe"
-    fname, _ = urlretrieve(url)
     if exe.exists():
         os.unlink(exe)
-    copyfile(fname, exe)
-    os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    print(f"Downloading {url} into {exe}")
+    urlretrieve(url, exe)
+    os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
 
     #
-    # Install Clustal Omega
+    # Install MUSCLE Aignment
     #
-    if system == "windows":
-        web_name = "clustal-omega-1.2.2-win64.zip"
-        exe = RESOURCES_DIR / 'clustalo.exe'
-        fname, _ = urlretrieve(
-            f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}"
-        )
-        if exe.exists():
-            os.unlink(exe)
-        zipfile.ZipFile(fname).extractall(RESOURCES_DIR)
-        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    if system == "linux":
+        web_name = "muscle-linux-x86.v5.3"
+    elif system == "windows":
+        web_name = " muscle-win64.v5.3.exe "
+    elif system == "darwin":
+        web_name = "muscle-osx-x86.v5.3"
     else:
-        if system == "linux":
-            web_name = "clustalo-1.2.4-Ubuntu-x86_64"
-        elif system == "darwin":
-            web_name = "clustal-omega-1.2.3-macosx"
-        else:
-            raise RuntimeError("Unexpected system.")
-        
-        url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}"
-        exe = RESOURCES_DIR / "clustalo"
-        fname, _ = urlretrieve(url)
-        if exe.exists():
-            os.unlink(exe)
-        copyfile(fname, exe)
-        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        raise RuntimeError("Unexpected system.")
+    url = f"https://github.com/rcedgar/muscle/releases/download/v5.3/{web_name}"
+    exe = RESOURCES_DIR / "muscle"
+    if system == "windows":
+        exe += ".exe"
+    if exe.exists():
+        os.unlink(exe)
+    print(f"Downloading {url} into {exe}")
+    urlretrieve(url, exe)
+    os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
 
     #
     # Install My (alpha) Rust Project
     #
+    rust_tag = "v.26"
     if system == "windows":
         web_name = "xdrugpy_hotspot_finder-windows.exe"
         exe = RESOURCES_DIR / "xdrugpy_hotspot_finder.exe"
-        fname, _ = urlretrieve(
-            f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/v.24/{web_name}",
-        )
         if exe.exists():
             os.unlink(exe)
-        copyfile(fname, exe)
-        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        print(f"Downloading {url} into {exe}")
+        urlretrieve(url, exe)
+        os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
     else:
         if system == "linux":
             web_name = "xdrugpy_hotspot_finder-ubuntu"
+        elif system == "windows":
+            web_name = "xdrugpy_hotspot_finder-windows.exe"
         elif system == "darwin":
             web_name = "xdrugpy_hotspot_finder-macos"
         else:
             raise RuntimeError("Unexpected system.")
         
-        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/v.23/{web_name}"
+        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{rust_tag}/{web_name}"
         exe = RESOURCES_DIR / "xdrugpy_hotspot_finder"
-        fname, _ = urlretrieve(url)
+        if system == "windows":
+            exe += ".exe"
         if exe.exists():
             os.unlink(exe)
-        copyfile(fname, exe)
-        os.chmod(exe, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        print(f"Downloading {url} into {exe}")
+        urlretrieve(url, exe)
+        os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
 
 
 def __init_plugin__(app=None):

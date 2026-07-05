@@ -3,6 +3,7 @@ import os
 import subprocess
 import signal
 import sys
+from tempfile import TemporaryDirectory
 from pathlib import Path
 import scipy.cluster.hierarchy as sch
 from collections import defaultdict
@@ -194,14 +195,13 @@ def plot_hca_base(
     X = X[dendro["leaves"], :]
     X = X[:, dendro["leaves"]]
 
+    heat_ax = None
     if heatmap_axis:
         if isinstance(heatmap_axis, (str, Path)):
             _, heat_ax = plt.subplots()
 
         elif isinstance(heatmap_axis, axes.Axes):
             heat_ax = heatmap_axis
-    else:
-        heat_ax = None
     
     if heat_ax:
         heat_ax.set_xticks(range(len(dendro["ivl"])), dendro["ivl"])
@@ -319,80 +319,95 @@ def plot_hca_base(
 
 
 
-def clustal_omega(seles, conservation, titles=None):
+def muscle(ref_polymer, polymers, ref_title, titles=None):
+    raise NotImplementedError
     replaced_dict = {}
     replaced_list = []
     if not titles:
-        titles = seles
-    input_fasta = ''
-    for sele, title in zip(seles, titles):
-        query = f'({sele}) and present and guide and polymer'
+        titles = polymers
+    input_fasta_str = ''
+    all_polymers = [ref_polymer, *polymers]
+    all_titles = [ref_title, *titles]
+    for polymer, title in zip(all_polymers, all_titles):
+        query = f'({polymer}) and present and guide and polymer'
 
         title_replaced = title.replace(' ', '_')
         replaced_dict[title_replaced] = title
         replaced_list.append(title_replaced)
 
-        input_fasta += (
+        input_fasta_str += (
             ">" + title_replaced + 
             pm
             .get_fastastr(query, key='model')
-            .removeprefix(f'>{sele}')
+            .removeprefix(f'>{polymer}')
         )
     
-    proc = subprocess.Popen(
-        "clustalo -i - --outfmt=clu --wrap=45",
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=True,
-        text=True,
-    )
-    output_fasta, err = proc.communicate(input_fasta)
-    if err:
-        raise Exception(f"Clustal Omega error: {err}")
-    
-    # joining multiline sequences
-    output = output_fasta.split('\n')[3:]
-    sequences = {}
-    while output:
-        line = output.pop(0)
-        if line.strip() == "":
-            continue
-        if line[0] != ' ':
-            name, seq = line.split(maxsplit=1)
-        else:
-            name = 'CLUSTALO'
-            seq = line[-len(seq):]
-        sequences[name] = sequences.get(name, "") + seq
-
-    # skiping gaps and keeping counters ok
-    clu = sequences.pop('CLUSTALO')
-    omega = {}
-    for (title, seq), sele in zip(sequences.items(), seles):
-        atoms = [a for a in pm.get_model(f"({sele}) & present & guide & polymer").atom]
-        at_ix = 0
-        for aln_ix, (seq_char, clu_char) in enumerate(zip(seq, clu)):
-            if seq_char == '-':
-                continue
-            at = atoms[at_ix]
-            if clu_char in conservation:
-                if title not in omega:
-                    omega[title] = []
-                omega[title].append(Residue(
-                    at.model, at.index, at.resi, at.chain, at.resn, seq_char, clu_char
-                ))
-            at_ix += 1
+    with TemporaryDirectory(prefix="XDrugPy-") as tempdir:
+        tempdir = Path(tempdir)
+        input_fa = tempdir / "input.fa"
+        output_aln = tempdir / "output.aln"
         
-    assert at_ix == len(atoms), (
-        f"Alignment/atom mismatch for {title}: consumed {at_ix} atoms, "
-        f"but selection has {len(atoms)} guide atoms"
-    )
-    omega = {
-        replaced_dict[title]: omega[title]
-        for title in sorted(omega, key=replaced_list.index)
-    }
-    return omega
+        with open(input_fa, 'w') as input_file:
+            input_file.write(input_fasta_str)
+        
+        cmd = [
+            "muscle",
+            "-align", str(input_fa),
+            "-output", str(output_aln),
+        ]
+        try:
+            output_fasta_str = subprocess.check_call(cmd, text=True)
+        except subprocess.CalledProcessError as exc:
+            raise Exception(
+                f"muscle alignment failed with cmd={cmd}, returncode={exc.returncode}\n"
+                f"STDOUT: {exc.output}"
+            ) from exc
 
+        if not output_aln.exists():
+            raise Exception(f"MUSCLE did not create output file: {output_aln}")
+        
+        with open(output_aln) as output_file:
+            output = output_file.readlines()
+    
+    # sequences = {}
+    # while output:
+    #     line = output.pop(0).strip()
+    #     if line.startswith(">"):
+    #         name = line[1:]
+    #     else:
+    #         seq = line
+    #         sequences[name] = sequences.get(name, "") + seq
+    
+    # omega = {}
+    # atoms = [a for a in pm.get_model(f"({ref_polymer}) & present & guide").atom]
+    # ref_seq = sequences[replaced_list[0]]
+    # conservation = [False] * len(atoms)
+    # for (title, seq), polymer in zip(sequences.items(), all_polymers):
+    #     at_ix = 0
+    #     residues = []
+    #     assert len(seq) == len(ref_seq)
+    #     for seq_char in seq:
+    #         if ref_char == '-':
+    #             continue
+    #         elif seq_char == ref_char:
+    #             at = atoms[at_ix]
+    #             residues.append(
+    #                 Residue(
+    #                     at.model, at.index, at.resi, at.chain, at.resn, seq_char, ref_char
+    #                 )
+    #             )
+    #             conservation[at_ix] = True
+    #         at_ix += 1
+    #     omega[title] = residues
+    #     assert at_ix == len(atoms), (
+    #         f"Alignment/atom mismatch for `{title}`: consumed {at_ix} atoms, "
+    #         f"but selection has {len(atoms)} guide atoms"
+    #     )
+    # omega = {
+    #     replaced_dict[title]: omega[title]
+    #     for title in sorted(omega, key=replaced_list.index)
+    # }
+    # return omega
 
 
 from pymol import Qt

@@ -25,7 +25,7 @@ from pymol_new_command import new_command
 from .utils import (
     Selection,
     plot_hca_base,
-    clustal_omega,
+    muscle,
     Residue,
     count_molecules,
     AligMethod
@@ -39,6 +39,86 @@ class ECluster:
     coords: Any = field(repr=False, hash=False)
     idx: int
     ST: int
+
+def objects_from_kvfinder(group: str, kvfound: List[str]) -> List[str]:
+    cavities = []
+    for cavity, residues in kvfound.items():
+        cavity = f'{group}.KV.{cavity}'
+        if len(residues) >= 2:
+            resi, chain, _ = residues[0]
+            pm.select(cavity, f'(i. {resi} AND c. {chain})')
+        else:
+            raise NotImplemented("Not supposed to a cavity spans only 1 or zero residues.")
+        for resi, chain, resn in residues[1:]:
+            pm.select(cavity, f'{cavity} OR (i. {resi} AND c. {chain})')
+        pm.select(cavity, f'{cavity} AND {group}.protein')
+        pm.disable(cavity)
+        cavities.append(cavity)
+    return cavities
+
+def kvfinder_constitutional_from_pdb_string(pdbstr: str):
+    # hello GPT
+    import tempfile
+    from pyKVFinder.grid import get_vertices, detect, constitutional
+    from pyKVFinder.utils import read_vdw, read_pdb, VDW
+
+    step = 0.6
+    probe_in = 1.4
+    probe_out = 4.0
+    removal_distance = 2.4
+    volume_cutoff = 5.0
+    ligand_cutoff = 5.0
+    surface = "SES"
+    ignore_backbone = False
+    model = None
+    nthreads = None
+    verbose = False
+
+    with tempfile.NamedTemporaryFile("w", suffix=".pdb", delete=True) as tmp:
+        pdbstr = (
+            '\n'
+            .join(
+                l for l
+                in pdbstr.splitlines()
+                if l.startswith('ATOM')
+            )
+        )
+        tmp.write(pdbstr)
+        tmp.flush()
+        atomic = read_pdb(tmp.name, read_vdw(VDW), model)
+
+        vertices = get_vertices(atomic, probe_out, step)
+        ncav, cavities = detect(
+            atomic,
+            vertices,
+            step,
+            probe_in,
+            probe_out,
+            removal_distance,
+            volume_cutoff,
+            None,
+            ligand_cutoff,
+            False,
+            surface,
+            nthreads,
+            verbose,
+        )
+
+        if ncav <= 0:
+            return {}
+
+        residues = constitutional(
+            cavities,
+            atomic,
+            vertices,
+            step,
+            probe_in,
+            ignore_backbone,
+            None,
+            nthreads,
+            verbose,
+        )
+    return residues
 
 
 def get_coords(sel, state=1):
@@ -75,8 +155,10 @@ def set_properties(obj_name, properties):
         pm.set_atom_property(prop, value, obj_name)
 
 
-def parse_pdb_string(group: str, pdbstr: str) -> Tuple[List[Cluster], List[Hotspot]]:
-    pm.read_pdbstr(pdbstr, group)
+def parse_pdb_string(
+        pdbstr: str,
+        cavities: List[str]
+) -> Tuple[List[Cluster], List[Hotspot]]:
 
     clusters = []
     hotspots = []
@@ -117,9 +199,22 @@ def parse_pdb_string(group: str, pdbstr: str) -> Tuple[List[Cluster], List[Hotsp
                 CD=float(d['CD']),
                 MD=float(d['MD']),
                 Length=int(d['Len']),
+                Kavity=None,
             )
+            
+            max_touch = 0
+            max_cavity = None
+            for cavity in cavities:
+                n_atoms = pm.count_atoms(hs.Object)
+                in_touch = pm.count_atoms(f"{hs.Object} NEAR_TO 4 OF {cavity}")
+                if in_touch > max_touch and in_touch > 0.80 * n_atoms:
+                    max_touch = in_touch    
+                    max_cavity = cavity
+
+            hs.Kavity = max_cavity
             hs.save_into_properties()
             hotspots.append(hs)
+
     return clusters, hotspots
 
 
@@ -165,6 +260,7 @@ class Hotspot:
     CD: float
     MD: float
     Length: int
+    Kavity: str | None
 
     Coords: Any = field(repr=False, hash=False)
     Type: Literal["HS"] =  field(default="HS", repr=False)
@@ -190,6 +286,7 @@ class Hotspot:
             CD=pm.get_property('CD', name),
             MD=pm.get_property('MD', name),
             Length=pm.get_property('Length', name),
+            Kavity=pm.get_property('Kavity', name)
         )
         return hs
 
@@ -197,7 +294,8 @@ class Hotspot:
 def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
-    deep_search: bool = False,
+    deep_search: bool = True,
+    remove_nested: bool = True,
     clash_threshold: float = 0.15,
     pretty: bool = False,
 ):
@@ -224,6 +322,9 @@ def load_ftmap(
             Determines if hotspots can overlap/nest within larger 
             defined volumes.
 
+        remove_nested:
+            Remove hotspots made that are fully nested/inside other.
+
         clash_threshold:
             The tolerance percentage for steric clashes allowed when
             defining hotspot connectivity.
@@ -245,6 +346,7 @@ def load_ftmap(
                 group=group,
                 deep_search=deep_search,
                 clash_threshold=clash_threshold,
+                remove_nested=remove_nested,
                 pretty=pretty,
             )
         except:
@@ -252,6 +354,7 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
+                remove_nested=remove_nested,
                 clash_threshold=clash_threshold,
                 pretty=pretty,
             )
@@ -262,7 +365,8 @@ def load_ftmap(
 def _load_ftmap(
     filename: Path,
     group: str = "",
-    deep_search: bool = False,
+    deep_search: bool = True,
+    remove_nested=True,
     clash_threshold: float = 0.15,
     pretty: bool = False,
 ):
@@ -273,12 +377,14 @@ def _load_ftmap(
     cmd = [
         'xdrugpy_hotspot_finder',
         '-g', group,
-        '-i', str(filename),
-        '-c', str(clash_threshold)
+        '--input', str(filename),
+        '--clash-threshold', str(clash_threshold),
     ]
     if deep_search:
         cmd.append('--deep-search')
-
+    if remove_nested:
+        cmd.append('--remove-nested')
+    
     proc = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -290,9 +396,17 @@ def _load_ftmap(
             f"xdrugpy_hotspot_finder failed with exit code {proc.returncode}\n"
             f"stderr:\n{proc.stderr}\n"
         )
+    pdbstr = proc.stdout
+    pm.read_pdbstr(pdbstr, group)
+    for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL', 'CS']:
+        pm.disable(f"{group}.{klass}")
+    
+    kvfound = kvfinder_constitutional_from_pdb_string(pdbstr)
+    cavities = objects_from_kvfinder(group, kvfound)
+    clusters, hotspots = parse_pdb_string(pdbstr, cavities)
 
-    clusters, hotspots = parse_pdb_string(group, proc.stdout)
     pm.group(group, f"{group}.*")
+
 
     if pretty:
         pm.group(group, f"{group}.protein")
@@ -316,31 +430,19 @@ def _load_ftmap(
 
         pm.show("line", f"{group}.CS.*")
 
-        pm.disable(f"{group}.CS.*")
+        pm.order(f"{group}.BS", location="top")
+        pm.order(f"{group}.BL", location="top")
+        pm.order(f"{group}.B", location="top")
+        pm.order(f"{group}.DS", location="top")
+        pm.order(f"{group}.DL", location="top")
+        pm.order(f"{group}.D", location="top")
 
-        pm.set("mesh_mode", 1)
-        pm.orient("all")
-
+        pm.order(f"{group}.KV.*", location="top")
         pm.order(f"{group}.CS.*", location="top")
-
-        pm.order(f"{group}.BS.*", location="top")
-        pm.order(f"{group}.BL.*", location="top")
-        pm.order(f"{group}.B.*", location="top")
-        pm.order(f"{group}.DS.*", location="top")
-        pm.order(f"{group}.DL.*", location="top")
-        pm.order(f"{group}.D.*", location="top")
-        
         pm.order(f"{group}.protein", location="top")
 
-        pm.group(group, f"{group}.*", 'add')
-        pm.group(group, f"{group}.protein", 'add')
-
-        pm.group(group, f"{group}.D")
-        pm.group(group, f"{group}.B")
-        pm.group(group, f"{group}.DS")
-        pm.group(group, f"{group}.BS")
-        pm.group(group, f"{group}.DL")
-        pm.group(group, f"{group}.BL")
+        pm.group(f"{group}.CS", f"{group}.CS.*")
+        pm.group(f"{group}.KV", f"{group}.KV.*")
 
         pm.group(f"{group}.D", f"{group}.D.*")
         pm.group(f"{group}.B", f"{group}.B.*")
@@ -349,18 +451,29 @@ def _load_ftmap(
         pm.group(f"{group}.DL", f"{group}.DL.*")
         pm.group(f"{group}.BL", f"{group}.BL.*")
 
-        pm.group(f"{group}.CS", f"{group}.CS.*")
+        pm.group(group, f"{group}.protein")
+        pm.group(group, f"{group}.KS")
+        pm.group(group, f"{group}.CS")
+        pm.group(group, f"{group}.D")
+        pm.group(group, f"{group}.B")
+        pm.group(group, f"{group}.DS")
+        pm.group(group, f"{group}.BS")
+        pm.group(group, f"{group}.DL")
+        pm.group(group, f"{group}.BL")
 
-        groups = [
-            name
-            for name in pm.get_names()
-            if pm.get_type(name) == 'object:group'
-                and name.startswith(f"{group}.")
-                and pm.count_atoms(f"%{name}") == 0
-        ]
-        for grp in groups:
-            if grp in pm.get_names():
-                pm.delete(grp)
+        pm.set("mesh_mode", 1)
+        pm.orient("all")
+
+        # groups = [
+        #     name
+        #     for name in pm.get_names()
+        #     if pm.get_type(name) == 'object:group'
+        #         and name.startswith(f"{group}.")
+        #         and pm.count_atoms(f"%{name}") == 0
+        # ]
+        # for grp in groups:
+        #     if grp in pm.get_names():
+        #         pm.delete(grp)
     
     return SimpleNamespace(
         clusters=clusters,
@@ -773,13 +886,13 @@ def calc_overlap_matrix(
     
     objs_a_lbl = []
     for obj_a in objs_a:
-        substitution = rename_leafs.get(obj_a, obj_a)
-        objs_a_lbl.append(obj_a.replace(substitution))
+        new_lbl = (rename_leafs or {}).get(obj_a, obj_a)
+        objs_a_lbl.append(new_lbl)
     
     objs_b_lbl = []
     for obj_b in objs_b:
-        substitution = rename_leafs.get(obj_b, obj_b)
-        objs_b_lbl.append(obj_b.replace(substitution))
+        new_lbl = (rename_leafs or {}).get(obj_b, obj_b)
+        objs_b_lbl.append(new_lbl)
         
     ax.set_yticks(range(len(objs_a)), np.array(objs_a_lbl)[idx_rows])
     ax.set_xticks(range(len(objs_b)), np.array(objs_b_lbl)[idx_cols])
@@ -945,6 +1058,8 @@ def calc_fingerprints(
         fs_sim 8DSU.K15_D_01* 6XHM.K15_D_01*
         fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
     """
+    raise NotImplementedError
+
     seles = []
     groups = []
 
@@ -968,7 +1083,12 @@ def calc_fingerprints(
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    mapping = clustal_omega(polymers, omega_conservation.strip(), titles=seles)
+    mapping = muscle(
+        ref_polymer=ref_polymer,
+        polymers=polymers[1:],
+        ref_title=ref_sele,
+        titles=seles[1:]
+    )
     
     ref_map = mapping[ref_sele]
     fpts = []
@@ -1311,132 +1431,11 @@ def calc_multivariate_hca(
         nclusters=nclusters,
         only_medoids=only_medoids,
         annotate=annotate,
-        rename_leafs=rename_leafs,
+        rename_leafs=rename_leafs or {},
         heatmap_axis=heatmap_axis,
         dendrogram_axis=dendrogram_axis,
     )
     return X, object_list, dendro, medoids
-
-
-@new_command
-def plot_overlap_matrix(
-    sele_a: str,
-    sele_b: Optional[str] = None,
-    function: OverlapFunction = OverlapFunction.FO,
-    radius: float = 2.0,
-    annotate: bool = False
-):
-    """
-    DESCRIPTION
-
-        Generates a heatmap matrix visualizing the overlap or contact 
-        metrics between two groups of PyMOL objects. 
-
-        This is ideal for cross-comparing FTMap hotspots across different 
-        protein conformations or comparing a ligand to a set of probe clusters.
-
-    USAGE
-
-        plot_overlap_matrix sele_a [, sele_b [, function [, radius [, annotate]]]]
-
-    ARGUMENTS
-
-        sele_a: str
-            The selection for the vertical axis (rows).
-
-        sele_b: str, optional
-            The selection for the horizontal axis (columns). If omitted or 
-            blank, it defaults to sele_a (creating a self-comparison matrix).
-
-        function: OverlapFunction, default=OverlapFunction.FO
-            The metric to calculate. Supported values:
-            - 'FO': Fraction of Overlap [0.0 - 1.0]
-            - 'DC': Distance Contacts (raw count)
-            - 'DCE': Distance Contact Efficiency (normalized)
-
-        radius: float, default=2.0
-            The distance cutoff (Angstroms) passed to the overlap function.
-
-        annotate: bool, default=False
-            If True, writes the numerical values directly inside the heatmap 
-            cells. Text color (black/white) is automatically adjusted for 
-            legibility based on the cell intensity.
-
-    RETURNS
-
-        A pandas DataFrame containing the raw data with columns ['A', 'B', 'METRIC'].
-
-    NOTES
-        If function is 'FO', the color scale is fixed between 0.0 and 1.0.
-
-    EXAMPLE
-
-        # Compare hotspots in group 1 vs group 2
-        plot_overlap_matrix group1.D*, group1.B*, function=FO, annotate=True
-
-        # Create a self-similarity matrix for all objects in a session
-        plot_overlap_matrix *, function=DC
-    """
-    objs_a = pm.get_object_list(sele_a)
-    if sele_b.strip():
-        objs_b = pm.get_object_list(sele_b)
-    else:
-        objs_b = objs_a
-    
-    match function:
-        case OverlapFunction.FO:
-            get_value = get_fo
-        case OverlapFunction.DC:
-            get_value = get_dc
-        case OverlapFunction.DCE:
-            get_value = get_dce
-
-    ret = []
-    X = []
-    for i1, a in enumerate(objs_a):
-        row = []
-        for i2, b in enumerate(objs_b):
-            value = get_value(a, b, radius=radius)
-            row.append(value)
-            ret.append([a, b, value])
-        X.append(row)
-    
-    X = np.array(X)
-    fig, ax = plt.subplots(constrained_layout=True)
-    
-    ax.set_yticks(range(len(objs_a)), objs_a)
-    ax.set_xticks(range(len(objs_b)), objs_b)
-
-    ax.tick_params(axis="x", rotation=90)
-    if function == OverlapFunction.FO:
-        vmin = 0.0
-        vmax = 1.0
-    else:
-        vmin = None
-        vmax = None
-    image = ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
-    if not annotate:
-        fig.colorbar(image, ax=ax, shrink=0.8)
-
-    if annotate:
-        nan_mask = np.isnan(X)
-        xmax = vmax or X[~nan_mask].max()
-        xmin = vmin or X[~nan_mask].min()
-        for i1, a in enumerate(objs_a):
-            for i2, b in enumerate(objs_b):
-                y = X[i1, i2]
-                if np.isnan(y):
-                    continue
-                if (y - xmin)/(xmax - xmin) >= 0.5:
-                    color = "black"
-                else:
-                    color = "white"
-                if function == OverlapFunction.DC:
-                    label = f"{y}"
-                else:
-                    label = f"{y:.2f}"
-                ax.text(i2, i1, label, color=color, ha="center", va="center")
-    return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
 
 
 def calc_medchem_bind_metrics(lig_sele: Selection, pki: float):
@@ -1476,7 +1475,7 @@ def plot_ligand_fit(
 ):
     if len(pm.get_object_list(hs_sele)) != 1:
         raise ValueError("Only one hotspot can be analyzed at time.")
-    overlap_df = plot_overlap_matrix(
+    overlap_df = calc_overlap_matrix(
         sele_a=hs_sele,
         sele_b=ligs_sele,
         function=function,
@@ -1505,6 +1504,7 @@ def plot_ligand_fit(
         ax.text(x, y, s)
     ax.set_xlabel(f"{function_col} / {function_col}_ref")
     ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
+
 
 #
 # GRAPHICAL USER INTERFACE
@@ -1580,7 +1580,11 @@ class LoadWidget(QWidget):
 
         self.deepSearch = QCheckBox()
         self.deepSearch.setChecked(False)
-        boxLayout.addRow("Enable deep search:", self.deepSearch)
+        boxLayout.addRow("Deep search:", self.deepSearch)
+
+        self.removeNested = QCheckBox()
+        self.removeNested.setChecked(False)
+        boxLayout.addRow("Remove nested:", self.removeNested)
 
         self.maxCollisions = QDoubleSpinBox()
         self.maxCollisions.setRange(0.0, 1.0)
@@ -1622,6 +1626,7 @@ class LoadWidget(QWidget):
 
     def load(self):
         deep_search = self.deepSearch.isChecked()
+        remove_nested = self.removeNested.isChecked()
         max_collisions = self.maxCollisions.value()
         pretty = self.pretty.isChecked()
         try:
@@ -1640,6 +1645,7 @@ class LoadWidget(QWidget):
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
+                remove_nested=remove_nested,
                 clash_threshold=max_collisions,
                 pretty=pretty
             )
@@ -1737,6 +1743,7 @@ class TableWidget(QWidget):
                 "CD",
                 "MD",
                 "Length",
+                "Kavity",
             ],
             ("CS", "CS"): ["S"],
         }
@@ -2571,9 +2578,8 @@ class FingerprintWidget(QWidget):
         site = self.siteSelectionLine.text()
         site_radius = self.siteRadiusSpin.value()
         contact_radius = self.contactRadiusSpin.value()
-        plot_fingerprints = self.fingerprintsCheck.isChecked()
-        plot_hca = self.hcaCheck.isChecked()
-        seq_align_omega = self.omegaCheck.isChecked()
+        fingerprints_axis = self.fingerprintsCheck.isChecked()
+        dendrogram_axis = self.hcaCheck.isChecked()
         omega_conservation = self.omegaConservation.text().strip()
         nbins = self.nBinsSpin.value()
         share_ylim = self.shareYLimCheck.isChecked()
@@ -2582,26 +2588,24 @@ class FingerprintWidget(QWidget):
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
-
         calc_fingerprints(
             multi_seles,
             site,
             site_radius,
             contact_radius=contact_radius,
-            fingerprints_axis=plot_fingerprints,
-            plot_hca=plot_hca,
-            seq_align_omega=seq_align_omega,
             omega_conservation=omega_conservation,
             nbins=nbins,
-            share_ylim=share_ylim,
             sharex=sharex,
-            annotate=annotate,
+            share_ylim=share_ylim,
             linkage_method=linkage_method,
-            color_threshold=color_threshold,
             only_medoids=only_medoids,
+            annotate=annotate,
+            fingerprints_axis=fingerprints_axis,
+            # heatmap_axis=heatmap_axis,
+            dendrogram_axis=dendrogram_axis,
+            color_threshold=color_threshold,
         )
         plt.show()
-
 
 
 
@@ -2621,7 +2625,7 @@ class MainDialog(QDialog):
         tab.addTab(HcaWidget(), "Hotspot Similarity")
         tab.addTab(OverlapWidget(), "Overlap Matrix")
         tab.addTab(LigandFitWidget(), "Ligand Fit")
-        tab.addTab(FingerprintWidget(), "Fingerprints")
+        # tab.addTab(FingerprintWidget(), "Fingerprints")
 
         layout.addWidget(tab)
 
