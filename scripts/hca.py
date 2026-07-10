@@ -19,10 +19,9 @@ from xdrugpy import (
 configure_matplotlib(
     'default', # the style theme
     {
-        'font.size': 14,            # small font for the dimensions
-        'figure.dpi': 300,          # you'll may increase from default
+        'font.size': 10,            # small font for the dimensions
         'figure.figsize': (10, 8),  # good dimensions
-        'svg.fonttype': 'none'      # editable with notepad
+        'svg.fonttype': 'none'      # editable with notepad if SVG
     }
 )
 

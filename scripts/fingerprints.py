@@ -13,7 +13,6 @@ configure_matplotlib(
     'default', # the style theme
     {
         'font.size': 10,            # small font
-        'figure.dpi': 100,          # this should suffice preserving dimensions
         'figure.figsize': (10, 8),  # good dimensions
         'svg.fonttype': 'none'      # editable with notepad
     }
