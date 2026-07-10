@@ -61,8 +61,11 @@ def xdrugpy_install():
         check_call([  ## pyproject.toml --no-deps limitation
             sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0",
         ])
-    except Exception as e:
-        print(f"XDrugPy: Installation failed: {e}")
+        check_call([
+            'conda', 'install', 'bioconda::clustalo'
+        ])
+    except Exception as exc:
+        raise SystemError(f"XDrugPy: Installation failed.") from exc
 
     #
     # Install Vina
@@ -77,27 +80,6 @@ def xdrugpy_install():
             web_name = "vina_1.2.7_mac_x86_64"
     url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{web_name}"
     exe = RESOURCES_DIR / 'vina'
-    if system == "windows":
-        exe += ".exe"
-    if exe.exists():
-        os.unlink(exe)
-    print(f"Downloading {url} into {exe}")
-    urlretrieve(url, exe)
-    os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
-
-    #
-    # Install MUSCLE Aignment
-    #
-    if system == "linux":
-        web_name = "muscle-linux-x86.v5.3"
-    elif system == "windows":
-        web_name = " muscle-win64.v5.3.exe "
-    elif system == "darwin":
-        web_name = "muscle-osx-x86.v5.3"
-    else:
-        raise RuntimeError("Unexpected system.")
-    url = f"https://github.com/rcedgar/muscle/releases/download/v5.3/{web_name}"
-    exe = RESOURCES_DIR / "muscle"
     if system == "windows":
         exe += ".exe"
     if exe.exists():

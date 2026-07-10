@@ -2726,7 +2726,7 @@ class MainDialog(QDialog):
         tab.addTab(HcaWidget(), "Hotspot Similarity")
         tab.addTab(OverlapWidget(), "Overlap Matrix")
         tab.addTab(LigandFitWidget(), "Ligand Fit")
-        # tab.addTab(FingerprintWidget(), "Fingerprints")
+        tab.addTab(FingerprintWidget(), "Fingerprints")
 
         layout.addWidget(tab)
 
