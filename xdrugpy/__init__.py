@@ -2,8 +2,6 @@ import sys
 import os
 import platform
 import stat
-import zipfile
-from shutil import copyfile
 from tempfile import mkdtemp
 from pathlib import Path
 from urllib.request import urlretrieve
@@ -25,7 +23,9 @@ __ALL__ = [
     "calc_ligand_fit",
     "calc_fingerprints",
     "LinkageMethod",
+    "DistanceMethod",
     "OverlapFunction",
+    "HcaOverlapFunction",
     "BindMetric",
 
     # utils
@@ -156,6 +156,6 @@ from .hotspots import (
     load_ftmap, get_fo, get_dc, get_dce,
     calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
     calc_fingerprints,
-    LinkageMethod, OverlapFunction
+    LinkageMethod, OverlapFunction, HcaOverlapFunction, DistanceMethod
 )
 from .utils import configure_matplotlib, plot, run

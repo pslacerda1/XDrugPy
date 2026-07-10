@@ -11,7 +11,7 @@ from xdrugpy.hotspots import (
     get_fo,
     get_dce,
     LinkageMethod,
-    UnivariateOverlapFunction,
+    HcaOverlapFunction,
 )
 
 mpl.use('SVG')
@@ -80,7 +80,7 @@ def test_calc_univariate_hca():
 
     calc_univariate_hca(
         sele="*.DL.*",
-        overlap_function=UnivariateOverlapFunction.FO_AVG,
+        overlap_function=HcaOverlapFunction.FO_AVG,
         linkage_method=LinkageMethod.COMPLETE,
         only_medoids=True,
         radius=4,
@@ -147,13 +147,13 @@ def test_res_sim():
     assert res_sim(
         '1dq8.DL.0',
         '1dq9.CS.0',
-        method=UnivariateOverlapFunction.JACCARD,
+        method=HcaOverlapFunction.JACCARD,
         radius=4.0
     ) - 0.272 < 0.01
     assert res_sim(
         '1dq8.DL.0',
         '1dq9.CS.0',
-        method=UnivariateOverlapFunction.OVERLAP,
+        method=HcaOverlapFunction.OVERLAP,
         radius=4.0
     ) == 0.9375
 

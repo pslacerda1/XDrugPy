@@ -8,6 +8,8 @@ from xdrugpy import (
     calc_multivariate_hca,
     calc_univariate_hca,
     LinkageMethod,
+    DistanceMethod,
+    HcaOverlapFunction,
     configure_matplotlib,
     plot,
 )
@@ -24,11 +26,11 @@ configure_matplotlib(
     }
 )
 
-# List all your FTMove PDB files but limits arbitrarily to
-# the first 5 entries found. Use small lists when developing
-# the script to speed up the process
+# List all your FTMove PDB files but limits to the first 5
+# entries found. Use small lists when developing the script
+# to speed up the process.
 files = glob("/home/peu/Desktop/PEPTI/atlas/*_atlas.pdb")
-for file in files[:10]:
+for file in files[:5]:
     
     # Load structures and does hotspots ligability analysis.
     ftmap = load_ftmap(
@@ -54,6 +56,7 @@ for file in files[:10]:
 # coordinates of center-of-mass.
 calc_multivariate_hca(
     '*.D* AND p.S0>20',
+    dist_method=DistanceMethod.EUCLIDEAN,
     linkage_method=LinkageMethod.WARD,
     nclusters=5,
     only_medoids=True,
@@ -64,10 +67,11 @@ calc_multivariate_hca(
 )
 plot()
 
-# Univariate analysis on the distance between hotspot properties, including
-# coordinates of center-of-mass.
+# Dendrogram cluster analysis with distances based on reciprocal fractional
+# overlap average between hotspot objects.
 calc_univariate_hca(
     '*.D* AND p.S0>20',
+    overlap_function=HcaOverlapFunction.FO_AVG,
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=0.35,
     annotate=True,

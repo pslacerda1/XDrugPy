@@ -630,7 +630,7 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-class UnivariateOverlapFunction(StrEnum):
+class HcaOverlapFunction(StrEnum):
     FO_AVG = "fo_avg"
     JACCARD = "jaccard"
     OVERLAP = "overlap"
@@ -639,8 +639,7 @@ class UnivariateOverlapFunction(StrEnum):
 @new_command
 def calc_univariate_hca(
     sele: Selection,
-    overlap_function: UnivariateOverlapFunction.FO_AVG = UnivariateOverlapFunction.FO_AVG,
-    seq_align_before_overlap: bool = False,
+    overlap_function: HcaOverlapFunction.FO_AVG = HcaOverlapFunction.FO_AVG,
     radius: float = 2.0,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = -1.0,
@@ -719,11 +718,11 @@ def calc_univariate_hca(
             coords1 = obj_coords[obj1]
             coords2 = obj_coords[obj2]
             match overlap_function:
-                case UnivariateOverlapFunction.FO_AVG:
+                case HcaOverlapFunction.FO_AVG:
                     fo1 = get_fo(coords1, coords2, radius=radius)
                     fo2 = get_fo(coords2, coords1, radius=radius)
                     ret = (fo1 + fo2) / 2
-                case UnivariateOverlapFunction.JACCARD:
+                case HcaOverlapFunction.JACCARD:
                     # ret = res_sim(
                     #     obj1,
                     #     obj2,
@@ -733,7 +732,7 @@ def calc_univariate_hca(
                     # )
                     raise NotImplementedError("JACCARD similarity is not yet implemented.")
                     pass
-                case UnivariateOverlapFunction.OVERLAP:
+                case HcaOverlapFunction.OVERLAP:
                     # ret = res_sim(
                     #     obj1,
                     #     obj2,
@@ -2050,7 +2049,7 @@ class HcaWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.univariateFunctionCombo = QComboBox()
-        self.univariateFunctionCombo.addItems([e.value for e in UnivariateOverlapFunction])
+        self.univariateFunctionCombo.addItems([e.value for e in HcaOverlapFunction])
         boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
