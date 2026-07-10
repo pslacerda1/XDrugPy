@@ -8,8 +8,8 @@ from xdrugpy import (
     calc_multivariate_hca,
     calc_univariate_hca,
     LinkageMethod,
-    DistanceMethod,
-    HcaOverlapFunction,
+    MultivariateDistanceMethod,
+    UnivariateDistanceMethod,
     configure_matplotlib,
     plot,
 )
@@ -56,7 +56,7 @@ for file in files[:5]:
 # coordinates of center-of-mass.
 calc_multivariate_hca(
     '*.D* AND p.S0>20',
-    dist_method=DistanceMethod.EUCLIDEAN,
+    dist_method=MultivariateDistanceMethod.EUCLIDEAN,
     linkage_method=LinkageMethod.WARD,
     nclusters=5,
     only_medoids=True,
@@ -71,7 +71,7 @@ plot()
 # overlap average between hotspot objects.
 calc_univariate_hca(
     '*.D* AND p.S0>20',
-    overlap_function=HcaOverlapFunction.FO_AVG,
+    dist_methdo=UnivariateDistanceMethod.FO_AVG,
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=0.35,
     annotate=True,

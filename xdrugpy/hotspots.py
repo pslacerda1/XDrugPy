@@ -630,7 +630,7 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-class HcaOverlapFunction(StrEnum):
+class UnivariateDistanceMethod(StrEnum):
     FO_AVG = "fo_avg"
     JACCARD = "jaccard"
     OVERLAP = "overlap"
@@ -639,7 +639,7 @@ class HcaOverlapFunction(StrEnum):
 @new_command
 def calc_univariate_hca(
     sele: Selection,
-    overlap_function: HcaOverlapFunction.FO_AVG = HcaOverlapFunction.FO_AVG,
+    dist_methdo: UnivariateDistanceMethod.FO_AVG = UnivariateDistanceMethod.FO_AVG,
     radius: float = 2.0,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = -1.0,
@@ -717,12 +717,12 @@ def calc_univariate_hca(
                 continue
             coords1 = obj_coords[obj1]
             coords2 = obj_coords[obj2]
-            match overlap_function:
-                case HcaOverlapFunction.FO_AVG:
+            match dist_methdo:
+                case UnivariateDistanceMethod.FO_AVG:
                     fo1 = get_fo(coords1, coords2, radius=radius)
                     fo2 = get_fo(coords2, coords1, radius=radius)
                     ret = (fo1 + fo2) / 2
-                case HcaOverlapFunction.JACCARD:
+                case UnivariateDistanceMethod.JACCARD:
                     # ret = res_sim(
                     #     obj1,
                     #     obj2,
@@ -732,7 +732,7 @@ def calc_univariate_hca(
                     # )
                     raise NotImplementedError("JACCARD similarity is not yet implemented.")
                     pass
-                case HcaOverlapFunction.OVERLAP:
+                case UnivariateDistanceMethod.OVERLAP:
                     # ret = res_sim(
                     #     obj1,
                     #     obj2,
@@ -1404,7 +1404,7 @@ def hs_proj(
     pm.spectrum("p.cnt_atoms", palette=palette, selection=protein)
 
 
-class DistanceMethod(StrEnum):
+class MultivariateDistanceMethod(StrEnum):
     EUCLIDEAN = "euclidean"
     CITYBLOCK = "cityblock"
     DICE = "dice"
@@ -1418,7 +1418,7 @@ def calc_multivariate_hca(
     nclusters: int = -1.0,
     only_medoids: bool = False,
     annotate: bool = False,
-    dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
+    dist_method: MultivariateDistanceMethod = MultivariateDistanceMethod.EUCLIDEAN,
     rename_leafs: Optional[Dict[str, str]] = None,
     figure_title: str | None = None,
     dendrogram_plot: str | Path | bool | axes.Axes | None = None,
@@ -1992,6 +1992,11 @@ class HcaWidget(QWidget):
         self.colorThresholdSpin.setDecimals(2)
         boxLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
+        self.nclustersSpin = QSpinBox()
+        self.nclustersSpin.setMinimum(-1)
+        self.nclustersSpin.setMaximum(10)
+        boxLayout.addRow("Num clusters:", self.nclustersSpin)
+
         self.onlyMedoidsCheck = QCheckBox()
         self.onlyMedoidsCheck.setChecked(False)
         boxLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
@@ -2048,9 +2053,9 @@ class HcaWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
-        self.univariateFunctionCombo = QComboBox()
-        self.univariateFunctionCombo.addItems([e.value for e in HcaOverlapFunction])
-        boxLayout.addRow("Function:", self.univariateFunctionCombo)
+        self.univariateDistFunctionCombo = QComboBox()
+        self.univariateDistFunctionCombo.addItems([e.value for e in UnivariateDistanceMethod])
+        boxLayout.addRow("Distance function:", self.univariateDistFunctionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
         self.radiusSpin.setValue(2)
@@ -2069,9 +2074,9 @@ class HcaWidget(QWidget):
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
-        self.multivariateFunctionCombo = QComboBox()
-        self.multivariateFunctionCombo.addItems([e.value for e in DistanceMethod])
-        boxLayout.addRow("Distance function:", self.multivariateFunctionCombo)
+        self.multivariateDistFunctionCombo = QComboBox()
+        self.multivariateDistFunctionCombo.addItems([e.value for e in MultivariateDistanceMethod])
+        boxLayout.addRow("Distance function:", self.multivariateDistFunctionCombo)
 
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_multivariate_hca)
@@ -2120,40 +2125,50 @@ class HcaWidget(QWidget):
     def plot_multivariate_hca(self):
         sele = self.hotspotSeleLine.text()
         linkage_method = self.linkageMethodCombo.currentText()
+        distance_method = self.multivariateDistFunctionCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
+        nclusters = self.nclustersSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
         heatmap_plot = self.enableHeatmapCheck.isChecked()
 
         calc_multivariate_hca(
             sele=sele,
+            dist_method=distance_method,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
+            nclusters=nclusters,
             only_medoids=only_medoids,
             annotate=annotate,
             rename_leafs=self.getLeafLabels(),
-            heatmap_plot=heatmap_plot
+            dendrogram_plot=True,
+            heatmap_plot=heatmap_plot,
         )
         plt.show()
     
     def plot_univariate_hca(self):
         sele = self.hotspotSeleLine.text()
-        overlap_function = self.univariateFunctionCombo.currentText()
+        dist_method = self.univariateDistFunctionCombo.currentText()
         radius = self.radiusSpin.value()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
+        nclusters = self.nclustersSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
+        heatmap_plot = self.enableHeatmapCheck.isChecked()
 
         calc_univariate_hca(
             sele=sele,
             radius=radius,
-            overlap_function=overlap_function,
-            annotate=annotate,
+            dist_methdo=dist_method,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
+            nclusters=nclusters,
             only_medoids=only_medoids,
             rename_leafs=self.getLeafLabels(),
+            annotate=annotate,
+            dendrogram_plot=True,
+            heatmap_plot=heatmap_plot,
         )
         plt.show()
 
@@ -2550,7 +2565,7 @@ class FingerprintWidget(QWidget):
         self.multiSelesLine = QLineEdit("")
         scrollLayout.addRow("Multi sele:", self.multiSelesLine)
 
-        self.siteSelectionLine = QLineEdit("*")
+        self.siteSelectionLine = QLineEdit("")
         scrollLayout.addRow("Focus site:", self.siteSelectionLine)
 
         self.siteRadiusSpin = QDoubleSpinBox()
@@ -2656,6 +2671,11 @@ class FingerprintWidget(QWidget):
         self.colorThresholdSpin.setDecimals(2)
         hcaLayout.addRow("Color threshold:", self.colorThresholdSpin)
 
+        self.nclustersSpin = QSpinBox()
+        self.nclustersSpin.setMinimum(-1)
+        self.nclustersSpin.setMaximum(10)
+        hcaLayout.addRow("Num clusters:", self.nclustersSpin)
+
         self.onlyMedoidsCheck = QCheckBox()
         self.onlyMedoidsCheck.setChecked(False)
         hcaLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
@@ -2687,6 +2707,7 @@ class FingerprintWidget(QWidget):
         annotate = self.annotateCheck.isChecked()
         linkage_method = self.linkageMethodCombo.currentText()
         color_threshold = self.colorThresholdSpin.value()
+        nclusters = self.nclustersSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
         calc_fingerprints(
             multi_seles,
@@ -2701,9 +2722,10 @@ class FingerprintWidget(QWidget):
             only_medoids=only_medoids,
             annotate=annotate,
             fingerprints_plot=fingerprints_plot,
-            # heatmap_plot=heatmap_plot,
+            heatmap_plot=False,
             dendrogram_plot=dendrogram_plot,
             color_threshold=color_threshold,
+            nclusters=nclusters,
         )
         plt.show()
 

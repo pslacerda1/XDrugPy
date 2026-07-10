@@ -156,6 +156,6 @@ from .hotspots import (
     load_ftmap, get_fo, get_dc, get_dce,
     calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
     calc_fingerprints,
-    LinkageMethod, OverlapFunction, HcaOverlapFunction, DistanceMethod
+    LinkageMethod, OverlapFunction, UnivariateDistanceMethod, MultivariateDistanceMethod
 )
 from .utils import configure_matplotlib, plot, run
