@@ -14,7 +14,7 @@ from pymol_new_command import new_command, Any
 from .utils import (
     PyMOLComboObjectBox,
     AligMethod,
-    muscle
+    clustal_omega
 )
 
 
@@ -231,7 +231,7 @@ def rmsf(
     except (Exception, CmdException) as exc:
         raise Exception(f"Failed to align objects to {reference}.") from exc
 
-    mapping = muscle([reference, *frames], omega_conservation)
+    mapping = clustal_omega([reference, *frames], omega_conservation)
     f0_map = mapping[reference]
     X = {}
     for frame, map in zip(frames, mapping.values()):

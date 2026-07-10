@@ -25,7 +25,7 @@ from pymol_new_command import new_command
 from .utils import (
     Selection,
     plot_hca_base,
-    muscle,
+    clustal_omega,
     AligMethod
 )
 
@@ -1034,31 +1034,108 @@ def calc_fingerprints(
     nclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = True,
-    fingerprints_plot: str = "",
     share_ylim: bool = True,
-    dendrogram_plot: str = '',
-    heatmap_plot: str = '',
+    figure_title: str | None = None,
+    fingerprints_plot: str | Path | axes.Axes | None = None,
+    dendrogram_plot: str | Path | axes.Axes | None = None,
+    heatmap_plot: str | Path | axes.Axes | None = None,
     quiet: bool = True,
 ):
     """
-    Compute the similarity between the residue contact fingerprint of two
-    hotspots.
+    DESCRIPTION
 
-    OPTIONS:
-        hotspots          hotspot selection
-        site              selection to focus based on first protein
-        radius            radius to compute the contacts (default: 4)
-        plot_fingerprints plot the fingerprints (default: True)
-        nbins             number of residue labels (default: 5)
-        plot_dendrogram   plot the dendrogram (default: False)
-        linkage_method    linkage method (default: single)
-        quiet             define verbosity
+        Computes the residue contact fingerprint for multiple hotspot or
+        consensus sites selections, maps them via sequence alignment, and
+        performs a Hierarchical Cluster Analysis (HCA) based on Pearson
+        correlation distances.
+
+        The method aligns the underlying protein polymers using Clustal Omega,
+        extracts structural atom contacts within a defined radius around the 
+        target interaction site.
+
+    ARGUMENTS
+
+        multi_seles: str
+            A slash-separated string of PyMOL selections containing the objects 
+            to compare (e.g., 'hs_or_cs_1 / hs_or_cs_2'). They must came from
+            load_ftmap and belongs to a protein group.
+
+        site: Selection, default="*"
+            A PyMOL selection used to focus the fingerprint sub-region based on 
+            the first protein structure.
+
+        site_radius: float, default=5.0
+            Distance cutoff (Angstroms) to include residues in fingerprint
+            relative to the 'site' selection.
+
+        omega_conservation: str, default="*:."
+            Clustal Omega conservation string match criteria for filtering residues.
+
+        contact_radius: float, default=4.0
+            Distance cutoff (Angstroms) used to compute raw atomic contacts 
+            between the hotspot/cs and target residues.
+
+        nbins: int, default=5
+            Number of bins/labels applied to the x-axis tick locator.
+
+        sharex: bool, default=True
+            If True, subplots share the same x-axis layout, hiding inner labels 
+            to prevent visual clutter.
+
+        linkage_method: LinkageMethod, default='ward'
+            The clustering linkage algorithm used to construct the dendrogram ('ward',
+            'single', 'complete').
+
+        color_threshold: float, default=-1.0
+            Distance cutoff for coloring dendrogram branches. Disabled if negative.
+            Can be used only if nclusters is disabled.
+
+        nclusters: int, default=-1
+            Target number of clusters to coloring dendrogram branches. Disable if zero
+            or less. Can be used only if color_threshold is disabled.
+
+        only_medoids: bool, default=False
+            If True, restricts the final HCA visualization strictly to cluster medoids.
+
+        annotate: bool, default=True
+            If True, writes numerical values inside the distance matrix heatmap cells.
+
+        share_ylim: bool, default=True
+            If True, synchronizes the y-axis maximum scale across all fingerprint 
+            bar charts for direct visual comparison.
+
+        figure_title: str, optional
+            Title text displayed at the top of the generated figure window.
+
+        fingerprints_plot: str, Path, Axes, optional
+            Target destination for the bar charts. Can be a Matplotlib Axes, 
+            a file path to export the image, or a boolean.
+
+        dendrogram_plot: str, Path, Axes, optional
+            Target destination for the HCA dendrogram plot layout.
+
+        heatmap_plot: str, Path, Axes, optional
+            Target destination for the Pearson correlation distance matrix heatmap.
+
+        quiet: bool, default=True
+            If True, suppresses console verbosity and raw stdout outputs.
+
+    RETURNS
+
+        A tuple containing: (Fingerprints List, Correlation Matrix, Dendrogram, Medoids)
 
     EXAMPLES
-        fs_sim 8DSU.K15_D_01* 6XHM.K15_D_01*
-        fs_sim 8DSU.CS_* 6XHM.CS_*, site=resi 8-101, nbins=10
+
+        # Compare specific hotspots across two structures separated by a slash
+        calc_fingerprints 8DSU.K15_D_01* / 6XHM.K15_D_01*, linkage_method=ward
+
+        # Focus fingerprints on a specific binding site pocket with custom binning
+        calc_fingerprints 8DSU.CS_* / 6XHM.CS_*, site=resi 8-101, nbins=10
+
+    SEE ALSO
+
+        calc_univariate_hca, calc_mutivariate_hca
     """
-    raise NotImplementedError
 
     seles = []
     groups = []
@@ -1083,13 +1160,12 @@ def calc_fingerprints(
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     
-    mapping = muscle(
-        ref_polymer=ref_polymer,
-        polymers=polymers[1:],
-        ref_title=ref_sele,
-        titles=seles[1:]
+    mapping = clustal_omega(
+        polymers,
+        omega_conservation.strip(),
+        titles=seles
     )
-    
+
     ref_map = mapping[ref_sele]
     fpts = []
     for poly, (hs, map) in zip(polymers, mapping.items()):
@@ -1105,8 +1181,9 @@ def calc_fingerprints(
         fpts.append(fpt)
 
     if fingerprints_plot:
-        if isinstance(fingerprints_plot, (bool, str, Path)):
-            fig, fpt_axs = plt.subplots(nrows=len(seles))
+        if isinstance(fingerprints_plot, (str, Path)) or fingerprints_plot is True:
+            _, fpt_axs = plt.subplots(nrows=len(seles))
+
         elif isinstance(fingerprints_plot, axes.Axes):
             fpt_axs = []
             height = 1/len(fpt)
@@ -1114,8 +1191,7 @@ def calc_fingerprints(
                 ax = fingerprints_plot.inset_axes([0, (i+1)*height], 1, height)
                 fpt_axs.append(ax)
     else:
-        fig, fpt_axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
-        fig.supylabel('Atom Counts')
+        fpt_axs = None
     
     if not isinstance(fpt_axs, (np.ndarray, list)):
         fpt_axs = [fpt_axs]
@@ -1134,7 +1210,7 @@ def calc_fingerprints(
         elif sharex and ix + 1 == len(seles):
             labels = shared_labels
         arange = np.arange(len(fpt))
-        max_val = max(max(fpt.values() or 0), max_val)
+        max_val = max(max(fpt.values()) if fpt else 0, max_val)
         ax.bar(arange, fpt.values())
         ax.set_title(sele)
         ax.yaxis.set_major_formatter(lambda x, pos: str(int(x)))
@@ -1152,10 +1228,15 @@ def calc_fingerprints(
     if fingerprints_plot:
         fig = fpt_axs[0].get_figure(True)
         fig.set_layout_engine('compressed')
+        fig.supylabel('Atom Counts')
+        if figure_title:
+            fig.suptitle(figure_title)
         if isinstance(fingerprints_plot, (str, Path)):
             fig.savefig(str(fingerprints_plot))
-        if isinstance(fingerprints_plot, axes.Axes):
+        elif fingerprints_plot is True:
             fig.show()
+        elif isinstance(fingerprints_plot, axes.Axes):
+            pass
 
     corrs = []
     labels = []
@@ -1171,7 +1252,6 @@ def calc_fingerprints(
             if not quiet:
                 print(f"Pearson correlation: {sele1} / {sele2}: {corr:.2f}")
 
-    
     dendro, medoids = plot_hca_base(
         corrs,
         labels,
@@ -1182,6 +1262,7 @@ def calc_fingerprints(
         annotate=annotate,
         vmin=0,
         vmax=2,
+        figure_title=figure_title,
         dendrogram_plot=dendrogram_plot,
         heatmap_plot=heatmap_plot
     )

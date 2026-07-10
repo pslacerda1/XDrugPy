@@ -51,7 +51,6 @@ def configure_matplotlib(style='default', params=None):
             'font.size': 14,
             'figure.figsize': (10, 6),
             'svg.fonttype': 'none',
-            'axes.prop_cycle': cycler(color=reversed(matplotlib.colors.XKCD_COLORS))
         },
         **(params or {}),
     })
@@ -162,10 +161,10 @@ def plot_hca_base(
     for leaf_node, new_label in (rename_leafs or {}).items():
         idx = labels.index(leaf_node)
         labels[idx] = new_label
-    if nclusters != -1.0 and color_threshold != -1.0:
+    if nclusters > 0 and color_threshold >= 0:
         raise ValueError("Cannot specify both nclusters and color_threshold.")
     Z = linkage(dists, method=linkage_method)
-    if nclusters != -1.0:
+    if nclusters > 0:
         # Calculate the distance threshold that corresponds to the desired number of clusters
         color_threshold = threshold_for_k_clusters(Z, nclusters)
 
@@ -320,129 +319,86 @@ def plot_hca_base(
         fig.set_layout_engine('compressed')
         if isinstance(heatmap_plot, (str, Path)):
             fig.savefig(str(heatmap_plot))
-        else:
+        elif heatmap_plot is True:
             fig.show()
-    
+        elif isinstance(heatmap_plot, axes.Axes):
+            pass
     return dendro, medoids
 
 
 
-def muscle(ref_polymer, polymers, ref_title, titles=None):
-    raise NotImplementedError
+def clustal_omega(seles, conservation, titles=None):
     replaced_dict = {}
     replaced_list = []
     if not titles:
-        titles = polymers
-    input_fasta_str = ''
-    all_polymers = [ref_polymer, *polymers]
-    all_titles = [ref_title, *titles]
-    for polymer, title in zip(all_polymers, all_titles):
-        query = f'({polymer}) and present and guide and polymer'
+        titles = seles
+    input_fasta = ''
+    for sele, title in zip(seles, titles):
+        query = f'({sele}) and present and guide and polymer'
 
         title_replaced = title.replace(' ', '_')
         replaced_dict[title_replaced] = title
         replaced_list.append(title_replaced)
 
-        input_fasta_str += (
+        input_fasta += (
             ">" + title_replaced + 
             pm
             .get_fastastr(query, key='model')
-            .removeprefix(f'>{polymer}')
+            .removeprefix(f'>{sele}')
         )
+    proc = subprocess.Popen(
+        "clustalo -i - --outfmt=clu --wrap=45",
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True,
+        text=True,
+    )
+    output_fasta, err = proc.communicate(input_fasta)
+    if err:
+        raise Exception(f"Clustal Omega error: {err}")
     
-    with TemporaryDirectory(prefix="XDrugPy-") as tempdir:
-        tempdir = Path(tempdir)
-        input_fa = tempdir / "input.fa"
-        output_aln = tempdir / "output.aln"
+    # joining multiline sequences
+    output = output_fasta.split('\n')[3:]
+    sequences = {}
+    while output:
+        line = output.pop(0)
+        if line.strip() == "":
+            continue
+        if line[0] != ' ':
+            name, seq = line.split(maxsplit=1)
+        else:
+            name = 'CLUSTALO'
+            seq = line[-len(seq):]
+        sequences[name] = sequences.get(name, "") + seq
+
+    # skiping gaps and keeping counters ok
+    clu = sequences.pop('CLUSTALO')
+    omega = {}
+    for (title, seq), sele in zip(sequences.items(), seles):
+        atoms = [a for a in pm.get_model(f"({sele}) & present & guide & polymer").atom]
+        at_ix = 0
+        for aln_ix, (seq_char, clu_char) in enumerate(zip(seq, clu)):
+            if seq_char == '-':
+                continue
+            at = atoms[at_ix]
+            if clu_char in conservation:
+                if title not in omega:
+                    omega[title] = []
+                omega[title].append(Residue(
+                    at.model, at.index, at.resi, at.chain, at.resn, seq_char, clu_char
+                ))
+            at_ix += 1
         
-        with open(input_fa, 'w') as input_file:
-            input_file.write(input_fasta_str)
-        
-        cmd = [
-            "muscle",
-            "-align", str(input_fa),
-            "-output", str(output_aln),
-        ]
-        try:
-            output_fasta_str = subprocess.check_call(cmd, text=True)
-        except subprocess.CalledProcessError as exc:
-            raise Exception(
-                f"muscle alignment failed with cmd={cmd}, returncode={exc.returncode}\n"
-                f"STDOUT: {exc.output}"
-            ) from exc
-
-        if not output_aln.exists():
-            raise Exception(f"MUSCLE did not create output file: {output_aln}")
-        
-        with open(output_aln) as output_file:
-            output = output_file.readlines()
-    
-    # sequences = {}
-    # while output:
-    #     line = output.pop(0).strip()
-    #     if line.startswith(">"):
-    #         name = line[1:]
-    #     else:
-    #         seq = line
-    #         sequences[name] = sequences.get(name, "") + seq
-    
-    # omega = {}
-    # atoms = [a for a in pm.get_model(f"({ref_polymer}) & present & guide").atom]
-    # ref_seq = sequences[replaced_list[0]]
-    # conservation = [False] * len(atoms)
-    # for (title, seq), polymer in zip(sequences.items(), all_polymers):
-    #     at_ix = 0
-    #     residues = []
-    #     assert len(seq) == len(ref_seq)
-    #     for seq_char in seq:
-    #         if ref_char == '-':
-    #             continue
-    #         elif seq_char == ref_char:
-    #             at = atoms[at_ix]
-    #             residues.append(
-    #                 Residue(
-    #                     at.model, at.index, at.resi, at.chain, at.resn, seq_char, ref_char
-    #                 )
-    #             )
-    #             conservation[at_ix] = True
-    #         at_ix += 1
-    #     omega[title] = residues
-    #     assert at_ix == len(atoms), (
-    #         f"Alignment/atom mismatch for `{title}`: consumed {at_ix} atoms, "
-    #         f"but selection has {len(atoms)} guide atoms"
-    #     )
-    # omega = {
-    #     replaced_dict[title]: omega[title]
-    #     for title in sorted(omega, key=replaced_list.index)
-    # }
-    # return omega
-
-
-from pymol import Qt
-
-QWidget = Qt.QtWidgets.QWidget
-QFileDialog = Qt.QtWidgets.QFileDialog
-QFormLayout = Qt.QtWidgets.QFormLayout
-QPushButton = Qt.QtWidgets.QPushButton
-QSpinBox = Qt.QtWidgets.QSpinBox
-QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
-QLineEdit = Qt.QtWidgets.QLineEdit
-QCheckBox = Qt.QtWidgets.QCheckBox
-QVBoxLayout = Qt.QtWidgets.QVBoxLayout
-QHBoxLayout = Qt.QtWidgets.QHBoxLayout
-QDialog = Qt.QtWidgets.QDialog
-QComboBox = Qt.QtWidgets.QComboBox
-QTabWidget = Qt.QtWidgets.QTabWidget
-QLabel = Qt.QtWidgets.QLabel
-QTableWidget = Qt.QtWidgets.QTableWidget
-QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
-QGroupBox = Qt.QtWidgets.QGroupBox
-QHeaderView = Qt.QtWidgets.QHeaderView
-QTextEdit = Qt.QtWidgets.QTextEdit
-
-QtCore = Qt.QtCore
-QIcon = Qt.QtGui.QIcon
-QTextCursor = Qt.QtGui.QTextCursor
+    assert at_ix == len(atoms), (
+        f"Alignment/atom mismatch for {title}: consumed {at_ix} atoms, "
+        f"but selection has {len(atoms)} guide atoms"
+    )
+    omega = {
+        replaced_dict[title]: omega[title]
+        for title in sorted(omega, key=replaced_list.index)
+    }
+    return omega
 
 
 
@@ -481,6 +437,35 @@ def kill_process(proc):
             proc.wait()
         except:
             pass
+
+
+
+from pymol import Qt
+
+QWidget = Qt.QtWidgets.QWidget
+QFileDialog = Qt.QtWidgets.QFileDialog
+QFormLayout = Qt.QtWidgets.QFormLayout
+QPushButton = Qt.QtWidgets.QPushButton
+QSpinBox = Qt.QtWidgets.QSpinBox
+QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
+QLineEdit = Qt.QtWidgets.QLineEdit
+QCheckBox = Qt.QtWidgets.QCheckBox
+QVBoxLayout = Qt.QtWidgets.QVBoxLayout
+QHBoxLayout = Qt.QtWidgets.QHBoxLayout
+QDialog = Qt.QtWidgets.QDialog
+QComboBox = Qt.QtWidgets.QComboBox
+QTabWidget = Qt.QtWidgets.QTabWidget
+QLabel = Qt.QtWidgets.QLabel
+QTableWidget = Qt.QtWidgets.QTableWidget
+QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
+QGroupBox = Qt.QtWidgets.QGroupBox
+QHeaderView = Qt.QtWidgets.QHeaderView
+QTextEdit = Qt.QtWidgets.QTextEdit
+
+QtCore = Qt.QtCore
+QIcon = Qt.QtGui.QIcon
+QTextCursor = Qt.QtGui.QTextCursor
+
 
 class PyMOLComboObjectBox(QComboBox):
 

@@ -145,6 +145,7 @@ def __init_plugin__(app=None):
     configure_matplotlib("default", {
         'font.size': 14,
         'figure.figsize': (10, 6),
+        'figure.dpi': 100,
         'svg.fonttype': 'none',
         # 'axes.prop_cycle': cycler(color=reversed(matplotlib.colors.XKCD_COLORS))
     })
