@@ -155,8 +155,9 @@ def plot_hca_base(
     rename_leafs=None,
     nclusters=-1,
     color_threshold=-1.0,
-    dendrogram_axis=None,
-    heatmap_axis=None,
+    figure_title=None,
+    dendrogram_plot=None,
+    heatmap_plot=None,
 ):
     for leaf_node, new_label in (rename_leafs or {}).items():
         idx = labels.index(leaf_node)
@@ -168,15 +169,18 @@ def plot_hca_base(
         # Calculate the distance threshold that corresponds to the desired number of clusters
         color_threshold = threshold_for_k_clusters(Z, nclusters)
 
-    if dendrogram_axis:
-        if isinstance(dendrogram_axis, (str, Path, bool)):
+    if dendrogram_plot:
+        if isinstance(dendrogram_plot, (str, Path, bool)) or dendrogram_plot is True:
             _, dendro_ax = plt.subplots()
 
-        elif isinstance(dendrogram_axis, axes.Axes):
-            dendro_ax = dendrogram_axis
+        elif isinstance(dendrogram_plot, axes.Axes):
+            dendro_ax = dendrogram_plot
     else:
         dendro_ax = None
 
+    if dendro_ax and figure_title:
+        dendro_ax.set_title(figure_title)
+    
     dendro = sch.dendrogram(
         Z,
         labels=labels,
@@ -195,24 +199,28 @@ def plot_hca_base(
     X = X[dendro["leaves"], :]
     X = X[:, dendro["leaves"]]
 
-    heat_ax = None
-    if heatmap_axis:
-        if isinstance(heatmap_axis, (str, Path)):
+    if heatmap_plot:
+        if isinstance(heatmap_plot, (str, Path)) or heatmap_plot is True:
             _, heat_ax = plt.subplots()
 
-        elif isinstance(heatmap_axis, axes.Axes):
-            heat_ax = heatmap_axis
+        elif isinstance(heatmap_plot, axes.Axes):
+            heat_ax = heatmap_plot
+            
+    else:
+        heat_ax = None
     
     if heat_ax:
+        if figure_title:
+            heat_ax.set_title(figure_title)
         heat_ax.set_xticks(range(len(dendro["ivl"])), dendro["ivl"])
         heat_ax.set_yticks(range(len(dendro["ivl"])), dendro["ivl"])
         heat_ax.tick_params(axis="x", rotation=90)
-        heat_ax.yaxis.tick_right()
+        heat_ax.yaxis.tick_left()
         image = heat_ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
         
         if not annotate:
             heat_ax.get_figure().colorbar(image, ax=heat_ax, shrink=0.8)
-        if annotate:
+        else:
             xmin = vmin or X.min()
             xmax = vmax or X.max()
             
@@ -299,19 +307,19 @@ def plot_hca_base(
             if ticklabel.get_text() not in medoids_labels:
                 ticklabel.set_visible(False)
 
-    if dendrogram_axis:
+    if dendrogram_plot:
         fig = dendro_ax.get_figure(True)
         fig.set_layout_engine('compressed')
-        if isinstance(dendrogram_axis, (str, Path)):
-            fig.savefig(dendrogram_axis)
+        if isinstance(dendrogram_plot, (str, Path)):
+            fig.savefig(dendrogram_plot)
         else:
             fig.show()
     
-    if heatmap_axis:
+    if heatmap_plot:
         fig = heat_ax.get_figure(True)
         fig.set_layout_engine('compressed')
-        if isinstance(heatmap_axis, (str, Path)):
-            fig.savefig(str(heatmap_axis))
+        if isinstance(heatmap_plot, (str, Path)):
+            fig.savefig(str(heatmap_plot))
         else:
             fig.show()
     

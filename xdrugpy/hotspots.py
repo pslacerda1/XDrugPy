@@ -26,8 +26,6 @@ from .utils import (
     Selection,
     plot_hca_base,
     muscle,
-    Residue,
-    count_molecules,
     AligMethod
 )
 
@@ -632,8 +630,8 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-class PairwiseSimilarityFunction(StrEnum):
-    FO_MEAN = "fo_mean"
+class UnivariateOverlapFunction(StrEnum):
+    FO_AVG = "fo_avg"
     JACCARD = "jaccard"
     OVERLAP = "overlap"
 
@@ -641,7 +639,7 @@ class PairwiseSimilarityFunction(StrEnum):
 @new_command
 def calc_univariate_hca(
     sele: Selection,
-    overlap_function: PairwiseSimilarityFunction.FO_MEAN = PairwiseSimilarityFunction.FO_MEAN,
+    overlap_function: UnivariateOverlapFunction.FO_AVG = UnivariateOverlapFunction.FO_AVG,
     seq_align_before_overlap: bool = False,
     radius: float = 2.0,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
@@ -650,8 +648,9 @@ def calc_univariate_hca(
     only_medoids: bool = False,
     annotate: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
-    dendrogram_axis: str = '',
-    heatmap_axis: str = '',
+    figure_title: str | None = None,
+    dendrogram_plot: str = '',
+    heatmap_plot: str = '',
 ):
     """
     DESCRIPTION
@@ -720,11 +719,11 @@ def calc_univariate_hca(
             coords1 = obj_coords[obj1]
             coords2 = obj_coords[obj2]
             match overlap_function:
-                case PairwiseSimilarityFunction.FO_MEAN:
+                case UnivariateOverlapFunction.FO_AVG:
                     fo1 = get_fo(coords1, coords2, radius=radius)
                     fo2 = get_fo(coords2, coords1, radius=radius)
                     ret = (fo1 + fo2) / 2
-                case PairwiseSimilarityFunction.JACCARD:
+                case UnivariateOverlapFunction.JACCARD:
                     # ret = res_sim(
                     #     obj1,
                     #     obj2,
@@ -734,7 +733,7 @@ def calc_univariate_hca(
                     # )
                     raise NotImplementedError("JACCARD similarity is not yet implemented.")
                     pass
-                case PairwiseSimilarityFunction.OVERLAP:
+                case UnivariateOverlapFunction.OVERLAP:
                     # ret = res_sim(
                     #     obj1,
                     #     obj2,
@@ -754,8 +753,9 @@ def calc_univariate_hca(
         vmin=0,
         vmax=1,
         rename_leafs=rename_leafs,
-        dendrogram_axis=dendrogram_axis,
-        heatmap_axis=heatmap_axis,
+        figure_title=figure_title,
+        dendrogram_plot=dendrogram_plot,
+        heatmap_plot=heatmap_plot,
     )
     return X, objects, dendro, medoids
 
@@ -763,7 +763,7 @@ def calc_univariate_hca(
 
 class OverlapFunction(StrEnum):
     FO = "fo"
-    FO_MEAN = "fo_mean"
+    FO_AVG = "fo_avg"
     DC = "dc"
     DCE = "dce"
 
@@ -844,7 +844,7 @@ def calc_overlap_matrix(
     match function:
         case OverlapFunction.FO:
             get_value = get_fo
-        case OverlapFunction.FO_MEAN:
+        case OverlapFunction.FO_AVG:
             get_value = lambda a, b, radius=radius: (get_fo(a, b, radius)+get_fo(b, a, radius))/2
         case OverlapFunction.DC:
             get_value = get_dc
@@ -898,7 +898,7 @@ def calc_overlap_matrix(
     ax.set_xticks(range(len(objs_b)), np.array(objs_b_lbl)[idx_cols])
     
     ax.tick_params(axis="x", rotation=90)
-    if function in [OverlapFunction.FO, OverlapFunction.FO_MEAN]:
+    if function in [OverlapFunction.FO, OverlapFunction.FO_AVG]:
         vmin = 0.0
         vmax = 1.0
     else:
@@ -974,7 +974,7 @@ def calc_ligand_fit(
     match function:
         case OverlapFunction.FO:
             get_value = get_fo
-        case OverlapFunction.FO_MEAN:
+        case OverlapFunction.FO_AVG:
             get_value = lambda a, b, radius=radius: (get_fo(a, b, radius)+get_fo(b, a, radius))/2
         case OverlapFunction.DC:
             get_value = get_dc
@@ -1034,10 +1034,10 @@ def calc_fingerprints(
     nclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = True,
-    fingerprints_axis: str = "",
+    fingerprints_plot: str = "",
     share_ylim: bool = True,
-    dendrogram_axis: str = '',
-    heatmap_axis: str = '',
+    dendrogram_plot: str = '',
+    heatmap_plot: str = '',
     quiet: bool = True,
 ):
     """
@@ -1104,14 +1104,14 @@ def calc_fingerprints(
             fpt[lbl] = fpt.get(lbl, 0) + cnt
         fpts.append(fpt)
 
-    if fingerprints_axis:
-        if isinstance(fingerprints_axis, (bool, str, Path)):
+    if fingerprints_plot:
+        if isinstance(fingerprints_plot, (bool, str, Path)):
             fig, fpt_axs = plt.subplots(nrows=len(seles))
-        elif isinstance(fingerprints_axis, axes.Axes):
+        elif isinstance(fingerprints_plot, axes.Axes):
             fpt_axs = []
             height = 1/len(fpt)
             for i, _ in enumerate(sele):
-                ax = fingerprints_axis.inset_axes([0, (i+1)*height], 1, height)
+                ax = fingerprints_plot.inset_axes([0, (i+1)*height], 1, height)
                 fpt_axs.append(ax)
     else:
         fig, fpt_axs = plt.subplots(nrows=len(seles), ncols=1, sharex=sharex, constrained_layout=True)
@@ -1149,12 +1149,12 @@ def calc_fingerprints(
         for ax in fpt_axs:
             ax.set_ylim(0, max_val * 1.05)
     
-    if fingerprints_axis:
+    if fingerprints_plot:
         fig = fpt_axs[0].get_figure(True)
         fig.set_layout_engine('compressed')
-        if isinstance(fingerprints_axis, (str, Path)):
-            fig.savefig(str(fingerprints_axis))
-        if isinstance(fingerprints_axis, axes.Axes):
+        if isinstance(fingerprints_plot, (str, Path)):
+            fig.savefig(str(fingerprints_plot))
+        if isinstance(fingerprints_plot, axes.Axes):
             fig.show()
 
     corrs = []
@@ -1182,8 +1182,8 @@ def calc_fingerprints(
         annotate=annotate,
         vmin=0,
         vmax=2,
-        dendrogram_axis=dendrogram_axis,
-        heatmap_axis=heatmap_axis
+        dendrogram_plot=dendrogram_plot,
+        heatmap_plot=heatmap_plot
     )
     return fpts, corrs, dendro, medoids
 
@@ -1340,8 +1340,9 @@ def calc_multivariate_hca(
     annotate: bool = False,
     dist_method: DistanceMethod = DistanceMethod.EUCLIDEAN,
     rename_leafs: Optional[Dict[str, str]] = None,
-    dendrogram_axis: str | Path | bool | axes.Axes | None = None,
-    heatmap_axis: str | Path | bool | axes.Axes | None = None,
+    figure_title: str | None = None,
+    dendrogram_plot: str | Path | bool | axes.Axes | None = None,
+    heatmap_plot: str | Path | bool | axes.Axes | None = None,
 ):
     """
     DESCRIPTION
@@ -1350,8 +1351,9 @@ def calc_multivariate_hca(
         consensus sites or hotspots.
 
         The command automatically extracts properties stored within PyMOL objects
-        and center-of-mass coordinates, then construct standardized feature vectors
-        (Z-score) for each object to calculate high-dimensional distance.
+        and center-of-mass coordinates, then constructs standardized feature vectors
+        (Z-score) for each object to calculate high-dimensional distances and
+        a dendogram and heatmap.
 
     PROPERTIES EVALUATED
 
@@ -1362,25 +1364,42 @@ def calc_multivariate_hca(
 
     ARGUMENTS
 
-        exprs:
+        sele:
             A PyMOL selection containing the objects to compare. All objects must
-            be of the same type. All hotspots or all consensus sites.
+            be of the same type (e.g., all hotspots or all consensus sites).
 
         linkage_method:
-            The clustering algorithm for the dendrogram. 
+            The clustering linkage algorithm used to compute the dendrogram 
+            (e.g., SINGLE, COMPLETE, WARD).
 
         color_threshold:
             Distance cutoff for coloring dendrogram branches.
 
+        nclusters:
+            Target number of clusters to set the color threshold. Use one or other.
+
         only_medoids:
-            If True, focuses analysis or visualization only on the cluster medoids.
+            If True, focuses the analysis or visualization only on the cluster medoids.
+
+        annotate:
+            If True, adds value annotations or labels to the heatmap cells.
+
+        dist_method:
+            The distance metric used to calculate the distance matrix (e.g., EUCLIDEAN).
 
         rename_leafs:
-            A dictionary mapping PyMOL object names to user-friendly labels.
+            A dictionary mapping internal PyMOL object names to user-friendly labels.
 
-        no_plot:
-            If True, performs calculations and returns data without 
-            rendering the Matplotlib window.
+        figure_title:
+            Title text displayed at the top of the generated figure window.
+
+        dendrogram_plot:
+            Target destination for the dendrogram. Can be a Matplotlib Axes object, 
+            a file path (str/Path) to save the plot, a boolean, or None.
+
+        heatmap_plot:
+            Target destination for the distance matrix heatmap. Can be a Matplotlib 
+            Axes object, a file path (str/Path) to save the plot, a boolean, or None.
 
     RETURNS
 
@@ -1388,8 +1407,8 @@ def calc_multivariate_hca(
 
     EXAMPLES
 
-        plot_multivariate_hca group_name.D.*, linkage_method=ward
-        plot_multivariate_hca *.CS.*
+        calc_multivariate_hca group_name.D.*, linkage_method=ward
+        calc_multivariate_hca *.CS.*
     """
     object_list = pm.get_object_list(sele)
     assert object_list is not None and len(object_list) >= 2, "At least two hotspots are required for comparison."
@@ -1432,8 +1451,9 @@ def calc_multivariate_hca(
         only_medoids=only_medoids,
         annotate=annotate,
         rename_leafs=rename_leafs or {},
-        heatmap_axis=heatmap_axis,
-        dendrogram_axis=dendrogram_axis,
+        figure_title=figure_title,
+        heatmap_plot=heatmap_plot,
+        dendrogram_plot=dendrogram_plot,
     )
     return X, object_list, dendro, medoids
 
@@ -1949,7 +1969,7 @@ class HcaWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.univariateFunctionCombo = QComboBox()
-        self.univariateFunctionCombo.addItems([e.value for e in PairwiseSimilarityFunction])
+        self.univariateFunctionCombo.addItems([e.value for e in UnivariateOverlapFunction])
         boxLayout.addRow("Function:", self.univariateFunctionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
@@ -2023,7 +2043,7 @@ class HcaWidget(QWidget):
         color_threshold = self.colorThresholdSpin.value()
         only_medoids = self.onlyMedoidsCheck.isChecked()
         annotate = self.annotateCheck.isChecked()
-        heatmap_axis = self.enableHeatmapCheck.isChecked()
+        heatmap_plot = self.enableHeatmapCheck.isChecked()
 
         calc_multivariate_hca(
             sele=sele,
@@ -2032,7 +2052,7 @@ class HcaWidget(QWidget):
             only_medoids=only_medoids,
             annotate=annotate,
             rename_leafs=self.getLeafLabels(),
-            heatmap_axis=heatmap_axis
+            heatmap_plot=heatmap_plot
         )
         plt.show()
     
@@ -2578,8 +2598,8 @@ class FingerprintWidget(QWidget):
         site = self.siteSelectionLine.text()
         site_radius = self.siteRadiusSpin.value()
         contact_radius = self.contactRadiusSpin.value()
-        fingerprints_axis = self.fingerprintsCheck.isChecked()
-        dendrogram_axis = self.hcaCheck.isChecked()
+        fingerprints_plot = self.fingerprintsCheck.isChecked()
+        dendrogram_plot = self.hcaCheck.isChecked()
         omega_conservation = self.omegaConservation.text().strip()
         nbins = self.nBinsSpin.value()
         share_ylim = self.shareYLimCheck.isChecked()
@@ -2600,9 +2620,9 @@ class FingerprintWidget(QWidget):
             linkage_method=linkage_method,
             only_medoids=only_medoids,
             annotate=annotate,
-            fingerprints_axis=fingerprints_axis,
-            # heatmap_axis=heatmap_axis,
-            dendrogram_axis=dendrogram_axis,
+            fingerprints_plot=fingerprints_plot,
+            # heatmap_plot=heatmap_plot,
+            dendrogram_plot=dendrogram_plot,
             color_threshold=color_threshold,
         )
         plt.show()

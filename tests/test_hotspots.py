@@ -11,7 +11,7 @@ from xdrugpy.hotspots import (
     get_fo,
     get_dce,
     LinkageMethod,
-    PairwiseSimilarityFunction,
+    UnivariateOverlapFunction,
 )
 
 mpl.use('SVG')
@@ -48,8 +48,8 @@ def test_calc_multivariate_hca():
         sele="*.CS.* AND p.S>13",
         color_threshold=2,
         annotate=True,
-        linkage_method='ward',
-        dendrogram_axis=dendro_gen,
+        linkage_method=LinkageMethod.WARD,
+        dendrogram_plot=dendro_gen,
     )
     assert medoids["C1"].pop() in ["1dq8.CS.0", "1dq9.CS.0"]
     assert medoids["C1"].pop() in ["1dq8.CS.0", "1dq9.CS.0"]
@@ -60,8 +60,18 @@ def test_calc_multivariate_hca():
 def test_calc_univariate_hca():
     pm.reinitialize()
     
-    load_ftmap(f"{pkg_data}/1dq8_atlas.pdb", "1dq8", deep_search=True)
-    load_ftmap(f"{pkg_data}/1dq9_atlas.pdb", "1dq9", deep_search=True)
+    load_ftmap(
+        filename=f"{pkg_data}/1dq8_atlas.pdb",
+        group="1dq8",
+        deep_search=True,
+        remove_nested=False
+    )
+    load_ftmap(
+        filename=f"{pkg_data}/1dq9_atlas.pdb",
+        group="1dq9",
+        deep_search=True,
+        remove_nested=False
+    )
 
     dendro_ref = f"{pkg_data}/test_calc_univariate_hca_dendro_ref.svg"
     dendro_gen = f"{pkg_data}/test_calc_univariate_hca_dendro_gen.svg"
@@ -70,14 +80,14 @@ def test_calc_univariate_hca():
 
     calc_univariate_hca(
         sele="*.DL.*",
-        overlap_function=PairwiseSimilarityFunction.FO_MEAN,
+        overlap_function=UnivariateOverlapFunction.FO_AVG,
         linkage_method=LinkageMethod.COMPLETE,
         only_medoids=True,
         radius=4,
         annotate=False,
-        color_threshold=0.3,
-        dendrogram_axis=dendro_gen,
-        heatmap_axis=heat_gen,
+        nclusters=8,
+        dendrogram_plot=dendro_gen,
+        heatmap_plot=heat_gen,
     )
     assert images_identical(dendro_ref, dendro_gen)
     assert images_identical(heat_ref, heat_gen)
@@ -137,13 +147,13 @@ def test_res_sim():
     assert res_sim(
         '1dq8.DL.0',
         '1dq9.CS.0',
-        method=PairwiseSimilarityFunction.JACCARD,
+        method=UnivariateOverlapFunction.JACCARD,
         radius=4.0
     ) - 0.272 < 0.01
     assert res_sim(
         '1dq8.DL.0',
         '1dq9.CS.0',
-        method=PairwiseSimilarityFunction.OVERLAP,
+        method=UnivariateOverlapFunction.OVERLAP,
         radius=4.0
     ) == 0.9375
 
