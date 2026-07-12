@@ -153,7 +153,7 @@ def set_properties(obj_name, properties):
         pm.set_atom_property(prop, value, obj_name)
 
 
-def parse_pdb_string(
+def extract_metadata_from_pdb_string(
         pdbstr: str,
         cavities: List[str]
 ) -> Tuple[List[Cluster], List[Hotspot]]:
@@ -401,7 +401,7 @@ def _load_ftmap(
     
     kvfound = kvfinder_constitutional_from_pdb_string(pdbstr)
     cavities = selections_from_kvfinder(group, kvfound)
-    clusters, hotspots = parse_pdb_string(pdbstr, cavities)
+    clusters, hotspots = extract_metadata_from_pdb_string(pdbstr, cavities)
 
     pm.group(group, f"{group}.*")
 
