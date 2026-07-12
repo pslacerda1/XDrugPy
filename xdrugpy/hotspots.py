@@ -206,7 +206,7 @@ def extract_metadata_from_pdb_string(
                 n_atoms = pm.count_atoms(hs.Object)
                 in_touch = pm.count_atoms(f"{hs.Object} NEAR_TO 4 OF {cavity}")
                 if in_touch > max_touch and in_touch > 0.80 * n_atoms:
-                    max_touch = in_touch    
+                    max_touch = in_touch
                     max_cavity = cavity
 
             hs.Kavity = max_cavity
@@ -1406,8 +1406,6 @@ def hs_proj(
 
 class MultivariateDistanceMethod(StrEnum):
     EUCLIDEAN = "euclidean"
-    CITYBLOCK = "cityblock"
-    DICE = "dice"
 
 
 @new_command
