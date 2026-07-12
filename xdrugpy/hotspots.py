@@ -400,7 +400,7 @@ def _load_ftmap(
         pm.disable(f"{group}.{klass}")
     
     kvfound = kvfinder_constitutional_from_pdb_string(pdbstr)
-    cavities = objects_from_kvfinder(group, kvfound)
+    cavities = selections_from_kvfinder(group, kvfound)
     clusters, hotspots = parse_pdb_string(pdbstr, cavities)
 
     pm.group(group, f"{group}.*")
