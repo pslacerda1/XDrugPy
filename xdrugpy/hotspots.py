@@ -38,7 +38,7 @@ class ECluster:
     idx: int
     ST: int
 
-def objects_from_kvfinder(group: str, kvfound: List[str]) -> List[str]:
+def selections_from_kvfinder(group: str, kvfound: List[str]) -> List[str]:
     cavities = []
     for cavity, residues in kvfound.items():
         cavity = f'{group}.KV.{cavity}'
