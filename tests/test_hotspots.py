@@ -10,6 +10,7 @@ from xdrugpy.hotspots import (
     res_sim,
     get_fo,
     get_dce,
+    get_dco,
     LinkageMethod,
     UnivariateDistanceMethod,
 )
@@ -93,12 +94,14 @@ def test_calc_univariate_hca():
     assert images_identical(heat_ref, heat_gen)
 
 
-def test_fo_and_dce():
+def test_overlap():
     pm.reinitialize()
     pm.fetch('1OD')
     pm.fetch('NH2')
     assert get_fo("%NH2", "%1OD", radius=3.0) == 1.0
     assert round(get_dce("%NH2", "%1OD", radius=3.0), 2) == 7.67
+    assert round(get_dco("%NH2", "%1OD", radius=3.0), 2) == 0.10
+
 
 
 def test_calc_fingerprint():

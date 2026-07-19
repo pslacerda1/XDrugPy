@@ -293,6 +293,7 @@ def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     deep_search: bool = True,
+    max_hs_size: int = 15,
     remove_nested: bool = True,
     clash_threshold: float = 0.15,
     pretty: bool = False,
@@ -317,9 +318,13 @@ def load_ftmap(
             basename of the file is used.
 
         deep_search:
-            Determines if hotspots can overlap/nest within larger 
-            defined volumes.
+            Determines if hotspots can overlap/nest within larger defined
+            volumes.
 
+        max_hs_size:
+            The max number of consensus sites into a hotspot i deep_search is
+            enabled.
+        
         remove_nested:
             Remove hotspots made that are fully nested/inside other.
 
@@ -343,6 +348,7 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
+                max_hs_size=max_hs_size,
                 clash_threshold=clash_threshold,
                 remove_nested=remove_nested,
                 pretty=pretty,
@@ -352,6 +358,7 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
+                max_hs_size=max_hs_size,
                 remove_nested=remove_nested,
                 clash_threshold=clash_threshold,
                 pretty=pretty,
@@ -364,6 +371,7 @@ def _load_ftmap(
     filename: Path,
     group: str = "",
     deep_search: bool = True,
+    max_hs_size: int = 15,
     remove_nested=True,
     clash_threshold: float = 0.15,
     pretty: bool = False,
@@ -377,6 +385,7 @@ def _load_ftmap(
         '-g', group,
         '--input', str(filename),
         '--clash-threshold', str(clash_threshold),
+        '--max-size', str(max_hs_size),
     ]
     if deep_search:
         cmd.append('--deep-search')
@@ -492,25 +501,20 @@ def get_fo(
     DESCRIPTION
 
         Calculates the Fractional Overlap (FO) between two selections. 
-        FO is defined as the fraction of atoms in sel1 that are within 
-        a specified radius of any atom in sel2.
+        FO is defined as the fraction of atoms in the first selection
+        that are within a specified radius from the second selection.
 
     ARGUMENTS
 
         sel1:
-            The 'query' selection. The FO is normalized by the number 
-            of atoms in this selection.
+            The first selection.
 
         sel2:
-            The 'target' selection used as the proximity reference.
+            The second selection.
 
         radius:
-            The distance cutoff in Angstroms to consider an atom 'overlapping'.
+            The distance cutoff in angstroms to consider a contact.
 
-    NOTES
-
-        Value ranges from 0.0 to 1.0. An FO of 1.0 means every atom in sel1 
-        is within the radius of sel2.
     """
     if isinstance(sel1, np.ndarray):
         xyz1 = sel1
@@ -554,7 +558,7 @@ def get_dc(
             The two groups of atoms to check for proximity.
 
         radius:
-            Distance cutoff.
+            The distance cutoff in angstroms to consider a contact.
 
     RETURNS
 
@@ -589,23 +593,23 @@ def get_dce(
     """
     DESCRIPTION
 
-        Calculates the Density Correlation Efficiency (DCE). 
-        This is the total number of contacts (DC) normalized by the 
-        total number of atoms in the first selection.
+        Calculates the Density Correlation Efficiency (DCE).
+        
+        This is the total number of contacts (DC) of a ligand
+        and a hotspot divided by the total number of atoms
+        of the ligand.
 
     ARGUMENTS
 
-        sel1, sel2:
-            The two groups of atoms to check for proximity.
+        sel1:
+            The atom selection of the ligand.
+
+        sel2:
+            The atom selection of the hotspot.
 
         radius:
-            Distance cutoff.
-            
-    NOTES
+            The distance cutoff in angstroms to consider a contact.
 
-        DCE = get_dc(sel1, sel2) / count_atoms(sel1)
-        This is useful for comparing binding efficiency across ligands 
-        of different sizes.
     """
     if isinstance(sel1, np.ndarray):
         xyz1 = sel1
@@ -623,6 +627,52 @@ def get_dce(
     return dce
 
 
+@new_command
+def get_dco(
+    sel1: Selection,
+    sel2: Selection,
+    radius: float = 1.25,
+    state1: int = 1,
+    state2: int = 1,
+    quiet: bool = True,
+):
+    """
+    DESCRIPTION
+
+        Calculates the Density Correlation Overlap (DCO). 
+        This is the total number of contacts (DC) dividev by
+        the  total number of contacts possible.
+
+    ARGUMENTS
+
+        sel1, sel2:
+            The two groups of atoms to check for overlap.
+
+        radius:
+            The distance cutoff in angstroms to consider a contact.
+
+    """
+    if isinstance(sel1, np.ndarray):
+        xyz1 = sel1
+    else:
+        xyz1 = get_coords(sel1, state=state1)
+    if isinstance(sel2, np.ndarray):
+        xyz2 = sel2
+    else:
+        xyz2 = get_coords(sel2, state=state2)
+    dco = get_dc(
+        xyz1,
+        xyz2,
+        radius=radius,
+        state1=state1,
+        state2=state2
+    )
+    dco = dco / (len(xyz1) * len(xyz2))
+    if not quiet:
+        print(f"DCO: {dco:.2f}")
+    return dco
+
+
 class LinkageMethod(StrEnum):
     SINGLE = "single"
     COMPLETE = "complete"
@@ -632,6 +682,7 @@ class LinkageMethod(StrEnum):
 
 class UnivariateDistanceMethod(StrEnum):
     FO_AVG = "fo_avg"
+    DCO = "dco"
     JACCARD = "jaccard"
     OVERLAP = "overlap"
 
@@ -722,6 +773,8 @@ def calc_univariate_hca(
                     fo1 = get_fo(coords1, coords2, radius=radius)
                     fo2 = get_fo(coords2, coords1, radius=radius)
                     ret = (fo1 + fo2) / 2
+                case UnivariateDistanceMethod.DCO:
+                    ret = get_dco(coords1, coords2)
                 case UnivariateDistanceMethod.JACCARD:
                     # ret = res_sim(
                     #     obj1,
@@ -731,7 +784,6 @@ def calc_univariate_hca(
                     #     seq_align=seq_align_before_overlap,
                     # )
                     raise NotImplementedError("JACCARD similarity is not yet implemented.")
-                    pass
                 case UnivariateDistanceMethod.OVERLAP:
                     # ret = res_sim(
                     #     obj1,
@@ -741,7 +793,6 @@ def calc_univariate_hca(
                     #     seq_align=seq_align_before_overlap,
                     # )
                     raise NotImplementedError("OVERLAP similarity is not yet implemented.")
-                    pass
             X.append(1 - ret)
     dendro, medoids = plot_hca_base(
         X, objects, linkage_method,
@@ -765,6 +816,7 @@ class OverlapFunction(StrEnum):
     FO_AVG = "fo_avg"
     DC = "dc"
     DCE = "dce"
+    DCO = "dco"
 
 
 @new_command
@@ -845,6 +897,8 @@ def calc_overlap_matrix(
             get_value = get_fo
         case OverlapFunction.FO_AVG:
             get_value = lambda a, b, radius=radius: (get_fo(a, b, radius)+get_fo(b, a, radius))/2
+        case OverlapFunction.DCO:
+            get_value = get_dco
         case OverlapFunction.DC:
             get_value = get_dc
         case OverlapFunction.DCE:
@@ -1676,9 +1730,18 @@ class LoadWidget(QWidget):
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
 
+        self.pretty = QCheckBox()
+        self.pretty.setChecked(False)
+        boxLayout.addRow("Pretty session:", self.pretty)
+        
         self.deepSearch = QCheckBox()
         self.deepSearch.setChecked(False)
         boxLayout.addRow("Deep search:", self.deepSearch)
+
+        self.maxHsSize = QSpinBox()
+        self.maxHsSize.setRange(3, 15)
+        self.maxHsSize.setValue(15)
+        boxLayout.addRow("Max hotstpot size:", self.maxHsSize)
 
         self.removeNested = QCheckBox()
         self.removeNested.setChecked(False)
@@ -1690,9 +1753,6 @@ class LoadWidget(QWidget):
         self.maxCollisions.setValue(0.10)
         boxLayout.addRow("Max collisions:", self.maxCollisions)
         
-        self.pretty = QCheckBox()
-        self.pretty.setChecked(False)
-        boxLayout.addRow("Pretty session:", self.pretty)
         
     def pickFile(self):
         fileDIalog = QFileDialog()
@@ -1724,6 +1784,7 @@ class LoadWidget(QWidget):
 
     def load(self):
         deep_search = self.deepSearch.isChecked()
+        max_hs_size = self.maxHsSize.value()
         remove_nested = self.removeNested.isChecked()
         max_collisions = self.maxCollisions.value()
         pretty = self.pretty.isChecked()
@@ -1743,6 +1804,7 @@ class LoadWidget(QWidget):
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
+                max_hs_size=max_hs_size,
                 remove_nested=remove_nested,
                 clash_threshold=max_collisions,
                 pretty=pretty
