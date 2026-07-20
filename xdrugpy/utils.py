@@ -311,8 +311,10 @@ def plot_hca_base(
         fig.set_layout_engine('compressed')
         if isinstance(dendrogram_plot, (str, Path)):
             fig.savefig(dendrogram_plot)
-        else:
+        elif dendrogram_plot is True:
             fig.show()
+        elif isinstance(dendrogram_plot, axes.Axes):
+            pass
     
     if heatmap_plot:
         fig = heat_ax.get_figure(True)
