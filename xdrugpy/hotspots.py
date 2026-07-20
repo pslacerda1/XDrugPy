@@ -288,7 +288,7 @@ class Hotspot:
         )
         return hs
 
-
+@new_command
 def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
