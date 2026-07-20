@@ -293,19 +293,21 @@ def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     deep_search: bool = True,
-    max_hs_size: int = 15,
+    max_size: int = 15,
     remove_nested: bool = True,
     clash_threshold: float = 0.15,
+    num_pseudoatoms: int = 25,
+    pseudoatom_radius: float = 0.5,
     pretty: bool = False,
 ):
     """
     DESCRIPTION
 
-        Loads FTMap (or FTMove) results into PyMOL, organizes them into a structured
-        hierarchy, and calculates binding hotspots.
+        Loads FTMap (or FTMove, Atlas, ...) results into PyMOL, organizes them into a
+        structured hierarchy, and calculates binding hotspots.
 
         This command automates the identification, classification and visualization of
-        FTMap probes and hotspots,  assigning colors by class type and grouping objects
+        FTMap probes and hotspots, assigning colors by class type and grouping objects
         logically within the PyMOL object menu.
 
     ARGUMENTS
@@ -318,23 +320,26 @@ def load_ftmap(
             basename of the file is used.
 
         deep_search:
-            Determines if hotspots can overlap/nest within larger defined
-            volumes.
+            Use combinatory search.
 
-        max_hs_size:
-            The max number of consensus sites into a hotspot i deep_search is
-            enabled.
+        max_size:
+            The max number of consensus sites into a hotspot in deep searchs.
         
         remove_nested:
-            Remove hotspots made that are fully nested/inside other.
+            Remove hotspots that fully fits nested/inside others.
 
         clash_threshold:
-            The tolerance percentage for steric clashes allowed when
-            defining hotspot connectivity.
+            The tolerance percentage for steric clashes in hotspot graphs.
         
         pretty:
-            Enable beautiful visualizations of the loaded FTMap results. Also enable
-            grouping of hotspots by type.
+            Enable beautiful visualizations of the loaded FTMap results. Also
+            enable grouping of hotspots by type.
+        
+        num_pseudoatoms:
+            Number of pseudo-atoms to detect clashes between two atoms.
+        
+        pseudoatom_radius:
+            Radius of each pseudo-atom.
 
     EXAMPLES
 
@@ -348,9 +353,11 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
-                max_hs_size=max_hs_size,
+                max_size=max_size,
                 clash_threshold=clash_threshold,
                 remove_nested=remove_nested,
+                num_pseudoatoms=num_pseudoatoms,
+                pseudoatom_radius=pseudoatom_radius,
                 pretty=pretty,
             )
         except:
@@ -358,9 +365,11 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
-                max_hs_size=max_hs_size,
+                max_size=max_size,
                 remove_nested=remove_nested,
                 clash_threshold=clash_threshold,
+                num_pseudoatoms=num_pseudoatoms,
+                pseudoatom_radius=pseudoatom_radius,
                 pretty=pretty,
             )
     finally:
@@ -368,12 +377,14 @@ def load_ftmap(
 
 
 def _load_ftmap(
-    filename: Path,
-    group: str = "",
+    filename: Path | str,
+    group: Optional[str] = None,
     deep_search: bool = True,
-    max_hs_size: int = 15,
-    remove_nested=True,
+    max_size: int = 15,
+    remove_nested: bool = True,
     clash_threshold: float = 0.15,
+    num_pseudoatoms: int = 25,
+    pseudoatom_radius: float = 0.5,
     pretty: bool = False,
 ):
     if not group:
@@ -385,7 +396,9 @@ def _load_ftmap(
         '-g', group,
         '--input', str(filename),
         '--clash-threshold', str(clash_threshold),
-        '--max-size', str(max_hs_size),
+        '--max-size', str(max_size),
+        '--num-pseudoatoms', str(num_pseudoatoms),
+        '--pseudoatom-radius', str(pseudoatom_radius),
     ]
     if deep_search:
         cmd.append('--deep-search')
@@ -1724,35 +1737,57 @@ class LoadWidget(QWidget):
         loadButton = QPushButton("Load")
         loadButton.clicked.connect(self.load)
         addRemoveLayout.addWidget(loadButton)
+        
+        ############### Options start
+        widget = QWidget()
+        hlayout = QHBoxLayout()
+        widget.setLayout(hlayout)
+        layout.addWidget(widget)
 
-        groupBox = QGroupBox("Options")
-        layout.addWidget(groupBox)
-        boxLayout = QFormLayout()
-        groupBox.setLayout(boxLayout)
+        ################ General box
+        groupBox = QGroupBox("General")
+        hlayout.addWidget(groupBox)
+        boxLayout1 = QFormLayout()
+        groupBox.setLayout(boxLayout1)
 
         self.pretty = QCheckBox()
         self.pretty.setChecked(False)
-        boxLayout.addRow("Pretty session:", self.pretty)
+        boxLayout1.addRow("Pretty session:", self.pretty)
         
         self.deepSearch = QCheckBox()
         self.deepSearch.setChecked(False)
-        boxLayout.addRow("Deep search:", self.deepSearch)
+        boxLayout1.addRow("Deep search:", self.deepSearch)
 
-        self.maxHsSize = QSpinBox()
-        self.maxHsSize.setRange(3, 15)
-        self.maxHsSize.setValue(15)
-        boxLayout.addRow("Max hotstpot size:", self.maxHsSize)
-
+        self.maxSizeSpin = QSpinBox()
+        self.maxSizeSpin.setRange(3, 15)
+        self.maxSizeSpin.setValue(15)
+        boxLayout1.addRow("Max hotstpot size:", self.maxSizeSpin)
+        
         self.removeNested = QCheckBox()
         self.removeNested.setChecked(False)
-        boxLayout.addRow("Remove nested:", self.removeNested)
+        boxLayout1.addRow("Remove nested:", self.removeNested)
 
-        self.maxCollisions = QDoubleSpinBox()
-        self.maxCollisions.setRange(0.0, 1.0)
-        self.maxCollisions.setSingleStep(0.05)
-        self.maxCollisions.setValue(0.10)
-        boxLayout.addRow("Max collisions:", self.maxCollisions)
+        ################ Clash box
+        groupBox = QGroupBox("Clash algorithm")
+        hlayout.addWidget(groupBox)
+        boxLayout2 = QFormLayout()
+        groupBox.setLayout(boxLayout2)
+
+        self.clashThreshold = QDoubleSpinBox()
+        self.clashThreshold.setRange(0.0, 1.0)
+        self.clashThreshold.setSingleStep(0.05)
+        self.clashThreshold.setValue(0.10)
+        boxLayout2.addRow("Clash threshold:", self.clashThreshold)
         
+        self.numPseudoatomsSpin = QSpinBox()
+        self.numPseudoatomsSpin.setRange(5, 100)
+        self.numPseudoatomsSpin.setValue(25)
+        boxLayout2.addRow("Num pseudoatoms:", self.numPseudoatomsSpin)
+
+        self.pseudoatomRadiusSpin = QDoubleSpinBox()
+        self.pseudoatomRadiusSpin.setRange(0.1, 1.5)
+        self.pseudoatomRadiusSpin.setValue(0.5)
+        boxLayout2.addRow("Pseudoatom radius:", self.pseudoatomRadiusSpin)
         
     def pickFile(self):
         fileDIalog = QFileDialog()
@@ -1784,10 +1819,13 @@ class LoadWidget(QWidget):
 
     def load(self):
         deep_search = self.deepSearch.isChecked()
-        max_hs_size = self.maxHsSize.value()
         remove_nested = self.removeNested.isChecked()
-        max_collisions = self.maxCollisions.value()
+        max_size = self.maxSizeSpin.value()
+        max_collisions = self.clashThreshold.value()
+        num_pseudoatoms = self.numPseudoatomsSpin.value()
+        pseudoatom_radius = self.pseudoatomRadiusSpin.value()
         pretty = self.pretty.isChecked()
+
         try:
             filenames = []
             groups = []
@@ -1804,9 +1842,11 @@ class LoadWidget(QWidget):
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
-                max_hs_size=max_hs_size,
+                max_size=max_size,
                 remove_nested=remove_nested,
                 clash_threshold=max_collisions,
+                num_pseudoatoms=num_pseudoatoms,
+                pseudoatom_radius=pseudoatom_radius,
                 pretty=pretty
             )
 
