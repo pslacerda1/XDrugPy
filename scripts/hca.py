@@ -1,7 +1,12 @@
 #
-# Hierarchical Cluster Analysis of many hotspots
+# Hierarchical Cluster Analysis.
+#
+# You may need this script to process a large number of FTMap
+# files (like from FTMove or Atlas) without consuming too much
+# computer RAM (memory) like in the graphical user interface.
 #
 from glob import glob
+from matplotlib import pyplot as plt
 from pymol import cmd as pm
 from xdrugpy import (
     load_ftmap,
@@ -11,7 +16,6 @@ from xdrugpy import (
     MultivariateDistanceMethod,
     UnivariateDistanceMethod,
     configure_matplotlib,
-    plot,
 )
 
 # Change the default Matplotlib style and parameters to improve
@@ -36,8 +40,6 @@ for file in files[:5]:
         file,
         deep_search=True,     # enable full combinatory search
         remove_nested=True,   # remove hotspots fully inside others
-        clash_threshold=0.15, # maximum clash tolerance
-        pretty=False,         # disabled for low resource usage
     )
 
     # OPTIONAL: After each load, delete hotspots that doesn't satisfy the
@@ -61,10 +63,9 @@ calc_multivariate_hca(
     only_medoids=True,
     annotate=False,
     figure_title="MyProj HCA (Multivariate)",
-    dendrogram_plot="/home/peu/Downloads/dendro.png",
-    heatmap_plot="/home/peu/Downloads/heat.svg",
+    dendrogram_plot="/home/peu/Downloads/dendro.png",  # you can use png
+    heatmap_plot="/home/peu/Downloads/heat.svg",       # or other formats
 )
-plot()
 
 # Dendrogram cluster analysis with distances based on reciprocal fractional
 # overlap average between hotspot objects.
@@ -73,9 +74,10 @@ calc_univariate_hca(
     dist_methdo=UnivariateDistanceMethod.FO_AVG,
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=0.35,
-    annotate=True,
+    annotate=False,
     figure_title="MyProj HCA (Univariate)",
-    dendrogram_plot=True,
-    heatmap_plot=True,
+    dendrogram_plot=True,   # can also opt to show on the screen
+    heatmap_plot=True,      # and save the image from the pop up window
+                            # or even set to False
 )
-plot()
+plt.waitforbuttonpress()

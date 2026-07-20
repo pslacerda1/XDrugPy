@@ -765,7 +765,8 @@ def calc_univariate_hca(
     SEE ALSO
         calc_mutivariate_hca
     """
-
+    if (dendrogram_plot or heatmap_plot) and linkage_method == LinkageMethod.WARD:
+        raise ValueError("WARD is not supported.")
     objects = pm.get_object_list(sele)
     assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
 
@@ -1093,7 +1094,7 @@ def calc_fingerprints(
     site_radius: float = 5.0,
     omega_conservation: str = "*:.",
     contact_radius: float = 4.0,
-    nbins: int = 5,
+    nbins: int = 25,
     sharex: bool = True,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = -1.0,
@@ -1110,14 +1111,13 @@ def calc_fingerprints(
     """
     DESCRIPTION
 
-        Computes the residue contact fingerprint for multiple hotspot or
-        consensus sites selections, maps them via sequence alignment, and
-        performs a Hierarchical Cluster Analysis (HCA) based on Pearson
-        correlation distances.
+        Computes the atom interaction fingerprint for multiple hotspot or
+        mutiple consensus sites selections, maps them via sequence alignment,
+        and performs a Hierarchical Cluster Analysis (HCA) based on Pearson
+        correlation distance.
 
-        The method aligns the underlying protein polymers using Clustal Omega,
-        extracts structural atom contacts within a defined radius around the 
-        target interaction site.
+        The method aligns the underlying protein using Clustal Omega, extracts
+        residue atom contacts within a defined radius around the target site.
 
     ARGUMENTS
 
@@ -1193,16 +1193,17 @@ def calc_fingerprints(
     EXAMPLES
 
         # Compare specific hotspots across two structures separated by a slash
-        calc_fingerprints 8DSU.K15_D_01* / 6XHM.K15_D_01*, linkage_method=ward
+        calc_fingerprints 8DSU.D.1 / 6XHM.B.45, linkage_method=average
 
-        # Focus fingerprints on a specific binding site pocket with custom binning
-        calc_fingerprints 8DSU.CS_* / 6XHM.CS_*, site=resi 8-101, nbins=10
+        # Focus on consensus sites from a specific domain
+        calc_fingerprints 8DSU.CS.* / 6XHM.CS.*, site=resi 8-101, nbins=100
 
     SEE ALSO
 
         calc_univariate_hca, calc_mutivariate_hca
     """
-
+    if (dendrogram_plot or heatmap_plot) and linkage_method == LinkageMethod.WARD:
+        raise ValueError("WARD is not supported.")
     seles = []
     groups = []
 
@@ -1294,7 +1295,7 @@ def calc_fingerprints(
     if fingerprints_plot:
         fig = fpt_axs[0].get_figure(True)
         fig.set_layout_engine('compressed')
-        fig.supylabel('Atom Counts')
+        fig.supylabel('Atom Count')
         if figure_title:
             fig.suptitle(figure_title)
         if isinstance(fingerprints_plot, (str, Path)):
