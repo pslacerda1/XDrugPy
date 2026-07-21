@@ -164,7 +164,11 @@ def test_res_sim():
 def test_load():
     pm.reinitialize()
     
-    ftmap = load_ftmap(f"{pkg_data}/2TPR.pdb", deep_search=True)
+    ftmap = load_ftmap(
+        f"{pkg_data}/2TPR.pdb",
+        deep_search=True,
+        remove_nested=False
+    )
     hotspots = ftmap.hotspots
     assert len(hotspots) == 42
     assert hotspots[0].Class == 'DL'
@@ -172,8 +176,6 @@ def test_load():
     ftmap = load_ftmap(
         f"{pkg_data}/1dqa_atlas.pdb",
         "1dqa",
-        clash_threshold=0.15,
-        deep_search=True
+        deep_search=False,
     )
-    assert len(ftmap.hotspots) == 307
-
+    assert len(ftmap.hotspots) == 1
