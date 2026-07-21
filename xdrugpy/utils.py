@@ -37,15 +37,18 @@ def plot(filename: str | None = None):
         plt.show()
 
 
-def configure_matplotlib(style='default', params=None):
+def configure_matplotlib(style=None, backend=None, params=None):
     """Configure Matplotlib for use in XDrugPy."""
     import matplotlib.style
     import matplotlib.colors
     from matplotlib import pyplot as plt
     from cycler import cycler
     
-    matplotlib.use("Qt5Agg")
-    matplotlib.style.use(style)
+    if backend:
+        plt.switch_backend(newbackend=backend)
+    if style:
+        matplotlib.style.use(style)
+    
     plt.rcParams.update({
         **{
             'font.size': 14,

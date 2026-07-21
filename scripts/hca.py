@@ -21,8 +21,8 @@ from xdrugpy import (
 # Change the default Matplotlib style and parameters to improve
 # the aesthetics of generated figures to your suits. Let's tweak!
 configure_matplotlib(
-    'default', # the style theme
-    {
+    style='default', # the style theme
+    params={
         'font.size': 10,            # small font for the dimensions
         'figure.figsize': (10, 8),  # good dimensions
         'svg.fonttype': 'none'      # editable with notepad if SVG

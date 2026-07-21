@@ -62,7 +62,7 @@ def xdrugpy_install():
             sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0",
         ])
         check_call([
-            'conda', 'install', 'bioconda::clustalo'
+            'conda', 'install', '-y', 'bioconda::clustalo'
         ])
     except Exception as exc:
         raise SystemError(f"XDrugPy: Installation failed.") from exc
@@ -124,7 +124,9 @@ def xdrugpy_install():
 def __init_plugin__(app=None):
     from .utils import configure_matplotlib
 
-    configure_matplotlib("default", {
+    configure_matplotlib(
+        style="default",
+        params={
         'font.size': 14,
         'figure.figsize': (10, 6),
         'figure.dpi': 100,
