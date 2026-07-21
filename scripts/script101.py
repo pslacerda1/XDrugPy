@@ -26,7 +26,9 @@ for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
 
         # combinatory search
         deep_search=True,
-        max_size=8, # try to increase and check if you get more hotspots
+        max_size=8, # try to increase and check if you get more hotspots,
+                    #   but it may freeze the script as may exists too
+                    #   many combinations
         remove_nested=True,
 
         # clash algorithm
@@ -36,10 +38,12 @@ for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
     )
 
     # now show me the results
-    print("\n\n**** CLUSTERS ****")
+    print(f"\n\n############# {my_label}")
+    print("**** CLUSTERS ****")
     for cs in ftmap.clusters:
         pp(cs)
 
-    print("\n\n**** HOTSPOTS ****")
+    print(f"\n\n############# {my_label}")
+    print("\n**** HOTSPOTS ****")
     for hs in ftmap.hotspots:
         pp(hs)
