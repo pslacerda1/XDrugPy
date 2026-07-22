@@ -293,9 +293,9 @@ def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     deep_search: bool = True,
-    max_size: int = 15,
+    max_size: int = 8,
     remove_nested: bool = True,
-    clash_threshold: float = 0.15,
+    clash_threshold: float = 0.10,
     num_pseudoatoms: int = 25,
     pseudoatom_radius: float = 0.5,
     pretty: bool = False,
@@ -380,9 +380,9 @@ def _load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     deep_search: bool = True,
-    max_size: int = 15,
+    max_size: int = 8,
     remove_nested: bool = True,
-    clash_threshold: float = 0.15,
+    clash_threshold: float = 0.10,
     num_pseudoatoms: int = 25,
     pseudoatom_radius: float = 0.5,
     pretty: bool = False,
@@ -1745,23 +1745,32 @@ class LoadWidget(QWidget):
         widget.setLayout(hlayout)
         layout.addWidget(widget)
 
+        vlayout = QVBoxLayout()
+        hlayout.addLayout(vlayout)
+
         ################ General box
         groupBox = QGroupBox("General")
-        hlayout.addWidget(groupBox)
+        vlayout.addWidget(groupBox)
+        boxLayout0 = QFormLayout()
+        groupBox.setLayout(boxLayout0)
+
+        self.prettyCheck = QCheckBox()
+        self.prettyCheck.setChecked(False)
+        boxLayout0.addRow("Pretty session:", self.prettyCheck)
+
+        ################ Combinatory box
+        groupBox = QGroupBox("Combinatory search")
+        vlayout.addWidget(groupBox)
         boxLayout1 = QFormLayout()
         groupBox.setLayout(boxLayout1)
 
-        self.pretty = QCheckBox()
-        self.pretty.setChecked(False)
-        boxLayout1.addRow("Pretty session:", self.pretty)
-        
         self.deepSearch = QCheckBox()
         self.deepSearch.setChecked(False)
         boxLayout1.addRow("Deep search:", self.deepSearch)
 
         self.maxSizeSpin = QSpinBox()
         self.maxSizeSpin.setRange(3, 15)
-        self.maxSizeSpin.setValue(15)
+        self.maxSizeSpin.setValue(8)
         boxLayout1.addRow("Max hotstpot size:", self.maxSizeSpin)
         
         self.removeNested = QCheckBox()
@@ -1769,7 +1778,7 @@ class LoadWidget(QWidget):
         boxLayout1.addRow("Remove nested:", self.removeNested)
 
         ################ Clash box
-        groupBox = QGroupBox("Clash algorithm")
+        groupBox = QGroupBox("Clash detection")
         hlayout.addWidget(groupBox)
         boxLayout2 = QFormLayout()
         groupBox.setLayout(boxLayout2)
@@ -1825,7 +1834,7 @@ class LoadWidget(QWidget):
         max_collisions = self.clashThreshold.value()
         num_pseudoatoms = self.numPseudoatomsSpin.value()
         pseudoatom_radius = self.pseudoatomRadiusSpin.value()
-        pretty = self.pretty.isChecked()
+        pretty = self.prettyCheck.isChecked()
 
         try:
             filenames = []
@@ -2086,7 +2095,7 @@ class HcaWidget(QWidget):
         boxLayout.addRow("Linkage:", self.linkageMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
-        self.colorThresholdSpin.setMinimum(0)
+        self.colorThresholdSpin.setMinimum(-0.1)
         self.colorThresholdSpin.setMaximum(100)
         self.colorThresholdSpin.setValue(0)
         self.colorThresholdSpin.setSingleStep(0.1)
@@ -2765,7 +2774,7 @@ class FingerprintWidget(QWidget):
         hcaLayout.addRow("Linkage:", self.linkageMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
-        self.colorThresholdSpin.setMinimum(0)
+        self.colorThresholdSpin.setMinimum(-1.0)
         self.colorThresholdSpin.setMaximum(10)
         self.colorThresholdSpin.setValue(0)
         self.colorThresholdSpin.setSingleStep(0.1)
