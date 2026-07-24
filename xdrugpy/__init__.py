@@ -91,7 +91,7 @@ def xdrugpy_install():
     #
     # Install My (alpha) Rust Project
     #
-    rust_tag = "v.35"
+    rust_tag = "v.36"
     if system == "windows":
         web_name = "xdrugpy_hotspot_finder-windows.exe"
         exe = RESOURCES_DIR / "xdrugpy_hotspot_finder.exe"
