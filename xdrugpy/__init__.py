@@ -53,15 +53,19 @@ RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
-RUST_TAG = "v.36"
-XDRUGPY_TAG = "v.62"
+XDRUGPY_PROGRAM_VERSION_DEFAULT = "v.36"
+XDRUGPY_PLUGIN_VERSION_DEFAULT = "heads/master"
+
 
 @pm.extend
-def xdrugpy_install():
+def xdrugpy_install(
+    plugin_version=XDRUGPY_PLUGIN_VERSION_DEFAULT,
+    program_version=XDRUGPY_PROGRAM_VERSION_DEFAULT
+):
     try:
         check_call([
             sys.executable, "-m", "pip", "install",
-            f"https://github.com/pslacerda1/XDrugPy/archive/refs/tags/{XDRUGPY_TAG}.zip"
+            f"https://github.com/pslacerda1/XDrugPy/archive/refs/{plugin_version}.zip"
         ])
         check_call([  ## pyproject.toml --no-deps limitation
             sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0",
@@ -109,7 +113,7 @@ def xdrugpy_install():
         case _:
             raise RuntimeError("Unexpected system.")
     
-    url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{RUST_TAG}/{web_name}"
+    url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{program_version}/{web_name}"
     exe = RESOURCES_DIR / "xdrugpy_hotspot_finder"
     if system == "windows":
         exe = exe.with_suffix('.exe')
