@@ -53,8 +53,8 @@ RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
-XDRUGPY_PROGRAM_VERSION_DEFAULT = "v.36"
 XDRUGPY_PLUGIN_VERSION_DEFAULT = "heads/master"
+XDRUGPY_PROGRAM_VERSION_DEFAULT = "v.36"
 
 
 @pm.extend
@@ -64,7 +64,7 @@ def xdrugpy_install(
 ):
     try:
         check_call([
-            sys.executable, "-m", "pip", "install",
+            sys.executable, "-m", "pip", "install", "-U"
             f"https://github.com/pslacerda1/XDrugPy/archive/refs/{plugin_version}.zip"
         ])
         check_call([  ## pyproject.toml --no-deps limitation
