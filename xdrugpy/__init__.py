@@ -11,6 +11,8 @@ from pymol import Qt
 
 
 __ALL__ = [
+    "xdrugpy_install",
+
     # hotspots
     "load_ftmap",
     "get_fo",
@@ -51,12 +53,15 @@ RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
+RUST_TAG = "v.36"
+XDRUGPY_TAG = "v.62"
+
 @pm.extend
 def xdrugpy_install():
     try:
         check_call([
             sys.executable, "-m", "pip", "install",
-            "https://github.com/pslacerda1/XDrugPy/archive/refs/heads/master.zip"
+            f"https://github.com/pslacerda1/XDrugPy/archive/refs/tags/{XDRUGPY_TAG}.zip"
         ])
         check_call([  ## pyproject.toml --no-deps limitation
             sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0",
@@ -78,10 +83,13 @@ def xdrugpy_install():
             web_name = "vina_1.2.7_linux_x86_64"
         case "darwin":
             web_name = "vina_1.2.7_mac_x86_64"
+        case _:
+            raise RuntimeError("Unexpected system.")
+
     url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{web_name}"
     exe = RESOURCES_DIR / 'vina'
     if system == "windows":
-        exe += ".exe"
+        exe = exe.with_suffix('.exe')
     if exe.exists():
         os.unlink(exe)
     print(f"Downloading {url} into {exe}")
@@ -91,34 +99,25 @@ def xdrugpy_install():
     #
     # Install My (alpha) Rust Project
     #
-    rust_tag = "v.36"
-    if system == "windows":
-        web_name = "xdrugpy_hotspot_finder-windows.exe"
-        exe = RESOURCES_DIR / "xdrugpy_hotspot_finder.exe"
-        if exe.exists():
-            os.unlink(exe)
-        print(f"Downloading {url} into {exe}")
-        urlretrieve(url, exe)
-        os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
-    else:
-        if system == "linux":
+    match system:
+        case "linux":
             web_name = "xdrugpy_hotspot_finder-ubuntu"
-        elif system == "windows":
+        case "windows":
             web_name = "xdrugpy_hotspot_finder-windows.exe"
-        elif system == "darwin":
+        case "darwin":
             web_name = "xdrugpy_hotspot_finder-macos"
-        else:
+        case _:
             raise RuntimeError("Unexpected system.")
-        
-        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{rust_tag}/{web_name}"
-        exe = RESOURCES_DIR / "xdrugpy_hotspot_finder"
-        if system == "windows":
-            exe += ".exe"
-        if exe.exists():
-            os.unlink(exe)
-        print(f"Downloading {url} into {exe}")
-        urlretrieve(url, exe)
-        os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
+    
+    url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{RUST_TAG}/{web_name}"
+    exe = RESOURCES_DIR / "xdrugpy_hotspot_finder"
+    if system == "windows":
+        exe = exe.with_suffix('.exe')
+    if exe.exists():
+        os.unlink(exe)
+    print(f"Downloading {url} into {exe}")
+    urlretrieve(url, exe)
+    os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
 
 
 def __init_plugin__(app=None):
@@ -147,7 +146,7 @@ def __init_plugin__(app=None):
 
     from textwrap import dedent
     print(dedent("""
-        DRUGpy version 3.0 (a.k.a. Newer and Faster).
+        DRUGpy version 2.0a (a.k.a. Newer and Faster).
             Please read and cite: http://doi.com.br
     """))
 
