@@ -54,7 +54,7 @@ TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
 XDRUGPY_PLUGIN_VERSION_DEFAULT = "heads/master"
-XDRUGPY_PROGRAM_VERSION_DEFAULT = "v.36"
+XDRUGPY_PROGRAM_VERSION_DEFAULT = "v.37"
 
 
 @pm.extend

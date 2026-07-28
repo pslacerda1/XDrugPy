@@ -293,7 +293,8 @@ def load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     deep_search: bool = True,
-    max_size: int = 8,
+    max_num_cs: int = 8,
+    min_cs_strength: int = 5,
     remove_nested: bool = True,
     clash_threshold: float = 0.10,
     num_pseudoatoms: int = 25,
@@ -353,7 +354,8 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
-                max_size=max_size,
+                max_num_cs=max_num_cs,
+                min_cs_strength=min_cs_strength,
                 clash_threshold=clash_threshold,
                 remove_nested=remove_nested,
                 num_pseudoatoms=num_pseudoatoms,
@@ -365,7 +367,8 @@ def load_ftmap(
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
-                max_size=max_size,
+                max_num_cs=max_num_cs,
+                min_cs_strength=min_cs_strength,
                 remove_nested=remove_nested,
                 clash_threshold=clash_threshold,
                 num_pseudoatoms=num_pseudoatoms,
@@ -380,7 +383,8 @@ def _load_ftmap(
     filename: Path | str,
     group: Optional[str] = None,
     deep_search: bool = True,
-    max_size: int = 8,
+    max_num_cs: int = 8,
+    min_cs_strength: int = 5,
     remove_nested: bool = True,
     clash_threshold: float = 0.10,
     num_pseudoatoms: int = 25,
@@ -393,12 +397,13 @@ def _load_ftmap(
 
     cmd = [
         'xdrugpy_hotspot_finder',
-        '-g', group,
+        '--group', group,
         '--input', str(filename),
         '--clash-threshold', str(clash_threshold),
-        '--max-size', str(max_size),
         '--num-pseudoatoms', str(num_pseudoatoms),
         '--pseudoatom-radius', str(pseudoatom_radius),
+        '--max-num-cs', str(max_num_cs),
+        '--min-cs-strength', str(min_cs_strength),
     ]
     if deep_search:
         cmd.append('--deep-search')
@@ -1758,6 +1763,16 @@ class LoadWidget(QWidget):
         self.prettyCheck.setChecked(False)
         boxLayout0.addRow("Pretty session:", self.prettyCheck)
 
+        self.minCsStrength = QSpinBox()
+        self.minCsStrength.setRange(1, 10)
+        self.minCsStrength.setValue(5)
+        boxLayout0.addRow("Min consensus site strength:", self.minCsStrength)
+
+        self.maxNumCs = QSpinBox()
+        self.maxNumCs.setRange(3, 15)
+        self.maxNumCs.setValue(8)
+        boxLayout0.addRow("Max num consensus sites:", self.maxNumCs)
+        
         ################ Combinatory box
         groupBox = QGroupBox("Combinatory search")
         vlayout.addWidget(groupBox)
@@ -1768,11 +1783,6 @@ class LoadWidget(QWidget):
         self.deepSearch.setChecked(False)
         boxLayout1.addRow("Deep search:", self.deepSearch)
 
-        self.maxSizeSpin = QSpinBox()
-        self.maxSizeSpin.setRange(3, 15)
-        self.maxSizeSpin.setValue(8)
-        boxLayout1.addRow("Max hotstpot size:", self.maxSizeSpin)
-        
         self.removeNested = QCheckBox()
         self.removeNested.setChecked(False)
         boxLayout1.addRow("Remove nested:", self.removeNested)
@@ -1830,7 +1840,8 @@ class LoadWidget(QWidget):
     def load(self):
         deep_search = self.deepSearch.isChecked()
         remove_nested = self.removeNested.isChecked()
-        max_size = self.maxSizeSpin.value()
+        max_num_cs = self.maxNumCs.value()
+        min_cs_strength = self.minCsStrength.value()
         max_collisions = self.clashThreshold.value()
         num_pseudoatoms = self.numPseudoatomsSpin.value()
         pseudoatom_radius = self.pseudoatomRadiusSpin.value()
@@ -1852,7 +1863,8 @@ class LoadWidget(QWidget):
                 filename=filename,
                 group=group,
                 deep_search=deep_search,
-                max_size=max_size,
+                max_num_cs=max_num_cs,
+                min_cs_strength=min_cs_strength,
                 remove_nested=remove_nested,
                 clash_threshold=max_collisions,
                 num_pseudoatoms=num_pseudoatoms,
