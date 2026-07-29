@@ -323,11 +323,11 @@ def load_ftmap(
         deep_search:
             Use combinatory search.
 
-        max_size:
-            The max number of consensus sites into a hotspot in deep searchs.
-        
         remove_nested:
             Remove hotspots that fully fits nested/inside others.
+
+        TODO: max_num_cs
+        TODO: min_cs_strength
 
         clash_threshold:
             The tolerance percentage for steric clashes in hotspot graphs.

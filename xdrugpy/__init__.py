@@ -64,7 +64,7 @@ def xdrugpy_install(
 ):
     try:
         check_call([
-            sys.executable, "-m", "pip", "install", "-U"
+            sys.executable, "-m", "pip", "install", "-U "
             f"https://github.com/pslacerda1/XDrugPy/archive/refs/{plugin_version}.zip"
         ])
         check_call([  ## pyproject.toml --no-deps limitation
