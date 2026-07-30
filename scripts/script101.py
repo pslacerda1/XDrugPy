@@ -24,11 +24,14 @@ for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
 
         ### advanced options below ###
 
+        max_num_cs=8,   # Read up to x consensus sites of the structure.
+                        #   sto increase and check if you get more hotspots,
+                        #   but it may freeze the script as may exists too
+                        #   many combinations to generate hotspots.
+        min_cs_strength=5,
+        
         # combinatory search
         deep_search=True,
-        max_size=8, # try to increase and check if you get more hotspots,
-                    #   but it may freeze the script as may exists too
-                    #   many combinations
         remove_nested=True,
 
         # clash algorithm
