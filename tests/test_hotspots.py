@@ -13,6 +13,7 @@ from xdrugpy.hotspots import (
     get_dco,
     LinkageMethod,
     UnivariateDistanceMethod,
+    ResidueSimilarityMethod
 )
 
 mpl.use('SVG')
@@ -101,6 +102,7 @@ def test_overlap():
     assert get_fo("%NH2", "%1OD", radius=3.0) == 1.0
     assert round(get_dce("%NH2", "%1OD", radius=3.0), 2) == 7.67
     assert round(get_dco("%NH2", "%1OD", radius=3.0), 2) == 0.10
+    assert get_dce("NotFound", "%NH2") == 0
 
 
 
@@ -150,13 +152,13 @@ def test_res_sim():
     assert res_sim(
         '1dq8.DL.0',
         '1dq9.CS.0',
-        method=UnivariateDistanceMethod.JACCARD,
+        method=ResidueSimilarityMethod.JACCARD,
         radius=4.0
     ) == 0.3191489361702128
     assert res_sim(
         '1dq8.DL.0',
         '1dq9.CS.0',
-        method=UnivariateDistanceMethod.OVERLAP,
+        method=ResidueSimilarityMethod.OVERLAP,
         radius=4.0
     ) == 0.9375
 

@@ -54,7 +54,7 @@ TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
 XDRUGPY_PLUGIN_VERSION_DEFAULT = "heads/master"
-XDRUGPY_PROGRAM_VERSION_DEFAULT = "v.37"
+XDRUGPY_PROGRAM_VERSION_DEFAULT = "latest"
 
 
 @pm.extend
@@ -112,14 +112,15 @@ def xdrugpy_install(
             web_name = "xdrugpy_hotspot_finder-macos"
         case _:
             raise RuntimeError("Unexpected system.")
-    
-    url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{program_version}/{web_name}"
+    if program_version == "latest":
+        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/latest/download/{web_name}"
+    else:
+        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{program_version}/{web_name}"
     exe = RESOURCES_DIR / "xdrugpy_hotspot_finder"
     if system == "windows":
         exe = exe.with_suffix('.exe')
     if exe.exists():
         os.unlink(exe)
-    print(f"Downloading {url} into {exe}")
     urlretrieve(url, exe)
     os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
 

@@ -633,13 +633,20 @@ def get_dce(
         xyz1 = sel1
     else:
         xyz1 = get_coords(sel1, state=state1)
-    dce = get_dc(
-        xyz1,
-        sel2,
-        radius=radius,
-        state1=state1,
-        state2=state2
-    ) / len(xyz1)
+    if isinstance(sel2, np.ndarray):
+        xyz2 = sel2
+    else:
+        xyz2 = get_coords(sel2, state=state2)
+    if xyz1 is None or xyz2 is None:
+        dce = 0
+    else:
+        dce = get_dc(
+            xyz1,
+            xyz2,
+            radius=radius,
+            state1=state1,
+            state2=state2
+        ) / len(xyz1)
     if not quiet:
         print(f"DCE: {dce:.2f}")
     return dce
