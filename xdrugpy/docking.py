@@ -565,7 +565,11 @@ class VinaDockingEngine:
 
     def run_cmd(self, token, command):
         text = f"[{token}] command:\n\t{command}\n"
+        self.manager.logText.emit(text)
+
         html = f"<hr><p><b>{token} COMMAND</b><br><pre>{command}</pre><br>"
+        self.manager.logHtml.emit(html)
+        
         process = subprocess.Popen(
             command,
             shell=True,
@@ -579,19 +583,19 @@ class VinaDockingEngine:
         output = "".join(process.stdout.readlines())
 
         if not success:
-            text += f"[{token}] FAILED with return code {process.returncode}\n"
+            text = f"[{token}] FAILED with return code {process.returncode}\n"
             text += output
             self.manager.logText.emit(text)
 
-            html += f"<b><font color=red>{token} FAILED</font></b> with return code {process.returncode}<br>"
+            html = f"<b><font color=red>{token} FAILED</font></b> with return code {process.returncode}<br>"
             html += f"<pre>{output}</pre></p>"
             self.manager.logHtml.emit(html)
         else:
-            text += f"[{token}] success\n"
+            text = f"[{token}] success\n"
             text += output
             self.manager.logText.emit(text)
 
-            html += f"<b><font color=green>{token} SUCCESS</font></b><br>"
+            html = f"<b><font color=green>{token} SUCCESS</font></b><br>"
             html += f"<pre>{output}</pre></p>"
             self.manager.logHtml.emit(html)
         return success
@@ -964,6 +968,7 @@ class VinaDockingEngine:
             self._current_observer.stop()
         except Exception:
             pass
+
 
 dialog = None
 
