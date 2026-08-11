@@ -423,9 +423,11 @@ def _load_ftmap(
             f"stderr:\n{proc.stderr}\n"
         )
     pdbstr = proc.stdout
-    pm.read_pdbstr(pdbstr, group)
-    for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL', 'CS']:
-        pm.disable(f"{group}.{klass}")
+
+    if pdbstr.split('\n', 2)[1].startswith('REMARK Object='):
+        pm.read_pdbstr(pdbstr, group)
+    else:
+        pm.read_pdbstr(pdbstr, oname=f'{group}.protein')
     
     kvfound = kvfinder_constitutional_from_pdb_string(pdbstr)
     cavities = selections_from_kvfinder(group, kvfound)
