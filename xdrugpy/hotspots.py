@@ -2,26 +2,25 @@ from __future__ import annotations
 
 import os.path
 import re
+import subprocess
+import tempfile
 from types import SimpleNamespace
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional, Literal, List, Dict, Tuple
-from functools import lru_cache
-import subprocess
 
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
-from scipy.spatial import distance_matrix, distance, cKDTree
+from scipy.spatial import distance_matrix, distance
 from scipy.cluster.hierarchy import linkage, leaves_list
 from matplotlib import pyplot as plt, axes
 from strenum import StrEnum
-import networkx as nx
 import pymol
 from pymol import cmd as pm
-from pymol.exporting import _resn_to_aa as RESN_TO_AA
 from pymol_new_command import new_command
 
+from . import TEMPDIR
 from .utils import (
     Selection,
     plot_hca_base,
@@ -38,7 +37,7 @@ class ECluster:
     idx: int
     ST: int
 
-def selections_from_kvfinder(group: str, kvfound: List[str]) -> List[str]:
+def selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List[str]:
     cavities = []
     for cavity, residues in kvfound.items():
         cavity = f'{group}.KV.{cavity}'
@@ -54,12 +53,14 @@ def selections_from_kvfinder(group: str, kvfound: List[str]) -> List[str]:
         cavities.append(cavity)
     return cavities
 
-def kvfinder_constitutional_from_pdb_string(pdbstr: str):
-    # hello GPT
-    import tempfile
-    from pyKVFinder.grid import get_vertices, detect, constitutional
-    from pyKVFinder.utils import read_vdw, read_pdb, VDW
+def kvfinder_constitutional_from_pdb_string(pdbstr: str) -> Dict[str, List[str]]:
+    try:
+        from pyKVFinder.grid import get_vertices, detect, constitutional
+        from pyKVFinder.utils import read_vdw, read_pdb, VDW
+    except ImportError:
+        return {}
 
+    # hello GPT
     step = 0.6
     probe_in = 1.4
     probe_out = 4.0
@@ -72,7 +73,7 @@ def kvfinder_constitutional_from_pdb_string(pdbstr: str):
     nthreads = None
     verbose = False
 
-    with tempfile.NamedTemporaryFile("w", suffix=".pdb", delete=True) as tmp:
+    with tempfile.NamedTemporaryFile("w", suffix=".pdb", delete=True, dir=TEMPDIR) as tmp:
         pdbstr = (
             '\n'
             .join(

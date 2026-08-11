@@ -5,7 +5,7 @@ import stat
 from tempfile import mkdtemp
 from pathlib import Path
 from urllib.request import urlretrieve
-from subprocess import check_call
+from subprocess import check_call, CalledProcessError
 from pymol import cmd as pm
 from pymol import Qt
 
@@ -67,13 +67,16 @@ def xdrugpy_install(
             sys.executable, "-m", "pip", "install", "-U",
             f"https://github.com/pslacerda1/XDrugPy/archive/refs/{plugin_version}.zip"
         ])
-        check_call([  ## pyproject.toml --no-deps limitation
-            sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0",
-        ])
         check_call([
             'conda', 'install', '-y', 'bioconda::clustalo'
         ])
-    except Exception as exc:
+        try:
+            check_call([  ## pyproject.toml --no-deps limitation
+                sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0",
+            ])
+        except CalledProcessError as exc:
+            print("Continuing without pyKVFinder.")
+    except CalledProcessError as exc:
         raise SystemError(f"XDrugPy: Installation failed.") from exc
 
     #
