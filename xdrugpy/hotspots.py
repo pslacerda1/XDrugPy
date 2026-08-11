@@ -433,10 +433,11 @@ def _load_ftmap(
     cavities = selections_from_kvfinder(group, kvfound)
     clusters, hotspots = extract_metadata_from_pdb_string(pdbstr, cavities)
 
-    pm.group(group, f"{group}.*")
-
+    for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL', 'CS']:
+        pm.disable(f"{group}.{klass}")
 
     if pretty:
+        pm.group(group, f"{group}.*")
         pm.group(group, f"{group}.protein")
         
         pm.hide("everything", f"{group}.*")
