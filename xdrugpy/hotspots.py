@@ -437,7 +437,6 @@ def _load_ftmap(
         pm.disable(f"{group}.{klass}")
 
     if pretty:
-        pm.group(group, f"{group}.*")
         pm.group(group, f"{group}.protein")
         
         pm.hide("everything", f"{group}.*")
@@ -493,16 +492,14 @@ def _load_ftmap(
         pm.set("mesh_mode", 1)
         pm.orient("all")
 
-        # groups = [
-        #     name
-        #     for name in pm.get_names()
-        #     if pm.get_type(name) == 'object:group'
-        #         and name.startswith(f"{group}.")
-        #         and pm.count_atoms(f"%{name}") == 0
-        # ]
-        # for grp in groups:
-        #     if grp in pm.get_names():
-        #         pm.delete(grp)
+        groups = [
+            name
+            for name in pm.get_names('group_objects')
+            if name.startswith(f"{group}.")
+                and pm.count_atoms(f"%{name}.*") == 0
+        ]
+        for grp in groups:
+            pm.delete(grp)
     
     return SimpleNamespace(
         clusters=clusters,
