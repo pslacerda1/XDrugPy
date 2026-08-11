@@ -400,11 +400,13 @@ class VinaThread(QThread):
 
 class VinaThreadDialog(QDialog):
 
-    def __init__(self, run_function, parent=None):
+    def __init__(self, run_function, project_dir, parent=None):
         super().__init__(parent)
         self.vina = VinaThread(run_function)
         self.vina.finished.connect(self._finished)
         self.is_finished = False
+
+        self.project_dir = project_dir
         
         self.timeout_timer = QTimer()
         self.timeout_timer.setSingleShot(True)
@@ -440,6 +442,7 @@ class VinaThreadDialog(QDialog):
         self.layout.addWidget(self.text)
         self.text.setReadOnly(True)
         self.vina.logHtml.connect(self._appendHtml)
+        self.vina.logHtml.connect(self._saveHtml)
 
         # Plain text output
         self.vina.logText.connect(print)
@@ -459,6 +462,10 @@ class VinaThreadDialog(QDialog):
     def _appendHtml(self, html):
         self.text.moveCursor(QTextCursor.End)
         self.text.insertHtml(self._prepareHtml(html))
+
+    def _saveHtml(self, html):
+        with open(self.project_dir + '/log.html', 'a') as file:
+            file.write(html + "\n")
 
     def _finished(self, status=False):
         self.is_finished = True
@@ -1339,7 +1346,7 @@ def docking_gui():
                     continuation=False
                 )
 
-        dialog = VinaThreadDialog(run_implementation)
+        dialog = VinaThreadDialog(run_implementation, project_dir)
         dialog.exec_()
     
     run_widget = QWidget()
