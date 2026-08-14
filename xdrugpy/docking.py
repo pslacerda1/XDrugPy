@@ -1,43 +1,32 @@
 import re
 import os
+import subprocess
+import itertools
+import shutil
+import textwrap
+import json
+import sys
+import sysconfig
+import textwrap
+from glob import glob
+from html import escape as escape_html
+from pathlib import Path
+from typing import List
+from operator import itemgetter
 from os.path import (
     expanduser,
     splitext,
     basename,
 )
-from glob import glob
-import subprocess
-import itertools
-import sysconfig
-from operator import itemgetter
-import shutil
-import textwrap
-import json
-import sys
-import textwrap
-from unittest.mock import MagicMock
 
-import pymol
-import pymol.gui
+import numpy as np
+import pandas as pd
 from pymol import cmd as pm
 from pymol.cgo import CYLINDER, SPHERE, COLOR
 from pymol import Qt
-import numpy as np
-import pandas as pd
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-
-
-from . import (
-    LIGAND_LIBRARIES_DIR,
-    RECEPTOR_LIBRARIES_DIR,
-)
-
-from .utils import (
-    run,
-    kill_process,
-    PyMOLComboObjectBox,
-)
+from rdkit import Chem, rdBase
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtWidgets import (
@@ -48,6 +37,17 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QFrame, QMessageBox
 )
 from PyQt5.QtGui import QPalette, QTextCursor, QIcon
+
+
+from . import (
+    LIGAND_LIBRARIES_DIR,
+    RECEPTOR_LIBRARIES_DIR,
+)
+
+from .utils import (
+    kill_process,
+    PyMOLComboObjectBox,
+)
 
 
 #
@@ -380,7 +380,6 @@ def new_load_results_widget():
 #          Run Docking Pannel                 #
 ###############################################
 
-
 class VinaThread(QThread):
 
     vinaStarted = pyqtSignal()
@@ -396,6 +395,65 @@ class VinaThread(QThread):
 
     def run(self):
         self.run_implementation(self)
+
+
+class Commander:
+
+    def __init__(self, manager: VinaThread) -> None:
+        self.manager: VinaThread = manager
+
+    def _log_init(self, title: str, command: str) -> None:
+        """
+        Initialize a two-phase command log.
+        
+        Init a log that probably must be completed with an output.
+        """
+        # format and emit text
+        text = f">>>> {title}\n"
+        text += f"\t$ {command}\n"
+        self.manager.logText.emit(text)
+
+        # format and emit html
+        html = "<hr>"
+        html += f'<br><b>{title}</b>'
+        html += f"<br><b><i>Command</i></b>"
+        html += f'<br><pre>{command}</pre>'
+        self.manager.logHtml.emit(html)
+
+    def _log_finish(self, return_value: int, output: str | None) -> None:
+        """
+        Finish a two-phase command log.
+
+        Complete the _log_init() with an output.
+        """
+
+        # build and mit the text log
+        text = ""
+        text += f"Return:\n\t{return_value}\n"
+        if output:
+            text += "Output:\n" + textwrap.indent(output, '\t')
+        self.manager.logText.emit(text)
+
+        # build and emit the html log
+        success = return_value == 0
+        color = {False: "red", True: "green"}[bool(success)]
+        html = ""
+        html += "<br><b><i>Return Value</i></b>"
+        html += f"<font color={color}><pre>{return_value}</pre></font>"
+        if output:
+            html += f"<br><b><i>Output</i></b>"
+            html += f"<br><font color={color}><pre>{escape_html(output)}</pre></font>"
+        html += "<br>"
+        self.manager.logHtml.emit(html)
+
+    def run(self, title, command):
+        self._log_init(title, command)
+        process = subprocess.Popen(
+            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        output, _ = process.communicate()
+        self._log_finish(process.returncode, output[-1024*10:])
+        return process.returncode
 
 
 class VinaThreadDialog(QDialog):
@@ -514,21 +572,20 @@ class VinaThreadDialog(QDialog):
     def _prepareHtml(html):
         return textwrap.dedent(html)
 
-
-
 #
 # Run docking software
 #
 
-from pathlib import Path
 
-
-class VinaDockingEngine:
+class VinaEngine:
 
     def __init__(self, project_dir, manager):
         self.project_dir = project_dir
         self.manager = manager
         self.project_dir = Path(self.project_dir)
+        self.recent_logs = {}
+        self.cmd = Commander(manager)
+
         if self.project_dir.is_dir():
             if len([*self.project_dir.iterdir()]) > 0:
                 self.log("DOCKING_FOLDER_NOT_EMPTY", dict(
@@ -546,67 +603,23 @@ class VinaDockingEngine:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.queue_dir.mkdir(parents=True, exist_ok=True)
 
-    def log(self, token, params=None):
-        params = params or {}
-        output = params.get('output')
-
-        html = "<hr>"
-        html += "<p>"
-        html += f"<b>{token}</b>"
+    
+    def log(self, token, params):
+        html = ""
+        if params.pop('hr', False):
+            html += '<hr>'
+        html += f'<b>{token}</b>'
         html += "<ul>"
         for key, value in params.items():
-                html += f"<li><b>{key}:</b> {value}</li>"
-        html += "</ul>"
-        if output:
-            html += f"<pre>{output}</pre>"
-        html += "</p>"
+            html += f"<li><b>{escape_html(str(key))}:</b> {escape_html(str(value))}</li>"
+        html += "</ul><br>"
         self.manager.logHtml.emit(html)
 
-        text = f"[{token}]\n"
+        text = f">>> {token}\n"
         for key, value in params.items():
-            if key != 'output':
-                text += f"  {key}: {value}\n"        
-        if output:
-            text += "\n" + textwrap.indent(output, '  ')
+            text += f"\t* {key}: {value}\n"
         self.manager.logText.emit(text)
 
-    def run_cmd(self, token, command):
-        text = f"[{token}] command:\n\t{command}\n"
-        self.manager.logText.emit(text)
-
-        html = f"<hr><p><b>{token} COMMAND</b><br><pre>{command}</pre><br>"
-        self.manager.logHtml.emit(html)
-        
-        process = subprocess.Popen(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            text=True,
-        )
-        process.wait()
-        success = process.returncode == 0
-        output = "".join(process.stdout.readlines())
-
-        if not success:
-            text = f"[{token}] FAILED with return code {process.returncode}\n"
-            text += output
-            self.manager.logText.emit(text)
-
-            html = f"<b><font color=red>{token} FAILED</font></b> with return code {process.returncode}<br>"
-            html += f"<pre>{output}</pre></p>"
-            self.manager.logHtml.emit(html)
-        else:
-            text = f"[{token}] success\n"
-            text += output
-            self.manager.logText.emit(text)
-
-            html = f"<b><font color=green>{token} SUCCESS</font></b><br>"
-            html += f"<pre>{output}</pre></p>"
-            self.manager.logHtml.emit(html)
-        return success
-    
     def set_num_steps(self, n_ligands: int):
         self.current_step = 0
         self.manager.numSteps.emit(n_ligands)
@@ -658,8 +671,8 @@ class VinaDockingEngine:
             center = min + half_size
             size_x, size_y, size_z = (half_size + box_margin) * 2
             center_x, center_y, center_z = center
-            self.box_size = np.array((size_x, size_y, size_z)).tolist()
-            self.box_center = np.array((center_x, center_y, center_z)).tolist()
+            self.box_size = np.array((size_x, size_y, size_z)).round(2).tolist()
+            self.box_center = np.array((center_x, center_y, center_z)).round(2).tolist()
             receptor_pdb = self.project_dir / "receptor.pdb"
             receptor_pqr = self.project_dir / "receptor.pqr"
             
@@ -671,17 +684,14 @@ class VinaDockingEngine:
                 f'pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output "{receptor_pdb}" --with-ph {ph}'
                 f' "{receptor_pdb}" "{receptor_pqr}"'
             )
-            success = self.run_cmd('ADDING_RECEPTOR_HYDROGENS', command)
-            if not success:
+            rv = self.cmd.run('ADDING_RECEPTOR_HYDROGENS', command)
+            if rv != 0:
                 return False
             
             #
             # Run Meeko to prepare the receptor
             #
-            if allow_bad_res:
-                allow_bad_res = "--allow_bad_res"
-            else:
-                allow_bad_res = ""
+            allow_bad_res = "--allow_bad_res" if allow_bad_res else ""
             command = (
                 f"python -m meeko.cli.mk_prepare_receptor"
                 f" {allow_bad_res}"
@@ -691,10 +701,10 @@ class VinaDockingEngine:
                 f" --box_center {center_x:.2f} {center_y:.2f} {center_z:.2f}"
                 f" --box_size {size_x:.2f} {size_y:.2f} {size_z:.2f}"
             )
-            success = self.run_cmd('PREPARING_RECEPTOR', command)
-            if not success:
+            rv = self.cmd.run('PREPARING_RECEPTOR', command)
+            if rv != 0:
                 return False
-
+            
             if save_lib:
                 shutil.copy(self.receptor_pdbqt, save_lib_pdbqt)
                 with open(save_lib_box, "w") as f:
@@ -706,21 +716,24 @@ class VinaDockingEngine:
                     box_center=self.box_center,
                 ))
             return True
-
+    
     def prepare_ligands(
-        self,
-        ligands_path: str = "",
-        ph: float = 7.0,
-        cpu: int = 1,
-        seed: int = 0,
-        skip_protomers=True,
-        skip_tautomers=True,
-        from_lib: str = "",
-        save_lib: str = "",
+            self,
+            ligands_files_list: List[str | Path] | None = None,
+            ph: float = 7.0,
+            cpu: int = 1,
+            seed: int = 0,
+            skip_acidbase: bool = True,
+            skip_tautomers: bool = True,
+            from_lib: str = "",
+            save_lib: str = "",
     ) -> bool:
         self.queue_dir = self.project_dir / "queue"
         from_lib_dir = LIGAND_LIBRARIES_DIR / from_lib
         save_lib_dir = LIGAND_LIBRARIES_DIR / save_lib
+
+        self.queue_dir.mkdir(parents=True, exist_ok=True)
+
         if from_lib and from_lib_dir.exists():
             shutil.rmtree(self.queue_dir, ignore_errors=True)
             shutil.copytree(from_lib_dir, self.queue_dir)
@@ -729,42 +742,32 @@ class VinaDockingEngine:
                 from_lib_dir=from_lib_dir
             ))
             return True
+        
         else:
-            #
-            # Scrubbing ligands
-            #
-            ligands_file = Path(ligands_path)
-            ligands_sdf = self.project_dir / "ligands.sdf"
-            if skip_protomers:
-                skip_protomers = "--skip_acidbase"
-            else:
-                skip_protomers = ""
-            if skip_tautomers:
-                skip_tautomers = "--skip_tautomers"
-            else:
-                skip_tautomers = ""
+            skip_acidbase = "--skip_acidbase" if skip_acidbase else ""
+            skip_tautomers = "--skip_tautomers" if skip_tautomers else ""
             scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.py'
             if not scrub_path.exists():
                 scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.exe'
-            command = (
-                f'python "{scrub_path}" -o "{ligands_sdf}" --cpu={cpu} --etkdg_rng_seed={seed} --ph={ph}'
-                f' {skip_protomers} {skip_tautomers} "{ligands_file}"'
-            )
-            success = self.run_cmd('SCRUBBING_LIGANDS', command)
-            if not success:
-                return False
             
-            #
-            # Converting to PDBQT
-            #
-            self.queue_dir.mkdir(parents=True, exist_ok=True)
-            command = (
-                f"python -m meeko.cli.mk_prepare_ligand"
-                f' -i "{ligands_sdf}" --multimol_outdir "{self.queue_dir}"'
-            )
-            success = self.run_cmd('CONVERTING_LIGANDS_TO_PDBQT', command)
-            if not success:
-                return False
+            for idx, ligands_file in enumerate(ligands_files_list):
+                ligands_sdf = self.project_dir / f"ligands_{idx}.sdf"
+
+                # Scrubbing ligands
+                rv = self.cmd.run('SCRUBBING_LIGANDS', (
+                    f'python "{scrub_path}" -o "{ligands_sdf}" --cpu={cpu} --etkdg_rng_seed={seed}'
+                    f' --ph_high={ph} --ph_low={ph} {skip_acidbase} {skip_tautomers} "{ligands_file}"'
+                ))
+                if rv != 0:
+                    continue
+            
+                # Converting to PDBQT
+                rv = self.cmd.run('CONVERTING_LIGANDS_TO_PDBQT', (
+                    f"python -m meeko.cli.mk_prepare_ligand"
+                    f' -i "{ligands_sdf}" --multimol_outdir "{self.queue_dir}"'
+                ))
+                if rv != 0:
+                    continue
             
             if save_lib:
                 shutil.rmtree(save_lib_dir, ignore_errors=True)
@@ -774,8 +777,8 @@ class VinaDockingEngine:
                     save_lib_dir=save_lib_dir,
                     n_ligands=n_ligands,
                 ))
-                return True
-
+            return True
+    
     def run_docking(
         self,
         scoring: str = "vinardo",
@@ -797,7 +800,7 @@ class VinaDockingEngine:
         else:
             vina_command = (
                 f"vina"
-                f' --receptor "{self.receptor_pdbqt}"'
+                f" --verbose 0"
                 f" --scoring {scoring}"
                 f" --cpu {cpu}"
                 f" --seed {seed}"
@@ -811,17 +814,21 @@ class VinaDockingEngine:
                 f" --num_modes {num_modes}"
                 f" --min_rmsd {min_rmsd}"
                 f" --energy_range {energy_range}"
+                f' --receptor "{self.receptor_pdbqt}"'
                 f' --dir "{self.results_dir}"'
                 f' --batch "{self.queue_dir}"'
             )
             with open(self.project_dir / "vina_args.txt", "w") as f:
-                f.write(vina_command + "\n")
+                f.write(vina_command)
         
         if not continuation:
-            self.log('STATE_CHECKPOINTED', dict())
-
+            self.log('STATE_CHECKPOINTED', dict(
+                project_dir=self.project_dir,
+                hr=True,
+            ))
         self.log('RUNNING_DOCKING', dict(
-            vina_command=vina_command
+            vina_command=vina_command,
+            hr=True,
         ))
         that = self
         class DockingProgressHandler(FileSystemEventHandler):
@@ -1125,7 +1132,7 @@ def docking_gui():
     tab1_widget.setLayout(tab1_layout)
     tab_ligand.addTab(tab1_widget, "New library")
 
-    ligands_file = None
+    ligands_files_list = None
     ligands_button = QPushButton("Choose file...")
     tab1_layout.addRow("Ligands file:", ligands_button)
 
@@ -1136,9 +1143,9 @@ def docking_gui():
     ligand_ph_spin.setDecimals(1)
     tab1_layout.addRow("Ligand pH:", ligand_ph_spin)
 
-    enumerate_protomers_check = QCheckBox()
-    enumerate_protomers_check.setChecked(False)
-    tab1_layout.addRow("Enumerate protomers:", enumerate_protomers_check)
+    enumerate_acidbase_check = QCheckBox()
+    enumerate_acidbase_check.setChecked(False)
+    tab1_layout.addRow("Enumerate acid/base conjugates:", enumerate_acidbase_check)
 
     enumerate_tautomers_check = QCheckBox()
     enumerate_tautomers_check.setChecked(False)
@@ -1147,22 +1154,23 @@ def docking_gui():
     molscrub_seed_spin = QSpinBox()
     molscrub_seed_spin.setRange(0, 10000)
     molscrub_seed_spin.setValue(1)
-    tab1_layout.addRow("Random seed:", molscrub_seed_spin)
+    tab1_layout.addRow("Molscrub random seed:", molscrub_seed_spin)
 
     @ligands_button.clicked.connect
     def choose_ligands():
-        nonlocal ligands_file
-        ligands_file = str(
-            QFileDialog.getOpenFileName(
-                ligands_button,
-                "Ligand files",
-                expanduser("~"),
-                "Molecular ligand files (*.smi *.sdf *.mol *.mol2)",
-            )[0]
+        nonlocal ligands_files_list
+        ligands_files_list, _ = QFileDialog.getOpenFileNames(
+            ligands_button,
+            "Ligand files",
+            "",
+            "Ligand files (*.smi *.mol *.sdf)",
         )
-        if not ligands_file:
+        if not ligands_files_list:
             return
-        ligands_button.setText(basename(ligands_file))
+        label = basename(ligands_files_list[0])
+        if len(ligands_files_list) > 1:
+            label += ", ..."
+        ligands_button.setText(label)
 
     #
     # Molecular library
@@ -1261,7 +1269,7 @@ def docking_gui():
             QFileDialog.getExistingDirectory(
                 results_button,
                 "Output folder",
-                expanduser("~"),
+                "",
                 QFileDialog.ShowDirsOnly,
             )
         )
@@ -1290,7 +1298,7 @@ def docking_gui():
         def run_implementation(manager):
             if not project_dir:
                 return
-            engine = VinaDockingEngine(project_dir, manager)
+            engine = VinaEngine(project_dir, manager)
             manager.engine = engine
             if continuation_check.isChecked():
                 engine.run_docking(continuation=True)
@@ -1317,15 +1325,15 @@ def docking_gui():
                 # Handle ligands
                 #
                 if tab_lig_idx == 0:
-                    if not ligands_file:
+                    if not ligands_files_list:
                         return
                         
                     engine.prepare_ligands(
-                        ligands_path=ligands_file,
+                        ligands_files_list=ligands_files_list,
                         ph=ligand_ph_spin.value(),
-                        cpu=cpu_spin.value(),
                         seed=molscrub_seed_spin.value(),
-                        skip_protomers=not enumerate_protomers_check.isChecked(),
+                        cpu=cpu_spin.value(),
+                        skip_acidbase=not enumerate_acidbase_check.isChecked(),
                         skip_tautomers=not enumerate_tautomers_check.isChecked(),
                         save_lib=compound_library_line.text().strip(),
                     )

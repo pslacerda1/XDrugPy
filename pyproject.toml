@@ -11,13 +11,12 @@ dependencies = [
   "matplotlib==3.10",
   "scipy==1.15",
   "strenum==0.4",
-  "networkx==3.4",
   "watchdog==6.0.0",
   "openpyxl==3.1",
   "rcsb-api==1.7.3",
   "pdb2pqr==3.6.2",
   "propka==3.5.1",
-  "molscrub==0.2.2",
+  "molscrub @ https://github.com/forlilab/molscrub/archive/c68e88d26fd1fa1c6ca3ad7d02c0633d43aefe44.zip",
   "pymol_new_command @ https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip",
   "meeko @ https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
 ]
