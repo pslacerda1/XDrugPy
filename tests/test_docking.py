@@ -65,7 +65,7 @@ def test_vina_engine():
         eng2.run_docking()
         vina_command = (tmpdir / "vina_args.txt").read_text().strip()
         assert vina_command == (
-            f'vina --verbose 0 --scoring vinardo --cpu 1 --seed 42 --size_x 15.11 --size_y 14.48 --size_z 16.50'
+            f'vina --verbosity 0 --scoring vinardo --cpu 1 --seed 42 --size_x 15.11 --size_y 14.48 --size_z 16.50'
             f' --center_x 16.55 --center_y -14.26 --center_z 8.36 --exhaustiveness 8 --num_modes 9 --min_rmsd 1.0 --energy_range 3.0'
             f' --receptor "{tmpdir}/receptor.pdbqt" --dir "{tmpdir}/results" --batch "{tmpdir}/queue"'
         )

@@ -800,7 +800,7 @@ class VinaEngine:
         else:
             vina_command = (
                 f"vina"
-                f" --verbose 0"
+                f" --verbosity 0"
                 f" --scoring {scoring}"
                 f" --cpu {cpu}"
                 f" --seed {seed}"
