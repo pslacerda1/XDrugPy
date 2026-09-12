@@ -4,9 +4,9 @@ import os.path
 import re
 import subprocess
 import tempfile
-from types import SimpleNamespace
+from collections import namedtuple
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, Field
 from typing import Any, Optional, Literal, List, Dict, Tuple
 
 import numpy as np
@@ -28,16 +28,7 @@ from .utils import (
     AligMethod
 )
 
-
-@dataclass
-class ECluster:
-    selection: str
-    probe_type: str
-    coords: Any = field(repr=False, hash=False)
-    idx: int
-    ST: int
-
-def selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List[str]:
+def _selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List[str]:
     cavities = []
     for cavity, residues in kvfound.items():
         cavity = f'{group}.KV.{cavity}'
@@ -49,11 +40,11 @@ def selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List[
         for resi, chain, resn in residues[1:]:
             pm.select(cavity, f'{cavity} OR (i. {resi} AND c. {chain})')
         pm.select(cavity, f'{cavity} AND {group}.protein')
-        pm.disable(cavity)
         cavities.append(cavity)
     return cavities
 
-def kvfinder_constitutional_from_pdb_string(pdbstr: str) -> Dict[str, List[str]]:
+
+def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> Dict[str, List[str]]:
     try:
         from pyKVFinder.grid import get_vertices, detect, constitutional
         from pyKVFinder.utils import read_vdw, read_pdb, VDW
@@ -69,23 +60,17 @@ def kvfinder_constitutional_from_pdb_string(pdbstr: str) -> Dict[str, List[str]]
     ligand_cutoff = 5.0
     surface = "SES"
     ignore_backbone = False
-    model = None
     nthreads = None
     verbose = False
 
     with tempfile.NamedTemporaryFile("w", suffix=".pdb", delete=True, dir=TEMPDIR) as tmp:
-        pdbstr = (
-            '\n'
-            .join(
-                l for l
-                in pdbstr.splitlines()
-                if l.startswith('ATOM')
-            )
-        )
-        tmp.write(pdbstr)
-        tmp.flush()
-        atomic = read_pdb(tmp.name, read_vdw(VDW), model)
+        first_header = pdbstr.find('HEADER')
+        second_header = pdbstr.find('HEADER', first_header+1)
 
+        tmp.write(pdbstr[first_header:second_header])
+        tmp.flush()
+
+        atomic = read_pdb(tmp.name)
         vertices = get_vertices(atomic, probe_out, step)
         ncav, cavities = detect(
             atomic,
@@ -120,53 +105,29 @@ def kvfinder_constitutional_from_pdb_string(pdbstr: str) -> Dict[str, List[str]]
     return residues
 
 
-def get_coords(sel, state=1):
+def _get_coords(sel, state=1):
     return pm.get_coords(sel, state)
 
-# def process_eclusters(group, eclusters):
-#     for acs in eclusters:
-#         new_name = f"{group}.ACS.{acs.probe_type}.{acs.idx:02}"
-#         pm.set_name(acs.selection, new_name)
-#         acs.selection = new_name
-#         pm.group(group, new_name)
 
-#         coords = pm.get_coordset(new_name)
-#         md = distance_matrix(coords, coords).max()
-
-#         set_properties(
-#             acs,
-#             new_name,
-#             {
-#                 "Type": "ACS",
-#                 "Group": group,
-#                 "Selection": new_name,
-#                 "Class": acs.probe_type,
-#                 "ST": acs.ST,
-#                 "MD": round(md, 2),
-#             },
-#         )
-#     pm.delete("clust.*")
-
-
-def set_properties(obj_name, properties):
+def _set_properties(obj_name, properties):
     for prop, value in properties.items():
         pm.set_property(prop, value, obj_name)
         pm.set_atom_property(prop, value, obj_name)
 
 
-def extract_metadata_from_pdb_string(
-        pdbstr: str,
-        cavities: List[str]
+def _extract_data_from_pdb_string(
+    pdbstr: str,
+    cavities: List[str]
 ) -> Tuple[List[Cluster], List[Hotspot]]:
 
     clusters = []
     hotspots = []
     remark_re = re.compile(r'([a-zA-Z0-9_]+)=([a-zA-Z0-9._]+)')
     for line in pdbstr.split('\n'):
-        
+
         if not line.startswith('REMARK'):
             continue
-        
+
         d = {}
         for m in remark_re.finditer(line[7:]):
             k = m.group(1)
@@ -200,7 +161,7 @@ def extract_metadata_from_pdb_string(
                 Length=int(d['Len']),
                 Kavity=None,
             )
-            
+
             max_touch = 0
             max_cavity = None
             for cavity in cavities:
@@ -217,40 +178,58 @@ def extract_metadata_from_pdb_string(
     return clusters, hotspots
 
 
+HotspotResults = namedtuple('HotspotResults', 'clusters hotspots eclusters cavities')
+
 @dataclass
-class Cluster:
-    Group: str
+class BaseHotspot:
     Object: str
-    S: int
+    Group: str
 
     Coords: Any = field(repr=False, hash=False)
-    Type: Literal["CS"] =  field(default="CS", repr=False)
 
     def save_into_properties(self):
         d = asdict(self)
         del d['Coords']
-        set_properties(self.Object, d)
-    
-    @classmethod
-    def from_object_name(cls, name: str) -> Cluster:
-        assert ".CS." in name
-        assert "CS" in pm.get_property("Type", name)
-        assert name == pm.get_property("Object", name)
+        del d['Object']
+        _set_properties(self.Object, d)
 
-        cluster = Cluster(
-            Group=pm.get_property('Group', name),
-            Object=name,
-            S=pm.get_property('S', name),
-            Coords=pm.get_coordset(name),
+    @classmethod
+    def from_object_name(cls, obj_name: str) -> BaseHotspot:
+        assert cls is not BaseHotspot
+        assert cls.Type == pm.get_property("Type", obj_name)
+        assert obj_name == pm.get_property("Object", obj_name)
+
+        values = {}
+        for prop_name in pm.get_property_list(obj_name):
+            # class member is a dataclass field?
+            cls_field = getattr(cls, prop_name)
+            if isinstance(cls_field, Field):
+                # if so, then save its value
+                prop_value = pm.get_property(prop_name, obj_name)
+                values[prop_name] = prop_value
+
+        return cls(
+            Object=obj_name,
+            Coords=pm.get_coordset(obj_name),
+            **values
         )
-        return cluster
 
 
 @dataclass
-class Hotspot:
-    Group: str
-    Object: str
-    
+class Cluster(BaseHotspot):
+    S: int
+    Type: Literal["CS"] =  field(default="CS", repr=False)
+
+
+@dataclass
+class Ecluster(BaseHotspot):
+    S: int
+    ProbeType: str
+    Type: Literal["ACS"] = field(default="ACS", repr=False)
+
+
+@dataclass
+class Hotspot(BaseHotspot):
     Class: Literal["D", "DS", "DL", "B", "BS", "BL", None]
     ST: int
     S0: int
@@ -260,39 +239,67 @@ class Hotspot:
     MD: float
     Length: int
     Kavity: str | None
-
-    Coords: Any = field(repr=False, hash=False)
     Type: Literal["HS"] =  field(default="HS", repr=False)
 
-    def save_into_properties(self):
-        d = asdict(self)
-        del d['Coords']
-        set_properties(self.Object, d)
 
-    @classmethod
-    def from_object_name(cls, name: str) -> Hotspot:
-        assert "HS" == pm.get_property("Type", name)
-        assert name == pm.get_property("Object", name)
-        hs = Hotspot(
-            Group=pm.get_property('Group', name),
-            Object=name,
-            Coords=pm.get_coordset(name),
-            Class=pm.get_property('Class', name),
-            ST=pm.get_property('ST', name),
-            S0=pm.get_property('S0', name),
-            S1=pm.get_property('S1', name),
-            SZ=pm.get_property('SZ', name),
-            CD=pm.get_property('CD', name),
-            MD=pm.get_property('MD', name),
-            Length=pm.get_property('Length', name),
-            Kavity=pm.get_property('Kavity', name)
+def _process_ftmap(
+    filename: Path,
+    group: str,
+    deep_search: bool,
+    max_num_cs: int,
+    min_cs_strength: int,
+    remove_nested: bool,
+    clash_threshold: float,
+    num_pseudoatoms: int,
+    pseudoatom_radius: float,
+) -> tuple[list[Hotspot], list[Cluster], list[str]]:
+    cmd = [
+        'xdrugpy_hotspot_finder',
+        '--group', group,
+        '--input', str(filename),
+        '--clash-threshold', str(clash_threshold),
+        '--num-pseudoatoms', str(num_pseudoatoms),
+        '--pseudoatom-radius', str(pseudoatom_radius),
+        '--max-num-cs', str(max_num_cs),
+        '--min-cs-strength', str(min_cs_strength),
+    ]
+    if deep_search:
+        cmd.append('--deep-search')
+    if remove_nested:
+        cmd.append('--remove-nested')
+
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"xdrugpy_hotspot_finder failed with exit code {proc.returncode}\n"
+            f"stderr:\n{proc.stderr}\n"
         )
-        return hs
+    pdbstr = proc.stdout
+
+    if pdbstr.split('\n', 2)[1].startswith('REMARK Object='):
+        pm.read_pdbstr(pdbstr, group)
+    else:
+        pm.read_pdbstr(pdbstr, oname=f'{group}.protein')
+
+    kvfound = _kvfinder_constitutional_from_pdb_string(pdbstr)
+    cavities = _selections_from_kvfinder(group, kvfound)
+    clusters, hotspots = _extract_data_from_pdb_string(pdbstr, cavities)
+    return hotspots, clusters, cavities
+
+
+def _process_eftmap(filename: Path, group: str) -> list[Ecluster]:
+    raise NotImplementedError
+
 
 @new_command
 def load_ftmap(
     filename: Path | str,
-    group: Optional[str] = None,
+    group: str | None = None,
     deep_search: bool = True,
     max_num_cs: int = 8,
     min_cs_strength: int = 5,
@@ -301,7 +308,7 @@ def load_ftmap(
     num_pseudoatoms: int = 25,
     pseudoatom_radius: float = 0.5,
     pretty: bool = False,
-):
+) -> HotspotResults:
     """
     DESCRIPTION
 
@@ -318,7 +325,7 @@ def load_ftmap(
             Path to the FTMap .pdb file.
 
         group:
-            The name of the top-level PyMOL group. If not provided, the 
+            The name of the top-level PyMOL group. If not provided, the
             basename of the file is used.
 
         deep_search:
@@ -332,14 +339,14 @@ def load_ftmap(
 
         clash_threshold:
             The tolerance percentage for steric clashes in hotspot graphs.
-        
+
         pretty:
             Enable beautiful visualizations of the loaded FTMap results. Also
             enable grouping of hotspots by type.
-        
+
         num_pseudoatoms:
             Number of pseudo-atoms to detect clashes between two atoms.
-        
+
         pseudoatom_radius:
             Radius of each pseudo-atom.
 
@@ -382,7 +389,7 @@ def load_ftmap(
 
 def _load_ftmap(
     filename: Path | str,
-    group: Optional[str] = None,
+    group: str | None = None,
     deep_search: bool = True,
     max_num_cs: int = 8,
     min_cs_strength: int = 5,
@@ -391,54 +398,38 @@ def _load_ftmap(
     num_pseudoatoms: int = 25,
     pseudoatom_radius: float = 0.5,
     pretty: bool = False,
-):
+) -> HotspotResults:
+    filename = Path(filename)
     if not group:
-        group = os.path.splitext(os.path.basename(str(filename)))[0]
+        group = filename.stem
     group = pm.get_legal_name(group)
 
-    cmd = [
-        'xdrugpy_hotspot_finder',
-        '--group', group,
-        '--input', str(filename),
-        '--clash-threshold', str(clash_threshold),
-        '--num-pseudoatoms', str(num_pseudoatoms),
-        '--pseudoatom-radius', str(pseudoatom_radius),
-        '--max-num-cs', str(max_num_cs),
-        '--min-cs-strength', str(min_cs_strength),
-    ]
-    if deep_search:
-        cmd.append('--deep-search')
-    if remove_nested:
-        cmd.append('--remove-nested')
-    
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"xdrugpy_hotspot_finder failed with exit code {proc.returncode}\n"
-            f"stderr:\n{proc.stderr}\n"
-        )
-    pdbstr = proc.stdout
-
-    if pdbstr.split('\n', 2)[1].startswith('REMARK Object='):
-        pm.read_pdbstr(pdbstr, group)
+    is_eftmap = Path(filename).read_text().find('\nHEADER    clust.') > -1
+    if is_eftmap:
+        eclusters = _process_eftmap(filename, group)
+        cavities = []
+        clusters = []
+        hotspots = []
     else:
-        pm.read_pdbstr(pdbstr, oname=f'{group}.protein')
-    
-    kvfound = kvfinder_constitutional_from_pdb_string(pdbstr)
-    cavities = selections_from_kvfinder(group, kvfound)
-    clusters, hotspots = extract_metadata_from_pdb_string(pdbstr, cavities)
+        hotspots, clusters, cavities = _process_ftmap(
+            filename,
+            group,
+            deep_search,
+            max_num_cs,
+            min_cs_strength,
+            remove_nested,
+            clash_threshold,
+            num_pseudoatoms,
+            pseudoatom_radius,
+        )
+        eclusters = []
 
-    for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL', 'CS']:
+    for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL', 'CS', 'KV', 'ACS']:
         pm.disable(f"{group}.{klass}")
 
     if pretty:
         pm.group(group, f"{group}.protein")
-        
+
         pm.hide("everything", f"{group}.*")
 
         pm.show("cartoon", f"{group}.protein")
@@ -457,17 +448,6 @@ def _load_ftmap(
         pm.color("yellow", f"{group}.ACS.apolar.*")
 
         pm.show("line", f"{group}.CS.*")
-
-        pm.order(f"{group}.BS", location="top")
-        pm.order(f"{group}.BL", location="top")
-        pm.order(f"{group}.B", location="top")
-        pm.order(f"{group}.DS", location="top")
-        pm.order(f"{group}.DL", location="top")
-        pm.order(f"{group}.D", location="top")
-
-        pm.order(f"{group}.KV.*", location="top")
-        pm.order(f"{group}.CS.*", location="top")
-        pm.order(f"{group}.protein", location="top")
 
         pm.group(f"{group}.CS", f"{group}.CS.*")
         pm.group(f"{group}.KV", f"{group}.KV.*")
@@ -489,6 +469,17 @@ def _load_ftmap(
         pm.group(group, f"{group}.DL")
         pm.group(group, f"{group}.BL")
 
+        pm.order(f"{group}.BS", location="top")
+        pm.order(f"{group}.BL", location="top")
+        pm.order(f"{group}.B", location="top")
+        pm.order(f"{group}.DS", location="top")
+        pm.order(f"{group}.DL", location="top")
+        pm.order(f"{group}.D", location="top")
+
+        pm.order(f"{group}.KV.*", location="top")
+        pm.order(f"{group}.CS.*", location="top")
+        pm.order(f"{group}.protein", location="top")
+
         pm.set("mesh_mode", 1)
         pm.orient("all")
 
@@ -500,13 +491,15 @@ def _load_ftmap(
         ]
         for grp in groups:
             pm.delete(grp)
-    
-    return SimpleNamespace(
+
+    return HotspotResults(
         clusters=clusters,
-        hotspots=hotspots
+        hotspots=hotspots,
+        cavities=cavities,
+        eclusters=eclusters,
     )
 
-    
+
 @new_command
 def get_fo(
     sel1: Selection,
@@ -519,7 +512,7 @@ def get_fo(
     """
     DESCRIPTION
 
-        Calculates the Fractional Overlap (FO) between two selections. 
+        Calculates the Fractional Overlap (FO) between two selections.
         FO is defined as the fraction of atoms in the first selection
         that are within a specified radius from the second selection.
 
@@ -538,11 +531,11 @@ def get_fo(
     if isinstance(sel1, np.ndarray):
         xyz1 = sel1
     else:
-        xyz1 = get_coords(sel1, state=state1)
+        xyz1 = _get_coords(sel1, state=state1)
     if isinstance(sel2, np.ndarray):
         xyz2 = sel2
     else:
-        xyz2 = get_coords(sel2, state=state2)
+        xyz2 = _get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         fo = 0
     else:
@@ -570,7 +563,7 @@ def get_dc(
         Calculates Density Correlation, i.e. the total number of
         pairwise atomic contacts between two selections based on
         a distance threshold.
-        
+
     ARGUMENTS
 
         sel1, sel2:
@@ -586,11 +579,11 @@ def get_dc(
     if isinstance(sel1, np.ndarray):
         xyz1 = sel1
     else:
-        xyz1 = get_coords(sel1, state=state1)
+        xyz1 = _get_coords(sel1, state=state1)
     if isinstance(sel2, np.ndarray):
         xyz2 = sel2
     else:
-        xyz2 = get_coords(sel2, state=state2)
+        xyz2 = _get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         dc = 0
     else:
@@ -613,7 +606,7 @@ def get_dce(
     DESCRIPTION
 
         Calculates the Density Correlation Efficiency (DCE).
-        
+
         This is the total number of contacts (DC) of a ligand
         and a hotspot divided by the total number of atoms
         of the ligand.
@@ -633,11 +626,11 @@ def get_dce(
     if isinstance(sel1, np.ndarray):
         xyz1 = sel1
     else:
-        xyz1 = get_coords(sel1, state=state1)
+        xyz1 = _get_coords(sel1, state=state1)
     if isinstance(sel2, np.ndarray):
         xyz2 = sel2
     else:
-        xyz2 = get_coords(sel2, state=state2)
+        xyz2 = _get_coords(sel2, state=state2)
     if xyz1 is None or xyz2 is None:
         dce = 0
     else:
@@ -665,7 +658,7 @@ def get_dco(
     """
     DESCRIPTION
 
-        Calculates the Density Correlation Overlap (DCO). 
+        Calculates the Density Correlation Overlap (DCO).
         This is the total number of contacts (DC) dividev by
         the  total number of contacts possible.
 
@@ -681,11 +674,11 @@ def get_dco(
     if isinstance(sel1, np.ndarray):
         xyz1 = sel1
     else:
-        xyz1 = get_coords(sel1, state=state1)
+        xyz1 = _get_coords(sel1, state=state1)
     if isinstance(sel2, np.ndarray):
         xyz2 = sel2
     else:
-        xyz2 = get_coords(sel2, state=state2)
+        xyz2 = _get_coords(sel2, state=state2)
     dco = get_dc(
         xyz1,
         xyz2,
@@ -744,9 +737,9 @@ def calc_univariate_hca(
 
         seq_align_before_overlap:
             Do alignment before comparing the polymer residues near the two objects.
-            
+
         linkage_method:
-            The clustering algorithm for the dendrogram. 
+            The clustering algorithm for the dendrogram.
 
         radius: float
             The distance cutoff (Angstroms) passed to the overlap function.
@@ -759,10 +752,10 @@ def calc_univariate_hca(
 
         only_medoids:
             If True, focuses analysis or visualization only on the cluster medoids.
-            
+
         annotate:
-            If True, writes the numerical values directly inside the heatmap 
-            cells. Text color (black/white) is automatically adjusted for 
+            If True, writes the numerical values directly inside the heatmap
+            cells. Text color (black/white) is automatically adjusted for
             legibility based on the cell intensity.
 
         rename_leafs:
@@ -774,7 +767,7 @@ def calc_univariate_hca(
     EXAMPLES
         calc_univariate_hca group_name.D.*, linkage_method=ward
         calc_univariate_hca *.CS.*
-    
+
     SEE ALSO
         calc_mutivariate_hca
     """
@@ -787,8 +780,8 @@ def calc_univariate_hca(
     obj_coords = {}
     for obj in objects:
         if obj not in obj_coords:
-            obj_coords[obj] = get_coords(obj)
-    
+            obj_coords[obj] = _get_coords(obj)
+
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
             if idx1 >= idx2:
@@ -859,10 +852,10 @@ def calc_overlap_matrix(
     """
     DESCRIPTION
 
-        Generates a heatmap matrix visualizing the overlap or contact 
-        metrics between two groups of PyMOL objects. 
+        Generates a heatmap matrix visualizing the overlap or contact
+        metrics between two groups of PyMOL objects.
 
-        This is ideal for cross-comparing FTMap hotspots across different 
+        This is ideal for cross-comparing FTMap hotspots across different
         protein conformations or comparing a ligand to a set of probe clusters.
 
     USAGE
@@ -875,7 +868,7 @@ def calc_overlap_matrix(
             The selection for the vertical axis (rows).
 
         sele_b: str, optional
-            The selection for the horizontal axis (columns). If omitted or 
+            The selection for the horizontal axis (columns). If omitted or
             blank, it defaults to sele_a (creating a self-comparison matrix).
 
         function: OverlapFunction, default=OverlapFunction.FO
@@ -888,13 +881,13 @@ def calc_overlap_matrix(
             The distance cutoff (Angstroms) passed to the overlap function.
 
         annotate: bool, default=False
-            If True, writes the numerical values directly inside the heatmap 
-            cells. Text color (black/white) is automatically adjusted for 
+            If True, writes the numerical values directly inside the heatmap
+            cells. Text color (black/white) is automatically adjusted for
             legibility based on the cell intensity.
-        
+
         rename_leafs:
             A dictionary mapping PyMOL object names to user-friendly labels.
-        
+
         linkage_method:
             Optional clustering algorithm.
 
@@ -918,7 +911,7 @@ def calc_overlap_matrix(
         objs_b = pm.get_object_list(sele_b) or []
     else:
         objs_b = objs_a or []
-    
+
     match function:
         case OverlapFunction.FO:
             get_value = get_fo
@@ -933,12 +926,12 @@ def calc_overlap_matrix(
 
     ret = []
     X = []
-    
+
     obj_coords = {}
     for obj in [*objs_a, *objs_b]:
         if obj not in obj_coords:
-            obj_coords[obj] = get_coords(obj)
-    
+            obj_coords[obj] = _get_coords(obj)
+
     for i1, a in enumerate(objs_a):
         row = []
         for i2, b in enumerate(objs_b):
@@ -946,7 +939,7 @@ def calc_overlap_matrix(
             row.append(value)
             ret.append([a, b, value])
         X.append(row)
-    
+
     X = np.array(X)
     if linkage_method and len(X) > 2:
         Z_rows = linkage(X, method=linkage_method)
@@ -959,24 +952,24 @@ def calc_overlap_matrix(
         idx_cols = leaves_list(Z_cols)
     else:
         idx_cols = np.arange(len(X.T))
-    
+
     X = X[idx_rows, :][:, idx_cols]
 
     fig, ax = plt.subplots(constrained_layout=True)
-    
+
     objs_a_lbl = []
     for obj_a in objs_a:
         new_lbl = (rename_leafs or {}).get(obj_a, obj_a)
         objs_a_lbl.append(new_lbl)
-    
+
     objs_b_lbl = []
     for obj_b in objs_b:
         new_lbl = (rename_leafs or {}).get(obj_b, obj_b)
         objs_b_lbl.append(new_lbl)
-        
+
     ax.set_yticks(range(len(objs_a)), np.array(objs_a_lbl)[idx_rows])
     ax.set_xticks(range(len(objs_b)), np.array(objs_b_lbl)[idx_cols])
-    
+
     ax.tick_params(axis="x", rotation=90)
     if function in [OverlapFunction.FO, OverlapFunction.FO_AVG]:
         vmin = 0.0
@@ -1046,11 +1039,11 @@ def calc_ligand_fit(
 ):
     if len(pm.get_object_list(hs_sele)) != 1:
         raise ValueError("Only one hotspot can be analyzed at time.")
-    
-    
+
+
     objs_hss = pm.get_object_list(hs_sele)
     objs_ligs = pm.get_object_list(ligs_sele)
-    
+
     match function:
         case OverlapFunction.FO:
             get_value = get_fo
@@ -1065,8 +1058,8 @@ def calc_ligand_fit(
     obj_coords = {}
     for obj in [*objs_hss, *objs_ligs]:
         if obj not in obj_coords:
-            obj_coords[obj] = get_coords(obj)
-    
+            obj_coords[obj] = _get_coords(obj)
+
     for i1, a in enumerate(objs_hss):
         row = []
         for i2, b in enumerate(objs_ligs):
@@ -1074,12 +1067,12 @@ def calc_ligand_fit(
             row.append(value)
             ret.append([a, b, value])
         X.append(row)
-    
+
     overlap_df = pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
     overlap_df = overlap_df.rename(columns={'B': 'Ligand'})
     # identify the fragment
     ix_frag = np.argmin(bind_df['HA'])
-    
+
     # merge dataframes
     bind_df.rename(columns={'sele': 'Ligand'})
     df = overlap_df.join(bind_df, on='Ligand', how='left')
@@ -1109,7 +1102,7 @@ def calc_fingerprints(
     contact_radius: float = 4.0,
     nbins: int = 25,
     sharex: bool = True,
-    linkage_method: LinkageMethod = LinkageMethod.WARD,
+    linkage_method: LinkageMethod = LinkageMethod.AVERAGE,
     color_threshold: float = -1.0,
     nclusters: int = -1,
     only_medoids: bool = False,
@@ -1135,12 +1128,12 @@ def calc_fingerprints(
     ARGUMENTS
 
         multi_seles: str
-            A slash-separated string of PyMOL selections containing the objects 
+            A slash-separated string of PyMOL selections containing the objects
             to compare (e.g., 'hs_or_cs_1 / hs_or_cs_2'). They must came from
             load_ftmap and belongs to a protein group.
 
         site: Selection, default="*"
-            A PyMOL selection used to focus the fingerprint sub-region based on 
+            A PyMOL selection used to focus the fingerprint sub-region based on
             the first protein structure.
 
         site_radius: float, default=5.0
@@ -1151,14 +1144,14 @@ def calc_fingerprints(
             Clustal Omega conservation string match criteria for filtering residues.
 
         contact_radius: float, default=4.0
-            Distance cutoff (Angstroms) used to compute raw atomic contacts 
+            Distance cutoff (Angstroms) used to compute raw atomic contacts
             between the hotspot/cs and target residues.
 
         nbins: int, default=5
             Number of bins/labels applied to the x-axis tick locator.
 
         sharex: bool, default=True
-            If True, subplots share the same x-axis layout, hiding inner labels 
+            If True, subplots share the same x-axis layout, hiding inner labels
             to prevent visual clutter.
 
         linkage_method: LinkageMethod, default='ward'
@@ -1180,14 +1173,14 @@ def calc_fingerprints(
             If True, writes numerical values inside the distance matrix heatmap cells.
 
         share_ylim: bool, default=True
-            If True, synchronizes the y-axis maximum scale across all fingerprint 
+            If True, synchronizes the y-axis maximum scale across all fingerprint
             bar charts for direct visual comparison.
 
         figure_title: str, optional
             Title text displayed at the top of the generated figure window.
 
         fingerprints_plot: str, Path, Axes, optional
-            Target destination for the bar charts. Can be a Matplotlib Axes, 
+            Target destination for the bar charts. Can be a Matplotlib Axes,
             a file path to export the image, or a boolean.
 
         dendrogram_plot: str, Path, Axes, optional
@@ -1232,14 +1225,14 @@ def calc_fingerprints(
             groups.append(group)
     polymers = [f"{g}.protein" for g in groups]
     assert len(polymers) > 0, "Please review your selections"
-    
+
     ref_sele = seles[0]
     ref_polymer = polymers[0]
     site_sele = f"{ref_polymer} & ({ref_polymer} within {site_radius} of ({site}))"
     site_resis = []
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
-    
+
     mapping = clustal_omega(
         polymers,
         omega_conservation.strip(),
@@ -1272,16 +1265,16 @@ def calc_fingerprints(
                 fpt_axs.append(ax)
     else:
         fpt_axs = None
-    
+
     if not isinstance(fpt_axs, (np.ndarray, list)):
         fpt_axs = [fpt_axs]
-        
+
     if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
         raise ValueError(
             "All fingerprints must have the same length. "
             "Do you have incomplete structures?"
         )
-    
+
     max_val = 0
     for ix, (ax, fpt, sele) in enumerate(zip(fpt_axs, fpts, seles)):
         labels = ["%s%s %s_%s" % k for k in fpt]
@@ -1304,7 +1297,7 @@ def calc_fingerprints(
     if share_ylim:
         for ax in fpt_axs:
             ax.set_ylim(0, max_val * 1.05)
-    
+
     if fingerprints_plot:
         fig = fpt_axs[0].get_figure(True)
         fig.set_layout_engine('compressed')
@@ -1528,7 +1521,7 @@ def calc_multivariate_hca(
             be of the same type (e.g., all hotspots or all consensus sites).
 
         linkage_method:
-            The clustering linkage algorithm used to compute the dendrogram 
+            The clustering linkage algorithm used to compute the dendrogram
             (e.g., SINGLE, COMPLETE, WARD).
 
         color_threshold:
@@ -1553,11 +1546,11 @@ def calc_multivariate_hca(
             Title text displayed at the top of the generated figure window.
 
         dendrogram_plot:
-            Target destination for the dendrogram. Can be a Matplotlib Axes object, 
+            Target destination for the dendrogram. Can be a Matplotlib Axes object,
             a file path (str/Path) to save the plot, a boolean, or None.
 
         heatmap_plot:
-            Target destination for the distance matrix heatmap. Can be a Matplotlib 
+            Target destination for the distance matrix heatmap. Can be a Matplotlib
             Axes object, a file path (str/Path) to save the plot, a boolean, or None.
 
     RETURNS
@@ -1598,7 +1591,7 @@ def calc_multivariate_hca(
             ST = pm.get_property("ST", obj)
             MD = pm.get_property("MD", obj)
             p[ix, :] = np.array([ST, MD, x, y, z])
-    
+
     p = (p - p.mean(axis=0)) / (p.std(axis=0) + 1e-8)
     X = distance.pdist(p, dist_method)
     dendro, medoids = plot_hca_base(
@@ -1665,7 +1658,7 @@ def plot_ligand_fit(
 
     # identify the fragment
     ix_frag = np.argmin(bind_df['HA'])
-    
+
     # merge dataframes
     bind_df.rename(columns={'sele': 'Ligand'})
     df = overlap_df.join(bind_df, on='Ligand', how='left')
@@ -1751,7 +1744,7 @@ class LoadWidget(QWidget):
         loadButton = QPushButton("Load")
         loadButton.clicked.connect(self.load)
         addRemoveLayout.addWidget(loadButton)
-        
+
         ############### Options start
         widget = QWidget()
         hlayout = QHBoxLayout()
@@ -1780,7 +1773,7 @@ class LoadWidget(QWidget):
         self.maxNumCs.setRange(3, 15)
         self.maxNumCs.setValue(8)
         boxLayout0.addRow("Max num consensus sites:", self.maxNumCs)
-        
+
         ################ Combinatory box
         groupBox = QGroupBox("Combinatory search")
         vlayout.addWidget(groupBox)
@@ -1806,7 +1799,7 @@ class LoadWidget(QWidget):
         self.clashThreshold.setSingleStep(0.05)
         self.clashThreshold.setValue(0.10)
         boxLayout2.addRow("Clash threshold:", self.clashThreshold)
-        
+
         self.numPseudoatomsSpin = QSpinBox()
         self.numPseudoatomsSpin.setRange(5, 100)
         self.numPseudoatomsSpin.setValue(25)
@@ -1816,7 +1809,7 @@ class LoadWidget(QWidget):
         self.pseudoatomRadiusSpin.setRange(0.1, 1.5)
         self.pseudoatomRadiusSpin.setValue(0.5)
         boxLayout2.addRow("Pseudoatom radius:", self.pseudoatomRadiusSpin)
-        
+
     def pickFile(self):
         fileDIalog = QFileDialog()
         fileDIalog.setFileMode(QFileDialog.ExistingFiles)
@@ -1865,7 +1858,7 @@ class LoadWidget(QWidget):
                 groups.append(group)
         finally:
             self.clearInputs()
-        
+
         for filename, group in zip(filenames, groups):
             load_ftmap(
                 filename=filename,
@@ -1886,7 +1879,7 @@ class SortableItem(QTableWidgetItem):
         super().__init__()
         self.setData(QtCore.Qt.ItemDataRole.EditRole, obj)
         self.setData(QtCore.Qt.ItemDataRole.DisplayRole, stringfy(obj))
-            
+
     def __lt__(self, other):
         this = self.data(QtCore.Qt.ItemDataRole.EditRole)
         that = other.data(QtCore.Qt.ItemDataRole.EditRole)
@@ -1900,21 +1893,21 @@ class OptionalPositiveDoubleDelegate(QStyledItemDelegate):
             # Se a string estiver vazia, permitimos (retornamos Acceptable)
             if not string:
                 return QValidator.Acceptable, string, pos
-            
+
             # Caso contrário, usamos a validação padrão de números
             try:
                 float(string) > 0
                 return QValidator.Acceptable, string, pos
             except ValueError:
                 return super().validate(string, pos)
-            
-    
+
+
     def createEditor(self, parent, option, index):
         editor = QLineEdit(parent)
-        
+
         validator = self.Validator(editor)
         validator.setNotation(QDoubleValidator.Notation.StandardNotation)
-        
+
         editor.setValidator(validator)
         return editor
 
@@ -1958,7 +1951,7 @@ class TableWidget(QWidget):
         def textEdited(expr):
             self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab.currentIndex()]
             self.updateCurrentList()
-    
+
 
         tab = QTabWidget()
         layout.addWidget(tab)
@@ -1994,7 +1987,7 @@ class TableWidget(QWidget):
     def changeItems(self, tab_index):
         self.current_tab = [k[1] for k in self.hotspotsMap.keys()][tab_index]
         self.updateCurrentList()
-    
+
     def showEvent(self, event):
         self.filter_line.textEdited.emit(self.filter_line.text())
         self.refresh()
@@ -2046,7 +2039,7 @@ class TableWidget(QWidget):
             if pm.get_property("Type", obj) != self.current_tab:
                 self.selected_objs.remove(obj)
         self.refresh()
-    
+
     def export(self):
         fileDialog = QFileDialog()
         fileDialog.setNameFilter("Excel file (*.xlsx)")
@@ -2158,27 +2151,27 @@ class HcaWidget(QWidget):
             for row in range(self.table.rowCount()-1, -1, -1):
                 col0_text = self.table.item(row, 0)
                 col0_text = col0_text.text().strip()
-                
+
                 col1_text = self.table.item(row, 1)
                 col1_text = col1_text.text().strip()
-                
+
                 if (col0_text == "" and col1_text == ""):
                     self.table.removeRow(row)
-            
+
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(""))
             self.table.setItem(row, 1, QTableWidgetItem(""))
-            
+
             self.table.blockSignals(False)
 
         layout = QHBoxLayout()
         container = QWidget(self)
         container.setLayout(layout)
         mainLayout.addWidget(container)
-        
+
         groupBox = QGroupBox("Univariate analysis")
-        
+
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
@@ -2200,7 +2193,7 @@ class HcaWidget(QWidget):
         boxLayout.addWidget(plotButton)
 
         groupBox = QGroupBox("Multivariate analysis")
-        
+
         layout.addWidget(groupBox)
         boxLayout = QFormLayout()
         groupBox.setLayout(boxLayout)
@@ -2215,7 +2208,7 @@ class HcaWidget(QWidget):
     def paste_data(self):
         if not self.table.isVisible() or not self.table.isEnabled():
             return
-        
+
         clipboard = QApplication.instance().clipboard()
         mime_data = clipboard.mimeData()
         if not mime_data.hasText():
@@ -2226,7 +2219,7 @@ class HcaWidget(QWidget):
         self.table.blockSignals(True)
         while self.table.rowCount() > 0:
             self.table.removeRow(0)
-        
+
         for row_ix, row_text in enumerate(rows):
             columns = row_text.split('\t')
             self.table.insertRow(self.table.rowCount())
@@ -2240,7 +2233,7 @@ class HcaWidget(QWidget):
         self.table.setItem(row_ix+1, 0, QTableWidgetItem(""))
         self.table.setItem(row_ix+1, 1, QTableWidgetItem(""))
         self.table.blockSignals(False)
-    
+
     def getLeafLabels(self):
         rows = self.table.rowCount()
         data = {}
@@ -2251,7 +2244,7 @@ class HcaWidget(QWidget):
                 continue
             data[obj] = lbl
         return data
-    
+
     def plot_multivariate_hca(self):
         sele = self.hotspotSeleLine.text()
         linkage_method = self.linkageMethodCombo.currentText()
@@ -2275,7 +2268,7 @@ class HcaWidget(QWidget):
             heatmap_plot=heatmap_plot,
         )
         plt.show()
-    
+
     def plot_univariate_hca(self):
         sele = self.hotspotSeleLine.text()
         dist_method = self.univariateDistFunctionCombo.currentText()
@@ -2329,7 +2322,7 @@ class LigandTableWidget(QTableWidget):
     def refresh(self, objects):
         self.setSortingEnabled(False)
         self.blockSignals(True)
-        
+
         while self.rowCount() > 0:
             self.removeRow(0)
         for obj in objects:
@@ -2345,12 +2338,12 @@ class LigandTableWidget(QTableWidget):
                 item = QTableWidgetItem("")
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                 self.setItem(row, col, item)
-            
+
             self.setItem(row, 7, QTableWidgetItem(""))
-                
+
         self.setSortingEnabled(True)
         self.blockSignals(False)
-    
+
     def getDataFrame(self):
         rows = self.rowCount()
         cols = len(self.COLUMNS)
@@ -2380,7 +2373,7 @@ class LigandTableWidget(QTableWidget):
                 le = self.item(r, 2).text().strip()
                 bei = self.item(r, 3).text().strip()
                 fq = self.item(r, 4).text().strip()
-                
+
                 data.append([
                     obj,
                     float(pki.replace(",", ".")),
@@ -2398,10 +2391,10 @@ class LigandFitWidget(QWidget):
 
     def __init__(self):
         super().__init__()
-        
+
         layout = QFormLayout()
         self.setLayout(layout)
-        
+
         self.hotspotsSeleLine = QLineEdit()
         self.hotspotsSeleLine.setPlaceholderText("Single hotspot object or selection...")
         self.hotspotsSeleLine.textChanged.connect(self.validateUpdateWidget)
@@ -2411,11 +2404,11 @@ class LigandFitWidget(QWidget):
         self.ligandsSeleLine.setPlaceholderText("Ligand objects or selections...")
         self.ligandsSeleLine.textChanged.connect(self.validateUpdateWidget)
         layout.addRow("Ligands:", self.ligandsSeleLine)
-        
+
         self.ligMetricCombo = QComboBox()
         self.ligMetricCombo.addItems([e.value for e in BindMetric])
         layout.addRow("Binding metric:", self.ligMetricCombo)
-        
+
         self.functionCombo = QComboBox()
         self.functionCombo.addItems([e.value for e in OverlapFunction])
         layout.addRow("Overlap function:", self.functionCombo)
@@ -2456,7 +2449,7 @@ class LigandFitWidget(QWidget):
                     fq = bind['fq']
                     ha = bind['ha']
                     mw = bind['mw']
-                
+
                     self.table.item(row, 2).setText(f"{le:.3f}")
                     self.table.item(row, 3).setText(f"{bei:.3f}")
                     self.table.item(row, 4).setText(f"{fq:.3f}")
@@ -2524,7 +2517,7 @@ class LigandFitWidget(QWidget):
             bind_df=bind_df
         )
         plt.show()
-    
+
     def export(self):
         ligand_df = self.table.getDataFrame()
 
@@ -2545,7 +2538,7 @@ class OverlapWidget(QWidget):
 
     def __init__(self):
         super().__init__()
-        
+
         layout = QFormLayout()
         self.setLayout(layout)
 
@@ -2556,7 +2549,7 @@ class OverlapWidget(QWidget):
         self.bSeleLine = QLineEdit()
         self.bSeleLine.setPlaceholderText("Objects or selections...")
         layout.addRow("Selection B:", self.bSeleLine)
-        
+
         self.functionCombo = QComboBox()
         self.functionCombo.addItems([e.value for e in OverlapFunction])
         layout.addRow("Overlap function:", self.functionCombo)
@@ -2608,14 +2601,14 @@ class OverlapWidget(QWidget):
             linkage_method=linkage_method
         )
         plt.show()
-    
+
     def export_overlap(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
         annotate = self.annotateCheck.isChecked()
-        
+
         table_df = calc_overlap_matrix(
             sele_a=sele_a,
             sele_b=sele_b,
@@ -2688,9 +2681,9 @@ class FingerprintWidget(QWidget):
 
         container = QWidget()
         scroll.setWidget(container)
-        
+
         scrollLayout = QFormLayout(container)
-        
+
 
         self.multiSelesLine = QLineEdit("")
         scrollLayout.addRow("Multi sele:", self.multiSelesLine)
@@ -2790,7 +2783,11 @@ class FingerprintWidget(QWidget):
         hcaLayout.addRow("Annotate:", self.annotateCheck)
 
         self.linkageMethodCombo = QComboBox()
-        self.linkageMethodCombo.addItems([e.value for e in LinkageMethod])
+        self.linkageMethodCombo.addItems([
+            e.value
+            for e in LinkageMethod
+            if e != LinkageMethod.WARD
+        ])
         hcaLayout.addRow("Linkage:", self.linkageMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
@@ -2809,7 +2806,7 @@ class FingerprintWidget(QWidget):
         self.onlyMedoidsCheck = QCheckBox()
         self.onlyMedoidsCheck.setChecked(False)
         hcaLayout.addRow("Show only medoids:", self.onlyMedoidsCheck)
-        
+
         plotButton = QPushButton("Plot")
         plotButton.clicked.connect(self.plot_fingerprint)
         scrollLayout.addWidget(plotButton)
@@ -2888,7 +2885,7 @@ dialog = None
 def run_plugin_gui():
     global dialog
     if dialog is None:
-        
+
         locale = QLocale(QLocale.English, QLocale.UnitedStates)
         QLocale.setDefault(locale)
 

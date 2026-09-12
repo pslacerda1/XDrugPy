@@ -2,6 +2,9 @@ import os.path
 from pymol import cmd as pm
 import numpy as np
 import matplotlib as mpl
+import io
+import cairosvg
+from PIL import ImageChops, Image
 from xdrugpy.hotspots import (
     load_ftmap,
     calc_multivariate_hca,
@@ -24,9 +27,6 @@ pkg_data = os.path.dirname(__file__) + "/data"
 
 
 def images_identical(img1_path, img2_path):
-    from PIL import ImageChops, Image
-    import io
-    import cairosvg
     def rasterize(svg_path):
         png_data = cairosvg.svg2png(url=svg_path)
         return Image.open(io.BytesIO(png_data)).convert("RGB")
@@ -61,7 +61,7 @@ def test_calc_multivariate_hca():
 
 def test_calc_univariate_hca():
     pm.reinitialize()
-    
+
     load_ftmap(
         filename=f"{pkg_data}/1dq8_atlas.pdb",
         group="1dq8",
@@ -127,10 +127,10 @@ def test_calc_fingerprint():
     # )
     # assert images_identical(img_ref, img_gen)
 
-    img_gen1 = f"{pkg_data}/test_fpt1_gen.svg"
-    img_gen2 = f"{pkg_data}/test_fpt2_gen.svg"
-    img_ref1 = f"{pkg_data}/test_fpt1_ref.svg"
-    img_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
+    img_fpt_gen1 = f"{pkg_data}/test_fpt1_gen.svg"
+    img_fpt_ref1 = f"{pkg_data}/test_fpt1_ref.svg"
+    img_dendro_gen2 = f"{pkg_data}/test_fpt2_gen.svg"
+    img_dendro_ref2 = f"{pkg_data}/test_fpt2_ref.svg"
 
     calc_fingerprints(
         multi_seles="1dq8.D* | 1dq8.B* / 1dq9.DL.0 / 1dqa.CS.0",
@@ -138,11 +138,11 @@ def test_calc_fingerprint():
         nbins=50,
         sharex=False,
         share_ylim=False,
-        fingerprints_axis=img_gen1,
-        dendrogram_axis=img_gen2,
+        fingerprints_plot=img_fpt_gen1,
+        dendrogram_plot=img_dendro_gen2,
     )
-    assert images_identical(img_ref1, img_gen1)
-    assert images_identical(img_ref2, img_gen2)
+    assert images_identical(img_fpt_ref1, img_fpt_gen1)
+    assert images_identical(img_dendro_ref2, img_dendro_gen2)
 
 
 def test_res_sim():
@@ -165,15 +165,15 @@ def test_res_sim():
 
 def test_load():
     pm.reinitialize()
-    
+
     ftmap = load_ftmap(
         f"{pkg_data}/2TPR.pdb",
         deep_search=True,
-        remove_nested=False
+        remove_nested=False,
     )
     hotspots = ftmap.hotspots
     assert len(hotspots) == 42
-    assert hotspots[0].Class == 'DL'
+    assert hotspots[0].Object == '2TPR.DS.0'
 
     ftmap = load_ftmap(
         f"{pkg_data}/1dqa_atlas.pdb",
@@ -181,3 +181,21 @@ def test_load():
         deep_search=False,
     )
     assert len(ftmap.hotspots) == 1
+
+    ftmap = load_ftmap(
+        f'{pkg_data}/3mer_c10.pdb'
+    )
+    assert len(ftmap.cavities) == 2
+    assert len(ftmap.clusters) == 4
+    assert len(ftmap.hotspots) == 4
+    assert len(ftmap.eclusters) == 0
+
+
+def test_load_eftmap():
+    pm.reinitialize()
+
+    ftmap = load_ftmap(
+        f'{pkg_data}/p38_MAPK_1R39_pharm.pdb',
+        "1R39",
+    )
+    assert len(ftmap.eclusters) > 0
