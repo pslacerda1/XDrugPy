@@ -254,7 +254,7 @@ def _process_ftmap(
     pseudoatom_radius: float,
 ) -> tuple[list[Hotspot], list[Cluster], list[str]]:
     cmd = [
-        'xdrugpy_hotspot_finder',
+        'xdrugpy_xhf',
         '--group', group,
         '--input', str(filename),
         '--clash-threshold', str(clash_threshold),
@@ -276,7 +276,7 @@ def _process_ftmap(
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"xdrugpy_hotspot_finder failed with exit code {proc.returncode}\n"
+            f"xdrugpy_xhf failed with exit code {proc.returncode}\n"
             f"stderr:\n{proc.stderr}\n"
         )
     pdbstr = proc.stdout

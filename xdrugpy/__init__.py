@@ -108,18 +108,18 @@ def xdrugpy_install(
     #
     match system:
         case "linux":
-            web_name = "xdrugpy_hotspot_finder-ubuntu"
+            web_name = "xdrugpy_xhf-ubuntu"
         case "windows":
-            web_name = "xdrugpy_hotspot_finder-windows.exe"
+            web_name = "xdrugpy_xhf-windows.exe"
         case "darwin":
-            web_name = "xdrugpy_hotspot_finder-macos"
+            web_name = "xdrugpy_xhf-macos"
         case _:
             raise RuntimeError("Unexpected system.")
     if program_version == "latest":
         url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/latest/download/{web_name}"
     else:
         url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{program_version}/{web_name}"
-    exe = RESOURCES_DIR / "xdrugpy_hotspot_finder"
+    exe = RESOURCES_DIR / "xdrugpy_xhf"
     if system == "windows":
         exe = exe.with_suffix('.exe')
     if exe.exists():
