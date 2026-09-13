@@ -14,7 +14,7 @@ from xdrugpy import (
     calc_univariate_hca,
     LinkageMethod,
     MultivariateDistanceMethod,
-    UnivariateDistanceMethod,
+    UnivariateMethod,
     configure_matplotlib,
 )
 
@@ -71,7 +71,7 @@ calc_multivariate_hca(
 # overlap average between hotspot objects.
 calc_univariate_hca(
     '*.D* AND p.S0>20',
-    dist_method=UnivariateDistanceMethod.FO_AVG,
+    dist_method=UnivariateMethod.FO_AVG,
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=0.35,
     annotate=False,
@@ -81,4 +81,5 @@ calc_univariate_hca(
                             # or even set to False
 )
 
+plt.show()
 plt.waitforbuttonpress()

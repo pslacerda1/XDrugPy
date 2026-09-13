@@ -104,4 +104,5 @@ calc_fingerprints(
     # Annotate the heatmap with the values (not only colors).
     annotate=True,
 )
+plt.show()
 plt.waitforbuttonpress()

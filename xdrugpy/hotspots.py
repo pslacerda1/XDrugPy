@@ -4,7 +4,6 @@ import os.path
 import re
 import subprocess
 import tempfile
-from collections import namedtuple
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, Field
 from typing import Any, Optional, Literal, List, Dict, Tuple
@@ -25,10 +24,82 @@ from .utils import (
     Selection,
     plot_hca_base,
     clustal_omega,
-    AligMethod
 )
 
-def _selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List[str]:
+
+def _get_coords(sel: Selection, state=1):
+    return pm.get_coords(sel, state)
+
+
+def _set_properties(obj_name, properties: dict[str, Any]):
+    for prop, value in properties.items():
+        pm.set_property(prop, value, obj_name)
+        pm.set_atom_property(prop, value, obj_name)
+
+
+@dataclass
+class BaseHotspot:
+    Object: str
+    Group: str
+
+    Coords: Any = field(repr=False, hash=False)
+
+    def save_into_properties(self):
+        d = asdict(self)
+        del d['Coords']
+        del d['Object']
+        _set_properties(self.Object, d)
+
+    @classmethod
+    def from_object_name(cls, obj_name: str):
+        assert cls is not BaseHotspot
+        assert cls.Type == pm.get_property("Type", obj_name)
+        assert obj_name == pm.get_property("Object", obj_name)
+
+        values = {}
+        for prop_name in pm.get_property_list(obj_name):
+            # class member is a dataclass field?
+            cls_field = getattr(cls, prop_name)
+            if isinstance(cls_field, Field):
+                # if so, then save its value
+                prop_value = pm.get_property(prop_name, obj_name)
+                values[prop_name] = prop_value
+
+        return cls(
+            Object=obj_name,
+            Coords=pm.get_coordset(obj_name),
+            **values
+        )
+
+
+@dataclass
+class Cluster(BaseHotspot):
+    S: int
+    Type: Literal["CS"] =  field(default="CS", repr=False)
+
+
+@dataclass
+class Ecluster(BaseHotspot):
+    S: int
+    ProbeType: str
+    Type: Literal["ACS"] = field(default="ACS", repr=False)
+
+
+@dataclass
+class Hotspot(BaseHotspot):
+    Class: Literal["D", "DS", "DL", "B", "BS", "BL", None]
+    ST: int
+    S0: int
+    S1: int
+    SZ: int
+    CD: float
+    MD: float
+    Length: int
+    Kavity: str | None
+    Type: Literal["HS"] =  field(default="HS", repr=False)
+
+
+def _selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List[Selection]:
     cavities = []
     for cavity, residues in kvfound.items():
         cavity = f'{group}.KV.{cavity}'
@@ -44,7 +115,7 @@ def _selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List
     return cavities
 
 
-def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> Dict[str, List[str]]:
+def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> dict[str, list[list[str]]]:
     try:
         from pyKVFinder.grid import get_vertices, detect, constitutional
         from pyKVFinder.utils import read_vdw, read_pdb, VDW
@@ -105,19 +176,9 @@ def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> Dict[str, List[str]
     return residues
 
 
-def _get_coords(sel, state=1):
-    return pm.get_coords(sel, state)
-
-
-def _set_properties(obj_name, properties):
-    for prop, value in properties.items():
-        pm.set_property(prop, value, obj_name)
-        pm.set_atom_property(prop, value, obj_name)
-
-
 def _extract_data_from_pdb_string(
     pdbstr: str,
-    cavities: List[str]
+    cavities: List[Selection]
 ) -> Tuple[List[Cluster], List[Hotspot]]:
 
     clusters = []
@@ -178,68 +239,12 @@ def _extract_data_from_pdb_string(
     return clusters, hotspots
 
 
-HotspotResults = namedtuple('HotspotResults', 'clusters hotspots eclusters cavities')
-
 @dataclass
-class BaseHotspot:
-    Object: str
-    Group: str
-
-    Coords: Any = field(repr=False, hash=False)
-
-    def save_into_properties(self):
-        d = asdict(self)
-        del d['Coords']
-        del d['Object']
-        _set_properties(self.Object, d)
-
-    @classmethod
-    def from_object_name(cls, obj_name: str) -> BaseHotspot:
-        assert cls is not BaseHotspot
-        assert cls.Type == pm.get_property("Type", obj_name)
-        assert obj_name == pm.get_property("Object", obj_name)
-
-        values = {}
-        for prop_name in pm.get_property_list(obj_name):
-            # class member is a dataclass field?
-            cls_field = getattr(cls, prop_name)
-            if isinstance(cls_field, Field):
-                # if so, then save its value
-                prop_value = pm.get_property(prop_name, obj_name)
-                values[prop_name] = prop_value
-
-        return cls(
-            Object=obj_name,
-            Coords=pm.get_coordset(obj_name),
-            **values
-        )
-
-
-@dataclass
-class Cluster(BaseHotspot):
-    S: int
-    Type: Literal["CS"] =  field(default="CS", repr=False)
-
-
-@dataclass
-class Ecluster(BaseHotspot):
-    S: int
-    ProbeType: str
-    Type: Literal["ACS"] = field(default="ACS", repr=False)
-
-
-@dataclass
-class Hotspot(BaseHotspot):
-    Class: Literal["D", "DS", "DL", "B", "BS", "BL", None]
-    ST: int
-    S0: int
-    S1: int
-    SZ: int
-    CD: float
-    MD: float
-    Length: int
-    Kavity: str | None
-    Type: Literal["HS"] =  field(default="HS", repr=False)
+class HotspotResults:
+    clusters: list[Cluster]
+    hotspots: list[Hotspot]
+    eclusters: list[Ecluster]
+    cavities: list[Selection]
 
 
 def _process_ftmap(
@@ -252,7 +257,7 @@ def _process_ftmap(
     clash_threshold: float,
     num_pseudoatoms: int,
     pseudoatom_radius: float,
-) -> tuple[list[Hotspot], list[Cluster], list[str]]:
+) -> HotspotResults:
     cmd = [
         'xdrugpy_xhf',
         '--group', group,
@@ -289,10 +294,16 @@ def _process_ftmap(
     kvfound = _kvfinder_constitutional_from_pdb_string(pdbstr)
     cavities = _selections_from_kvfinder(group, kvfound)
     clusters, hotspots = _extract_data_from_pdb_string(pdbstr, cavities)
-    return hotspots, clusters, cavities
+
+    return HotspotResults(
+        clusters=clusters,
+        hotspots=hotspots,
+        cavities=cavities,
+        eclusters=[]
+    )
 
 
-def _process_eftmap(filename: Path, group: str) -> list[Ecluster]:
+def _process_eftmap(filename: Path, group: str) -> HotspotResults:
     raise NotImplementedError
 
 
@@ -405,13 +416,11 @@ def _load_ftmap(
     group = pm.get_legal_name(group)
 
     is_eftmap = Path(filename).read_text().find('\nHEADER    clust.') > -1
+
     if is_eftmap:
-        eclusters = _process_eftmap(filename, group)
-        cavities = []
-        clusters = []
-        hotspots = []
+        results = _process_eftmap(filename, group)
     else:
-        hotspots, clusters, cavities = _process_ftmap(
+        results = _process_ftmap(
             filename,
             group,
             deep_search,
@@ -422,7 +431,6 @@ def _load_ftmap(
             num_pseudoatoms,
             pseudoatom_radius,
         )
-        eclusters = []
 
     for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL', 'CS', 'KV', 'ACS']:
         pm.disable(f"{group}.{klass}")
@@ -492,12 +500,7 @@ def _load_ftmap(
         for grp in groups:
             pm.delete(grp)
 
-    return HotspotResults(
-        clusters=clusters,
-        hotspots=hotspots,
-        cavities=cavities,
-        eclusters=eclusters,
-    )
+    return results
 
 
 @new_command
@@ -699,7 +702,7 @@ class LinkageMethod(StrEnum):
     WARD = "ward"
 
 
-class UnivariateDistanceMethod(StrEnum):
+class UnivariateMethod(StrEnum):
     FO_AVG = "fo_avg"
     DCO = "dco"
     JACCARD = "jaccard"
@@ -709,11 +712,12 @@ class UnivariateDistanceMethod(StrEnum):
 @new_command
 def calc_univariate_hca(
     sele: Selection,
-    dist_method: UnivariateDistanceMethod.FO_AVG = UnivariateDistanceMethod.FO_AVG,
+    dist_method: UnivariateMethod = UnivariateMethod.FO_AVG,
     radius: float = 2.0,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = -1.0,
     nclusters: int = -1,
+    omega_conservation: str = "*:.",
     only_medoids: bool = False,
     annotate: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
@@ -735,8 +739,11 @@ def calc_univariate_hca(
         overlap_function:
             The overlap function to measure the similarity between two objects.
 
-        seq_align_before_overlap:
-            Do alignment before comparing the polymer residues near the two objects.
+        sequence_align:
+            Do Clustal Omega alignment.
+
+        omega_conservation:
+            Parameter for Clustal Omega.
 
         linkage_method:
             The clustering algorithm for the dendrogram.
@@ -772,16 +779,44 @@ def calc_univariate_hca(
         calc_mutivariate_hca
     """
     if (dendrogram_plot or heatmap_plot) and linkage_method == LinkageMethod.WARD:
-        raise ValueError("WARD is not supported for dendrogram and heatmap analysis.")
+        raise ValueError("WARD is not supported for dendrogram asnd heatmap analysis.")
     objects = pm.get_object_list(sele)
     assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
 
-    X = []
+    match dist_method:
+        case UnivariateMethod.JACCARD | UnivariateMethod.OVERLAP:
+            X = _calc_univariate_hca_aligned(objects, dist_method, radius, omega_conservation)
+        case UnivariateMethod.FO_AVG | UnivariateMethod.DCO:
+            X = _calc_univariate_hca_spatial(objects, dist_method, radius)
+
+    dendro, medoids = plot_hca_base(
+        X, objects, linkage_method,
+        nclusters=nclusters,
+        color_threshold=color_threshold,
+        only_medoids=only_medoids,
+        annotate=annotate,
+        vmin=0.0,
+        vmax=1.0,
+        rename_leafs=rename_leafs or {},
+        figure_title=figure_title,
+        dendrogram_plot=dendrogram_plot,
+        heatmap_plot=heatmap_plot,
+    )
+    return X, objects, dendro, medoids
+
+
+def _calc_univariate_hca_spatial(
+        objects: list[Selection],
+        dist_method: UnivariateMethod,
+        radius: float,
+) -> list[float]:
+
     obj_coords = {}
     for obj in objects:
         if obj not in obj_coords:
             obj_coords[obj] = _get_coords(obj)
 
+    X = []
     for idx1, obj1 in enumerate(objects):
         for idx2, obj2 in enumerate(objects):
             if idx1 >= idx2:
@@ -789,46 +824,61 @@ def calc_univariate_hca(
             coords1 = obj_coords[obj1]
             coords2 = obj_coords[obj2]
             match dist_method:
-                case UnivariateDistanceMethod.FO_AVG:
+                case UnivariateMethod.FO_AVG:
                     fo1 = get_fo(coords1, coords2, radius=radius)
                     fo2 = get_fo(coords2, coords1, radius=radius)
                     ret = (fo1 + fo2) / 2
-                case UnivariateDistanceMethod.DCO:
+                case UnivariateMethod.DCO:
                     ret = get_dco(coords1, coords2)
-                case UnivariateDistanceMethod.JACCARD:
-                    # ret = res_sim(
-                    #     obj1,
-                    #     obj2,
-                    #     radius=radius,
-                    #     method=ResidueSimilarityMethod.JACCARD,
-                    #     seq_align=seq_align_before_overlap,
-                    # )
-                    raise NotImplementedError("JACCARD similarity is not yet implemented.")
-                case UnivariateDistanceMethod.OVERLAP:
-                    # ret = res_sim(
-                    #     obj1,
-                    #     obj2,
-                    #     radius=radius,
-                    #     method=ResidueSimilarityMethod.OVERLAP,
-                    #     seq_align=seq_align_before_overlap,
-                    # )
-                    raise NotImplementedError("OVERLAP similarity is not yet implemented.")
-            X.append(1 - ret)
-    dendro, medoids = plot_hca_base(
-        X, objects, linkage_method,
-        nclusters=nclusters,
-        color_threshold=color_threshold,
-        only_medoids=only_medoids,
-        annotate=annotate,
-        vmin=0,
-        vmax=1,
-        rename_leafs=rename_leafs,
-        figure_title=figure_title,
-        dendrogram_plot=dendrogram_plot,
-        heatmap_plot=heatmap_plot,
-    )
-    return X, objects, dendro, medoids
 
+            X.append(1 - ret)
+    return X
+
+
+def _calc_univariate_hca_aligned(
+    objects: list[Selection],
+    dist_method: UnivariateMethod,
+    radius: float,
+    omega_conservation: str,
+) -> list[float]:
+
+    assert dist_method in [UnivariateMethod.JACCARD, UnivariateMethod.OVERLAP]
+
+    groups = (obj.split('.')[0] for obj in objects)
+    proteins = [f'{g}.protein' for g in groups]
+
+    omega = clustal_omega(proteins, omega_conservation, objects)
+    ref_omega = omega[objects[0]]
+    alignments = {}
+    for obj, protein in zip(objects, proteins):
+        nearby_atoms = pm.get_model(f"(guide AND {protein}) WITHIN {radius} TO {obj}")
+        residues = set()
+        obj_omega = omega[obj]
+        for nearby_atom in nearby_atoms.atom:
+            for omega_idx, omega_residue in enumerate(obj_omega):
+                if nearby_atom.index == omega_residue.index:
+                    assert nearby_atom.model == omega_residue.model
+                    ref_residue = ref_omega[omega_idx]
+                    residues.add((ref_residue.chain, ref_residue.resi))
+        alignments[obj] = residues
+
+    X = []
+    for idx1, obj1 in enumerate(objects):
+        for idx2, obj2 in enumerate(objects):
+            if idx1 >= idx2:
+                continue
+            residues1 = alignments[obj1]
+            residues2 = alignments[obj2]
+            try:
+                match dist_method:
+                    case UnivariateMethod.JACCARD:
+                        ret = len(residues1.intersection(residues2)) / len(residues1.union(residues2))
+                    case UnivariateMethod.OVERLAP:
+                        ret = len(residues1.intersection(residues2)) / min(len(residues1), len(residues2))
+            except ZeroDivisionError:
+                ret = 0
+            X.append(1 - ret)
+    return X
 
 
 class OverlapFunction(StrEnum):
@@ -1040,7 +1090,6 @@ def calc_ligand_fit(
     if len(pm.get_object_list(hs_sele)) != 1:
         raise ValueError("Only one hotspot can be analyzed at time.")
 
-
     objs_hss = pm.get_object_list(hs_sele)
     objs_ligs = pm.get_object_list(ligs_sele)
 
@@ -1215,13 +1264,17 @@ def calc_fingerprints(
     for sele in multi_seles.split("/"):
         sele = sele.strip()
         seles.append(sele.strip())
-        obj = pm.get_object_list(sele)
-        if obj is not None and len(obj) >= 1:
-            obj = obj[0]
-        else:
-            raise ValueError(f"Bad selection: {sele}")
-        if group := pm.get_property("Group", obj):
+        objects = pm.get_object_list(sele)
+
+        if not objects:
+            raise ValueError(f"Bad selection: '{sele}'.")
+
+        if group := pm.get_property("Group", objects[0]):
+            for obj in objects[:1]:
+                if pm.get_property("Group", obj) != group:
+                    raise ValueError(f"Bad selection: don't bound to a group: '{sele}'.")
             groups.append(group)
+
     polymers = [f"{g}.protein" for g in groups]
     assert len(polymers) > 0, "Please review your selections"
 
@@ -1301,7 +1354,7 @@ def calc_fingerprints(
         if isinstance(fingerprints_plot, (str, Path)):
             fig.savefig(str(fingerprints_plot))
         elif fingerprints_plot is True:
-            fig.show()
+            pass
 
     corrs = []
     labels = []
@@ -1332,92 +1385,6 @@ def calc_fingerprints(
         heatmap_plot=heatmap_plot
     )
     return fpts, corrs, dendro, medoids
-
-
-class ResidueSimilarityMethod(StrEnum):
-    JACCARD = "jaccard"
-    OVERLAP = "overlap"
-
-
-@new_command
-def res_sim(
-    hs1: Selection,
-    hs2: Selection,
-    radius: float = 4.0,
-    seq_align: bool = False,
-    align_method: AligMethod = AligMethod.CEALIGN,
-    method: ResidueSimilarityMethod = ResidueSimilarityMethod.JACCARD,
-    quiet: bool = True,
-):
-    """
-    Compute hotspots similarity by the Jaccard or overlap coefficient of nearby
-    residues.
-
-    OPTIONS
-        hs1     hotspot 1
-        hs2     hotspot 2
-        radius  distance to consider residues near hotspots (default: 2)
-        method  jaccard or overlap (default: jaccard)
-        quiet   define verbosity
-
-    EXAMPLES
-        res_sim 8DSU.D_001*, 6XHM.D_001*
-        res_sim 8DSU.CS_*, 6XHM.CS_*
-    """
-    group1 = hs1.rsplit(".", maxsplit=2)[0]
-    group2 = hs2.rsplit(".", maxsplit=2)[0]
-
-    sel1 = f"{group1}.protein within {radius} from ({hs1})"
-    sel2 = f"{group2}.protein within {radius} from ({hs2})"
-
-    resis1 = set()
-    for at in pm.get_model(sel1).atom:
-        resis1.add((at.chain, at.resi))
-
-    if group1 == group2 or not seq_align:
-        pymol.stored.resis2 = set()
-        pm.iterate_state(1, sel2, "stored.resis2.add((chain, resi))")
-        resis2 = pymol.stored.resis2
-    else:
-        try:
-            # FIXME Clustal Omega?
-            aln_obj = pm.get_unused_name()
-            pm.extra_fit(
-                f"{group1}.protein",
-                f"{group2}.protein",
-                method=str(align_method),
-                transform=0,
-                object=aln_obj
-            )
-            raw = pm.get_raw_alignment(aln_obj)
-
-            resis = {}
-            pm.iterate_state(
-                1, aln_obj, "resis[model, index] = (chain, resi)", space={"resis": resis}
-            )
-
-            site2 = [(a.chain, a.resi) for a in pm.get_model(sel2).atom]
-            resis2 = set()
-            for idx1, idx2 in raw:
-                if resis[idx1] in site2:
-                    resis2.add(resis[idx2])
-        finally:
-            pm.delete(aln_obj)
-
-    try:
-        match method:
-            case ResidueSimilarityMethod.JACCARD:
-                ret = len(resis1.intersection(resis2)) / len(resis1.union(resis2))
-            case ResidueSimilarityMethod.OVERLAP:
-                ret = len(resis1.intersection(resis2)) / min(len(resis1), len(resis2))
-    except ZeroDivisionError:
-        if not quiet:
-            print("Your selection yields zero atoms.")
-        return 0.0
-
-    if not quiet:
-        print(f"{method} similarity: {ret:.2}")
-    return ret
 
 
 class PrioritizationType(StrEnum):
@@ -1618,55 +1585,6 @@ def calc_medchem_bind_metrics(lig_sele: Selection, pki: float):
         'le': le,
         'fq': fq
     }
-
-
-class BindMetric(StrEnum):
-    PKI = "pki"
-    LE = "le"
-    BEI = "bei"
-    FQ = "fq"
-
-
-def plot_ligand_fit(
-    hs_sele: Selection,
-    ligs_sele: Selection,
-    function: OverlapFunction,
-    radius: float,
-    annotate: bool,
-    lig_metric: BindMetric,
-    bind_df
-):
-    if len(pm.get_object_list(hs_sele)) != 1:
-        raise ValueError("Only one hotspot can be analyzed at time.")
-    overlap_df = calc_overlap_matrix(
-        sele_a=hs_sele,
-        sele_b=ligs_sele,
-        function=function,
-        radius=radius,
-        annotate=annotate
-    ).rename(columns={'B': 'Ligand'})
-    plt.close()
-
-    # identify the fragment
-    ix_frag = np.argmin(bind_df['HA'])
-
-    # merge dataframes
-    bind_df.rename(columns={'sele': 'Ligand'})
-    df = overlap_df.join(bind_df, on='Ligand', how='left')
-    function_col = function.upper()
-
-    # do the actual plot
-    lig_metric = lig_metric.upper()
-    fig, ax = plt.subplots(constrained_layout=True)
-    x = df[function_col] / df[function_col].iloc[ix_frag]
-    y = df[lig_metric] / df[lig_metric].iloc[ix_frag]
-    ax.scatter(x, y)
-    rows = zip(x, y, df['Ligand'], df['Label'])
-    for x, y, obj, label in rows:
-        s = label.strip() or obj
-        ax.text(x, y, s)
-    ax.set_xlabel(f"{function_col} / {function_col}_ref")
-    ax.set_ylabel(f"{lig_metric} / {lig_metric}_ref")
 
 
 #
@@ -2168,7 +2086,7 @@ class HcaWidget(QWidget):
         groupBox.setLayout(boxLayout)
 
         self.univariateDistFunctionCombo = QComboBox()
-        self.univariateDistFunctionCombo.addItems([e.value for e in UnivariateDistanceMethod])
+        self.univariateDistFunctionCombo.addItems([e.value for e in UnivariateMethod])
         boxLayout.addRow("Distance function:", self.univariateDistFunctionCombo)
 
         self.radiusSpin = QDoubleSpinBox()
@@ -2782,7 +2700,7 @@ class FingerprintWidget(QWidget):
         hcaLayout.addRow("Linkage:", self.linkageMethodCombo)
 
         self.colorThresholdSpin = QDoubleSpinBox()
-        self.colorThresholdSpin.setMinimum(-1.0)
+        self.colorThresholdSpin.setMinimum(-0.1)
         self.colorThresholdSpin.setMaximum(10)
         self.colorThresholdSpin.setValue(0)
         self.colorThresholdSpin.setSingleStep(0.1)

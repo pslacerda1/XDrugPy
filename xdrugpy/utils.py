@@ -16,29 +16,16 @@ from pymol import Qt, cmd as pm
 from pymol_new_command import new_command
 
 
-class Selection(str):
-    pass
+Selection = str
 
 
 Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
 
 
-@pm.extend
-def plot(filename: str | None = None):
-    """Show or save the current Matplotlib plot."""
-    from matplotlib import pyplot as plt
-    if filename:
-        plt.savefig(filename)
-    else:
-        plt.show()
-
-
 def configure_matplotlib(style=None, backend=None, params=None):
     """Configure Matplotlib for use in XDrugPy."""
     import matplotlib.style
-    import matplotlib.colors
     from matplotlib import pyplot as plt
-    from cycler import cycler
 
     if backend:
         plt.switch_backend(newbackend=backend)
@@ -140,7 +127,11 @@ def plot_hca_base(
     )
     if dendro_ax and color_threshold > 0:
         dendro_ax.axhline(color_threshold, color="gray", ls="--")
-        dendro_ax.set_ylim(bottom=-0.005)
+        z_max = Z[:, 2].max()
+        z_min = Z[:, 2].min()
+        if z_min == 0:
+            bottom = 0.005 * (z_max - z_min)
+            dendro_ax.set_ylim(bottom=-bottom)
 
     dists = distance.squareform(dists)
     X = dists
@@ -259,9 +250,7 @@ def plot_hca_base(
             fig.savefig(dendrogram_plot)
         elif dendrogram_plot is True:
             fig.set_layout_engine('compressed')
-            fig.show()
-        elif isinstance(dendrogram_plot, axes.Axes):
-            pass
+            # fig.show()
 
     if heatmap_plot:
         fig = heat_ax.get_figure(True)
@@ -270,13 +259,11 @@ def plot_hca_base(
             fig.savefig(str(heatmap_plot))
         elif heatmap_plot is True:
             fig.set_layout_engine('compressed')
-            fig.show()
-        elif isinstance(heatmap_plot, axes.Axes):
-            pass
+            # fig.show()
     return dendro, medoids
 
 
-def clustal_omega(seles, conservation, titles=None):
+def clustal_omega(seles, conservation="*:.", titles=None) -> dict[str, list[Residue]]:
     replaced_dict = {}
     replaced_list = []
     if not titles:

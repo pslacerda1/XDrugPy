@@ -12,26 +12,27 @@
 
 **[Optional]** If you need sample FTMap/FTMove (or Atlas) files to run your adapted scripts, download these from [this repository](https://github.com/pslacerda1/XDrugPy/tree/master/tests/data). After downloading the raw file (or copy and paste the contents) into a local new file, open them with the text editor to examine the PDB contents, then close it. It should work for you.
 
-
-    * XDrugPy/tests/data/1dq8_atlas.pdb
-    * XDrugPy/tests/data/1dq9_atlas.pdb
-    * XDrugPy/tests/data/1dqa_atlas.pdb
+* XDrugPy/tests/data/1dq8_atlas.pdb
+* XDrugPy/tests/data/1dq9_atlas.pdb
+* XDrugPy/tests/data/1dq9_atlas.pdb  **[Alert]** 1dqa.pdb is computationally infeasible, see [`script101.py`](https://github.com/pslacerda1/XDrugPy/tree/master/scripts/script101.py) on how to change default parameters.
 
 4. Now, on the PyMOL console, run your adapted script using the commands below. If needed, you may navigate and list folder contents with the `cd` and `ls` commands inside PyMOL prompt like a regular terminal. (I'm assuming you copied `script101.py` and adapted into `~/Documents/script101.py`.)
 
 ```bash
+        # just do
         cd ~/Documents
         run script101.py
 
         # or simply
-
         run ~/Documents/script101.py
 ```
 
-**[Alternative]** If you need to run the script in headless server, or just want to get rid of graphical interface to reduce computer RAM memory usage, you may benefit from running PyMOL in command-line mode:
+**[Alternative]** If you need to run the script in headless server, or just want to get rid of graphical interface to reduce computer RAM memory usage, you may benefit from running PyMOL in command-line mode (*outside* PyMOL, e.g. in Bash):
 
 ```bash
+        # if PyMOL is in your PATH
         pymol -c ~/Documents/script101.py
+
         # or maybe
         ~/Downloads/PyMOL3.2/bin/pymol -c ~/Documents/script101.py
 ```

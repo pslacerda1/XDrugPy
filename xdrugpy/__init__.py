@@ -32,7 +32,6 @@ __ALL__ = [
 
     # utils
     "configure_matplotlib",
-    "plot",
 ]
 
 
@@ -133,6 +132,7 @@ def __init_plugin__(app=None):
 
     configure_matplotlib(
         style="default",
+        backend="qtagg",
         params={
         'font.size': 14,
         'figure.figsize': (10, 6),
@@ -166,6 +166,6 @@ from .hotspots import (
     load_ftmap, get_fo, get_dc, get_dce,
     calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
     calc_fingerprints,
-    LinkageMethod, OverlapFunction, UnivariateDistanceMethod, MultivariateDistanceMethod
+    LinkageMethod, OverlapFunction, UnivariateMethod, MultivariateDistanceMethod
 )
-from .utils import configure_matplotlib, plot
+from .utils import configure_matplotlib
