@@ -14,7 +14,7 @@ import pandas as pd
 from scipy.stats import pearsonr
 from scipy.spatial import distance_matrix, distance
 from scipy.cluster.hierarchy import linkage, leaves_list
-from matplotlib import pyplot as plt, axes
+from matplotlib import pyplot as plt
 from strenum import StrEnum
 import pymol
 from pymol import cmd as pm
@@ -709,7 +709,7 @@ class UnivariateDistanceMethod(StrEnum):
 @new_command
 def calc_univariate_hca(
     sele: Selection,
-    dist_methdo: UnivariateDistanceMethod.FO_AVG = UnivariateDistanceMethod.FO_AVG,
+    dist_method: UnivariateDistanceMethod.FO_AVG = UnivariateDistanceMethod.FO_AVG,
     radius: float = 2.0,
     linkage_method: LinkageMethod = LinkageMethod.WARD,
     color_threshold: float = -1.0,
@@ -718,8 +718,8 @@ def calc_univariate_hca(
     annotate: bool = False,
     rename_leafs: Optional[Dict[str, str]] = None,
     figure_title: str | None = None,
-    dendrogram_plot: str = '',
-    heatmap_plot: str = '',
+    dendrogram_plot: str | Path | bool  = True,
+    heatmap_plot: str | Path | bool  = True,
 ):
     """
     DESCRIPTION
@@ -741,14 +741,14 @@ def calc_univariate_hca(
         linkage_method:
             The clustering algorithm for the dendrogram.
 
-        radius: float
+        radius:
             The distance cutoff (Angstroms) passed to the overlap function.
 
         color_threshold:
-            Distance cutoff for cluster dendrogram branches. Disabled by default.
+            Distance cutoff for coloring dendrogram in nclusters. Use one or other.
 
-        ncluters:
-            Cutoff only a number of cluster dendrogram branchs. Disabled by default.
+        nclusters:
+            Target number of clusters to set the color_threshold. Use one or other.
 
         only_medoids:
             If True, focuses analysis or visualization only on the cluster medoids.
@@ -772,7 +772,7 @@ def calc_univariate_hca(
         calc_mutivariate_hca
     """
     if (dendrogram_plot or heatmap_plot) and linkage_method == LinkageMethod.WARD:
-        raise ValueError("WARD is not supported.")
+        raise ValueError("WARD is not supported for dendrogram and heatmap analysis.")
     objects = pm.get_object_list(sele)
     assert objects is not None and len(objects) >= 2, "At least two hotspots are required for comparison."
 
@@ -788,7 +788,7 @@ def calc_univariate_hca(
                 continue
             coords1 = obj_coords[obj1]
             coords2 = obj_coords[obj2]
-            match dist_methdo:
+            match dist_method:
                 case UnivariateDistanceMethod.FO_AVG:
                     fo1 = get_fo(coords1, coords2, radius=radius)
                     fo2 = get_fo(coords2, coords1, radius=radius)
@@ -1109,9 +1109,9 @@ def calc_fingerprints(
     annotate: bool = True,
     share_ylim: bool = True,
     figure_title: str | None = None,
-    fingerprints_plot: str | Path | axes.Axes | None = None,
-    dendrogram_plot: str | Path | axes.Axes | None = None,
-    heatmap_plot: str | Path | axes.Axes | None = None,
+    fingerprints_plot: str | Path | bool  = True,
+    dendrogram_plot: str | Path | bool  = False,
+    heatmap_plot: str | Path | bool  = False,
     quiet: bool = True,
 ):
     """
@@ -1127,69 +1127,68 @@ def calc_fingerprints(
 
     ARGUMENTS
 
-        multi_seles: str
+        multi_seles
             A slash-separated string of PyMOL selections containing the objects
             to compare (e.g., 'hs_or_cs_1 / hs_or_cs_2'). They must came from
             load_ftmap and belongs to a protein group.
 
-        site: Selection, default="*"
+        site
             A PyMOL selection used to focus the fingerprint sub-region based on
             the first protein structure.
 
-        site_radius: float, default=5.0
+        site_radius
             Distance cutoff (Angstroms) to include residues in fingerprint
             relative to the 'site' selection.
 
-        omega_conservation: str, default="*:."
+        omega_conservation
             Clustal Omega conservation string match criteria for filtering residues.
 
-        contact_radius: float, default=4.0
+        contact_radius
             Distance cutoff (Angstroms) used to compute raw atomic contacts
             between the hotspot/cs and target residues.
 
-        nbins: int, default=5
+        nbins
             Number of bins/labels applied to the x-axis tick locator.
 
-        sharex: bool, default=True
+        sharex
             If True, subplots share the same x-axis layout, hiding inner labels
             to prevent visual clutter.
 
-        linkage_method: LinkageMethod, default='ward'
+        linkage_method
             The clustering linkage algorithm used to construct the dendrogram ('ward',
             'single', 'complete').
 
-        color_threshold: float, default=-1.0
+        color_threshold
             Distance cutoff for coloring dendrogram branches. Disabled if negative.
             Can be used only if nclusters is disabled.
 
-        nclusters: int, default=-1
+        nclusters
             Target number of clusters to coloring dendrogram branches. Disable if zero
             or less. Can be used only if color_threshold is disabled.
 
-        only_medoids: bool, default=False
+        only_medoids
             If True, restricts the final HCA visualization strictly to cluster medoids.
 
-        annotate: bool, default=True
+        annotate
             If True, writes numerical values inside the distance matrix heatmap cells.
 
-        share_ylim: bool, default=True
+        share_ylim
             If True, synchronizes the y-axis maximum scale across all fingerprint
             bar charts for direct visual comparison.
 
-        figure_title: str, optional
+        figure_title
             Title text displayed at the top of the generated figure window.
 
-        fingerprints_plot: str, Path, Axes, optional
-            Target destination for the bar charts. Can be a Matplotlib Axes,
-            a file path to export the image, or a boolean.
+        fingerprints_plot
+            Target destination for the fingerprint charts.
 
-        dendrogram_plot: str, Path, Axes, optional
+        dendrogram_plot
             Target destination for the HCA dendrogram plot layout.
 
-        heatmap_plot: str, Path, Axes, optional
+        heatmap_plot
             Target destination for the Pearson correlation distance matrix heatmap.
 
-        quiet: bool, default=True
+        quiet
             If True, suppresses console verbosity and raw stdout outputs.
 
     RETURNS
@@ -1209,7 +1208,7 @@ def calc_fingerprints(
         calc_univariate_hca, calc_mutivariate_hca
     """
     if (dendrogram_plot or heatmap_plot) and linkage_method == LinkageMethod.WARD:
-        raise ValueError("WARD is not supported.")
+        raise ValueError("WARD is not supported for dendrogram and heatmap analysis.")
     seles = []
     groups = []
 
@@ -1253,27 +1252,22 @@ def calc_fingerprints(
             fpt[lbl] = fpt.get(lbl, 0) + cnt
         fpts.append(fpt)
 
-    if fingerprints_plot:
-        if isinstance(fingerprints_plot, (str, Path)) or fingerprints_plot is True:
-            _, fpt_axs = plt.subplots(nrows=len(seles))
-
-        elif isinstance(fingerprints_plot, axes.Axes):
-            fpt_axs = []
-            height = 1/len(fpt)
-            for i, _ in enumerate(sele):
-                ax = fingerprints_plot.inset_axes([0, (i+1)*height], 1, height)
-                fpt_axs.append(ax)
-    else:
-        fpt_axs = None
-
-    if not isinstance(fpt_axs, (np.ndarray, list)):
-        fpt_axs = [fpt_axs]
-
     if not all([len(fpts[0]) == len(fpt) for fpt in fpts]):
         raise ValueError(
             "All fingerprints must have the same length. "
             "Do you have incomplete structures?"
         )
+
+    fpt_axs = []
+    if fingerprints_plot:
+        if isinstance(fingerprints_plot, (str, Path)) or fingerprints_plot is True:
+            _, fpt_axs = plt.subplots(nrows=len(seles))
+
+            if not isinstance(fpt_axs, (np.ndarray, list)):
+                fpt_axs = [fpt_axs]
+
+    assert isinstance(fpt_axs, (list, np.ndarray))
+    assert len(fpt_axs) == len(fpts) and len(fpts) == len(seles)
 
     max_val = 0
     for ix, (ax, fpt, sele) in enumerate(zip(fpt_axs, fpts, seles)):
@@ -1308,8 +1302,6 @@ def calc_fingerprints(
             fig.savefig(str(fingerprints_plot))
         elif fingerprints_plot is True:
             fig.show()
-        elif isinstance(fingerprints_plot, axes.Axes):
-            pass
 
     corrs = []
     labels = []
@@ -1487,14 +1479,14 @@ def calc_multivariate_hca(
     sele: Selection,
     linkage_method: LinkageMethod = LinkageMethod.SINGLE,
     color_threshold: float = -1.0,
-    nclusters: int = -1.0,
+    nclusters: int = -1,
     only_medoids: bool = False,
     annotate: bool = False,
     dist_method: MultivariateDistanceMethod = MultivariateDistanceMethod.EUCLIDEAN,
     rename_leafs: Optional[Dict[str, str]] = None,
     figure_title: str | None = None,
-    dendrogram_plot: str | Path | bool | axes.Axes | None = None,
-    heatmap_plot: str | Path | bool | axes.Axes | None = None,
+    dendrogram_plot: str | Path | bool = True,
+    heatmap_plot: str | Path | bool = True,
 ):
     """
     DESCRIPTION
@@ -1522,13 +1514,12 @@ def calc_multivariate_hca(
 
         linkage_method:
             The clustering linkage algorithm used to compute the dendrogram
-            (e.g., SINGLE, COMPLETE, WARD).
 
         color_threshold:
-            Distance cutoff for coloring dendrogram branches.
+            Distance cutoff for coloring dendrogram in nclusters. Use one or other.
 
         nclusters:
-            Target number of clusters to set the color threshold. Use one or other.
+            Target number of clusters to set the color_threshold. Use one or other.
 
         only_medoids:
             If True, focuses the analysis or visualization only on the cluster medoids.
@@ -1546,12 +1537,12 @@ def calc_multivariate_hca(
             Title text displayed at the top of the generated figure window.
 
         dendrogram_plot:
-            Target destination for the dendrogram. Can be a Matplotlib Axes object,
-            a file path (str/Path) to save the plot, a boolean, or None.
+            Target destination for the dendrogram. Can be a file path to save the plot
+            or a boolean.
 
         heatmap_plot:
-            Target destination for the distance matrix heatmap. Can be a Matplotlib
-            Axes object, a file path (str/Path) to save the plot, a boolean, or None.
+            Target destination for the distance matrix heatmap. Can be a a file path
+            to save the plot or a boolean.
 
     RETURNS
 
@@ -2283,7 +2274,7 @@ class HcaWidget(QWidget):
         calc_univariate_hca(
             sele=sele,
             radius=radius,
-            dist_methdo=dist_method,
+            dist_method=dist_method,
             linkage_method=linkage_method,
             color_threshold=color_threshold,
             nclusters=nclusters,

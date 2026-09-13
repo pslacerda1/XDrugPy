@@ -158,6 +158,7 @@ def __init_plugin__(app=None):
             Please read and cite: http://doi.com.br
     """))
 
+
 os.environ["PATH"] = str(RESOURCES_DIR) + os.pathsep + os.environ["PATH"]
 os.environ["PATH"] = str(RESOURCES_DIR) + "/PyMOL" + os.pathsep + os.environ["PATH"]
 
@@ -167,4 +168,4 @@ from .hotspots import (
     calc_fingerprints,
     LinkageMethod, OverlapFunction, UnivariateDistanceMethod, MultivariateDistanceMethod
 )
-from .utils import configure_matplotlib, plot, run
+from .utils import configure_matplotlib, plot

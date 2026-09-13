@@ -3,19 +3,15 @@ import os
 import subprocess
 import signal
 import sys
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import scipy.cluster.hierarchy as sch
 from collections import defaultdict
 from shutil import rmtree
 from matplotlib import pyplot as plt, axes
 from scipy.spatial import distance
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.cluster.hierarchy import linkage
 from collections import namedtuple
-from functools import lru_cache
 from strenum import StrEnum
-from pymol.parser import __file__ as _parser_filename
-from pymol.exporting import _resn_to_aa as RESN_TO_AA
 from pymol import Qt, cmd as pm
 from pymol_new_command import new_command
 
@@ -23,8 +19,8 @@ from pymol_new_command import new_command
 class Selection(str):
     pass
 
-Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
 
+Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
 
 
 @pm.extend
@@ -43,12 +39,12 @@ def configure_matplotlib(style=None, backend=None, params=None):
     import matplotlib.colors
     from matplotlib import pyplot as plt
     from cycler import cycler
-    
+
     if backend:
         plt.switch_backend(newbackend=backend)
     if style:
         matplotlib.style.use(style)
-    
+
     plt.rcParams.update({
         **{
             'font.size': 14,
@@ -64,60 +60,11 @@ class AligMethod(StrEnum):
     SUPER = "super"
     CEALIGN = "cealign"
     FIT = "fit"
-    
-
-def run(command, log=True, cwd=None, env=os.environ):
-    if log:
-        print("RUNNING PROCESS:", command)
-    ret = subprocess.run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        cwd=cwd,
-        shell=True,
-        env=env,
-    )
-    output = ret.stdout.decode(errors="replace")
-    success = ret.returncode == 0
-    return output, success
-
-
-
-
-def get_color_threshold(Z, k):
-    """
-    Calculates the color_threshold for a dendrogram to visualize k clusters.
-    
-    Args:
-        Z: The linkage matrix (from scipy.cluster.hierarchy.linkage)
-        k: The desired number of clusters
-        
-    Returns:
-        float: The threshold value to pass to the dendrogram function
-    
-    Author:
-        Gemini
-    """
-    if k < 2:
-        # If k=1, the threshold must be higher than the maximum distance
-        return Z[-1, 2] + 1.0
-    
-    # The (k-1)th merge from the end creates the k-th cluster.
-    # We take the average between the distance that creates k-1 clusters 
-    # and the distance that creates k clusters.
-    
-    # Distance that results in k clusters
-    dist_k = Z[-k, 2]
-    
-    # Distance that results in k-1 clusters
-    dist_k_minus_1 = Z[-(k-1), 2]
-    
-    return (dist_k + dist_k_minus_1) / 2
 
 
 def threshold_for_k_clusters(Z, k):
     """
-    Retorna um color_threshold para obter k clusters.
+    Retorns a color_threshold to get k clusters.
 
     """
     if k <= 1:
@@ -171,18 +118,17 @@ def plot_hca_base(
         # Calculate the distance threshold that corresponds to the desired number of clusters
         color_threshold = threshold_for_k_clusters(Z, nclusters)
 
+    dendro_ax = None
     if dendrogram_plot:
-        if isinstance(dendrogram_plot, (str, Path, bool)) or dendrogram_plot is True:
+        if isinstance(dendrogram_plot, (str, Path)) or dendrogram_plot is True:
             _, dendro_ax = plt.subplots()
 
         elif isinstance(dendrogram_plot, axes.Axes):
             dendro_ax = dendrogram_plot
-    else:
-        dendro_ax = None
 
     if dendro_ax and figure_title:
         dendro_ax.set_title(figure_title)
-    
+
     dendro = sch.dendrogram(
         Z,
         labels=labels,
@@ -201,16 +147,14 @@ def plot_hca_base(
     X = X[dendro["leaves"], :]
     X = X[:, dendro["leaves"]]
 
+    heat_ax = None
     if heatmap_plot:
         if isinstance(heatmap_plot, (str, Path)) or heatmap_plot is True:
             _, heat_ax = plt.subplots()
 
         elif isinstance(heatmap_plot, axes.Axes):
             heat_ax = heatmap_plot
-            
-    else:
-        heat_ax = None
-    
+
     if heat_ax:
         if figure_title:
             heat_ax.set_title(figure_title)
@@ -219,13 +163,13 @@ def plot_hca_base(
         heat_ax.tick_params(axis="x", rotation=90)
         heat_ax.yaxis.tick_left()
         image = heat_ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
-        
+
         if not annotate:
             heat_ax.get_figure().colorbar(image, ax=heat_ax, shrink=0.8)
         else:
             xmin = vmin or X.min()
             xmax = vmax or X.max()
-            
+
             for i1, x1 in enumerate(X):
                 for i2, x2 in enumerate(X):
                     y = X[i1, i2]
@@ -256,7 +200,7 @@ def plot_hca_base(
                     continue
                 # Note: X contém distâncias, então valores menores = mais próximos
                 d_sum += dists[leaf1_idx, leaf2_idx]
-            
+
             cl_d_sums[(color, leaf_label1)] = d_sum
 
     # Encontrar o medoid (ponto com MENOR soma de distâncias) para cada cluster
@@ -264,24 +208,22 @@ def plot_hca_base(
     for color in colors:
         min_d = float("inf")
         min_leaf = None
-        
+
         for (color1, leaf_label1), d_sum in cl_d_sums.items():
             if color1 != color:
                 continue
-            
+
             # Medoid é o ponto com a MENOR soma de distâncias
             if d_sum < min_d:
                 min_d = d_sum
                 min_leaf = leaf_label1
-        
+
         assert min_leaf is not None
         for (color1, leaf_label1), d_sum in cl_d_sums.items():
             if d_sum == min_d:
                 if color not in medoids:
                     medoids[color] = set()
                 medoids[color].add(leaf_label1)
-
-
 
     ticklabels = []
     if dendro_ax:
@@ -304,32 +246,34 @@ def plot_hca_base(
         if color in medoids and ticklabel.get_text() in medoids[color]:
             ticklabel.set_fontstyle("italic")
             ticklabel.set_fontweight('bold')
-    
+
         if only_medoids and color_threshold > 0.0:
             if ticklabel.get_text() not in medoids_labels:
                 ticklabel.set_visible(False)
 
-    if dendrogram_plot:
+    if dendro_ax:
         fig = dendro_ax.get_figure(True)
-        fig.set_layout_engine('compressed')
+
         if isinstance(dendrogram_plot, (str, Path)):
+            fig.set_layout_engine('compressed')
             fig.savefig(dendrogram_plot)
         elif dendrogram_plot is True:
+            fig.set_layout_engine('compressed')
             fig.show()
         elif isinstance(dendrogram_plot, axes.Axes):
             pass
-    
+
     if heatmap_plot:
         fig = heat_ax.get_figure(True)
-        fig.set_layout_engine('compressed')
         if isinstance(heatmap_plot, (str, Path)):
+            fig.set_layout_engine('compressed')
             fig.savefig(str(heatmap_plot))
         elif heatmap_plot is True:
+            fig.set_layout_engine('compressed')
             fig.show()
         elif isinstance(heatmap_plot, axes.Axes):
             pass
     return dendro, medoids
-
 
 
 def clustal_omega(seles, conservation, titles=None):
@@ -346,7 +290,7 @@ def clustal_omega(seles, conservation, titles=None):
         replaced_list.append(title_replaced)
 
         input_fasta += (
-            ">" + title_replaced + 
+            ">" + title_replaced +
             pm
             .get_fastastr(query, key='model')
             .removeprefix(f'>{sele}')
@@ -362,7 +306,7 @@ def clustal_omega(seles, conservation, titles=None):
     output_fasta, err = proc.communicate(input_fasta)
     if err:
         raise Exception(f"Clustal Omega error: {err}")
-    
+
     # joining multiline sequences
     output = output_fasta.split('\n')[3:]
     sequences = {}
@@ -394,17 +338,16 @@ def clustal_omega(seles, conservation, titles=None):
                     at.model, at.index, at.resi, at.chain, at.resn, seq_char, clu_char
                 ))
             at_ix += 1
-        
-    assert at_ix == len(atoms), (
-        f"Alignment/atom mismatch for {title}: consumed {at_ix} atoms, "
-        f"but selection has {len(atoms)} guide atoms"
-    )
+
+        assert at_ix == len(atoms), (
+            f"Alignment/atom mismatch for {title}: consumed {at_ix} atoms, "
+            f"but selection has {len(atoms)} guide atoms"
+        )
     omega = {
         replaced_dict[title]: omega[title]
         for title in sorted(omega, key=replaced_list.index)
     }
     return omega
-
 
 
 def kill_process(proc):
@@ -413,7 +356,7 @@ def kill_process(proc):
     """
     if proc.poll() is not None:
         return  # Já terminou
-    
+
     try:
         if sys.platform == 'win32':
             # Windows - usar taskkill para matar árvore
@@ -431,7 +374,7 @@ def kill_process(proc):
                 # Se não terminou, força
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 proc.wait()
-    
+
     except ProcessLookupError:
         pass  # Processo já morreu
     except Exception as e:
@@ -442,7 +385,6 @@ def kill_process(proc):
             proc.wait()
         except:
             pass
-
 
 
 from pymol import Qt

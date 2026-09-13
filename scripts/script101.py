@@ -10,13 +10,13 @@ from xdrugpy import load_ftmap
 # folder with the pdb files...
 pkg_data = "./tests/data"
 for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
-    
+
     # the full name of the pdb file
     my_file = f"{pkg_data}/{pdb}_atlas.pdb"   # looks like "./tests/data/1dq8_atlas.pdb"
-    
+
     # a friendly label for you PyMOL object
     my_label = pdb
-    
+
     # drill-down inside load_ftmap docstring to know more
     ftmap = load_ftmap(
         filename=my_file,
@@ -29,7 +29,7 @@ for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
                         #   but it may freeze the script as may exists too
                         #   many combinations to generate hotspots.
         min_cs_strength=5,
-        
+
         # combinatory search
         deep_search=True,
         remove_nested=True,
@@ -47,6 +47,6 @@ for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
         pp(cs)
 
     print(f"\n\n############# {my_label}")
-    print("\n**** HOTSPOTS ****")
+    print("**** HOTSPOTS ****")
     for hs in ftmap.hotspots:
         pp(hs)

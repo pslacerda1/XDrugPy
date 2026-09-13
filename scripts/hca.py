@@ -34,7 +34,7 @@ configure_matplotlib(
 # to speed up the process.
 files = glob("/home/peu/Desktop/PEPTI/atlas/*_atlas.pdb")
 for file in files[:5]:
-    
+
     # Load structures and does hotspots ligability analysis.
     ftmap = load_ftmap(
         file,
@@ -71,7 +71,7 @@ calc_multivariate_hca(
 # overlap average between hotspot objects.
 calc_univariate_hca(
     '*.D* AND p.S0>20',
-    dist_methdo=UnivariateDistanceMethod.FO_AVG,
+    dist_method=UnivariateDistanceMethod.FO_AVG,
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=0.35,
     annotate=False,
@@ -80,4 +80,5 @@ calc_univariate_hca(
     heatmap_plot=True,      # and save the image from the pop up window
                             # or even set to False
 )
+
 plt.waitforbuttonpress()

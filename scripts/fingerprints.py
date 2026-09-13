@@ -35,14 +35,14 @@ calc_fingerprints(
         1BZL.CS.* / 2JK6.CS.* / 2TPR.CS.* /
         2W0H.CS.* / 2WPF.CS.* / 6BU7.CS.*
     """,
-    
+
     # Focus the analysis to a site. Because the
     # first object group is 1BZL, the site can be
-    # given by a ligand or residue index of that 
+    # given by a ligand or residue index of that
     # structure also.
         #site='resi 200-210+187-195',  # from 200 to 210 and from 187 to 195
         #site='*',                     # all and every residue from 1BZL
-        #site='my_object',             # for sure absent in FTMap structures
+        #site='my_object',             # for sure absent in raw FTMap structures
         site='resi 436',               # only 5 angstroms around residue 436
     # How many angstroms will be given around the
     # site? It can be 0 (exclusively resi 436),
@@ -50,7 +50,7 @@ calc_fingerprints(
     site_radius=5.0,
     # How far from residues to look for probes.
     contact_radius=4.0,
-    
+
     # Analysis title.
     figure_title=
         "Trypanothione Reductase\n(Interaction atom count fingerprint analysis)",
@@ -76,7 +76,7 @@ calc_fingerprints(
     # similarity s=Pearson(fpt1,fpt2).Thats it,
     # two fingerprints are similiar if they are
     # correlated.
-    
+
     # Chose the linkage method.
     linkage_method=LinkageMethod.AVERAGE,
 
@@ -94,15 +94,14 @@ calc_fingerprints(
     #    (i) by the height threshold which the colors will show up.
     #   (ii) by the number of desired clusters if it is already knew.
     dendrogram_plot=True,
-        #color_threshold=-1.0,   # the threshold is disabled if set to -1.0
-        nclusters=-1,            # the option is disabled if set to -1 or 0
-    
+        color_threshold=-1.0,   # the threshold is disabled if set to -1.0
+        nclusters=-1,           # the option is disabled if set to -1 or 0
+
     # Do plot the HCA distance matrix heatmap. Change
-    # the filename by True or change the ending from
+    # the filename to True or change the ending from
     # .svg to .png, for instance. Set to False to not plot.
     heatmap_plot='./tests/data/test_my_fpt_heatmap_gen.svg',
-    # Annotate the heatmap with the values (not
-    # only colors).
+    # Annotate the heatmap with the values (not only colors).
     annotate=True,
 )
 plt.waitforbuttonpress()

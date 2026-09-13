@@ -82,7 +82,7 @@ def test_calc_univariate_hca():
 
     calc_univariate_hca(
         sele="*.DL.*",
-        dist_methdo=UnivariateDistanceMethod.FO_AVG,
+        dist_method=UnivariateDistanceMethod.FO_AVG,
         linkage_method=LinkageMethod.COMPLETE,
         only_medoids=True,
         radius=4,
