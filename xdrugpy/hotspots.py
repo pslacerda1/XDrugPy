@@ -79,7 +79,7 @@ class Cluster(BaseHotspot):
 
 
 @dataclass
-class Ecluster(BaseHotspot):
+class ECluster(BaseHotspot):
     S: int
     ProbeType: str
     Type: Literal["ACS"] = field(default="ACS", repr=False)
@@ -112,6 +112,7 @@ def _selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List
             pm.select(cavity, f'{cavity} OR (i. {resi} AND c. {chain})')
         pm.select(cavity, f'{cavity} AND {group}.protein')
         cavities.append(cavity)
+        pm.group(group, ' '.join(cavities))
     return cavities
 
 
@@ -206,6 +207,8 @@ def _extract_data_from_pdb_string(
             )
             cs.save_into_properties()
             clusters.append(cs)
+            pm.group(cs.Group, cs.Object)
+
 
         elif not d['Object'].endswith('.protein'):
             hs = Hotspot(
@@ -235,6 +238,7 @@ def _extract_data_from_pdb_string(
             hs.Kavity = max_cavity
             hs.save_into_properties()
             hotspots.append(hs)
+            pm.group(hs.Group, hs.Object)
 
     return clusters, hotspots
 
@@ -243,7 +247,7 @@ def _extract_data_from_pdb_string(
 class HotspotResults:
     clusters: list[Cluster]
     hotspots: list[Hotspot]
-    eclusters: list[Ecluster]
+    eclusters: list[ECluster]
     cavities: list[Selection]
 
 
@@ -304,7 +308,48 @@ def _process_ftmap(
 
 
 def _process_eftmap(filename: Path, group: str) -> HotspotResults:
-    raise NotImplementedError
+    pdbstr = filename.read_text()
+    if pdbstr[1:].find('HEADER') > -1:
+        pm.read_pdbstr(pdbstr, group)
+    else:
+        pm.read_pdbstr(pdbstr, oname=f'{group}.protein')
+
+    eclusters = []
+    idx = 0
+    for line in pdbstr.splitlines():
+        if line.startswith('HEADER'):
+            if line.endswith('_protein'):
+                _, protein_object = line.split()
+                pm.set_name(
+                    new_name=f'{group}.protein',
+                    old_name=protein_object
+                )
+
+            else:
+                _, acs_obj = line.split()
+                _, acs_idx, probe_count, probe_type = acs_obj.split('.')
+
+                new_name = f'{group}.ACS.{probe_type}.{acs_idx}'
+                pm.set_name(
+                    new_name=new_name,
+                    old_name=acs_obj
+                )
+                ecluster = ECluster(
+                    Object=new_name,
+                    Group=group,
+                    S=int(probe_count),
+                    Coords=pm.get_coordset(new_name),
+                    ProbeType=probe_type,
+                )
+                ecluster.save_into_properties()
+                eclusters.append(ecluster)
+
+    return HotspotResults(
+        clusters=[],
+        hotspots=[],
+        cavities=[],
+        eclusters=eclusters
+    )
 
 
 @new_command
@@ -436,8 +481,6 @@ def _load_ftmap(
         pm.disable(f"{group}.{klass}")
 
     if pretty:
-        pm.group(group, f"{group}.protein")
-
         pm.hide("everything", f"{group}.*")
 
         pm.show("cartoon", f"{group}.protein")
@@ -456,26 +499,6 @@ def _load_ftmap(
         pm.color("yellow", f"{group}.ACS.apolar.*")
 
         pm.show("line", f"{group}.CS.*")
-
-        pm.group(f"{group}.CS", f"{group}.CS.*")
-        pm.group(f"{group}.KV", f"{group}.KV.*")
-
-        pm.group(f"{group}.D", f"{group}.D.*")
-        pm.group(f"{group}.B", f"{group}.B.*")
-        pm.group(f"{group}.DS", f"{group}.DS.*")
-        pm.group(f"{group}.BS", f"{group}.BS.*")
-        pm.group(f"{group}.DL", f"{group}.DL.*")
-        pm.group(f"{group}.BL", f"{group}.BL.*")
-
-        pm.group(group, f"{group}.protein")
-        pm.group(group, f"{group}.KS")
-        pm.group(group, f"{group}.CS")
-        pm.group(group, f"{group}.D")
-        pm.group(group, f"{group}.B")
-        pm.group(group, f"{group}.DS")
-        pm.group(group, f"{group}.BS")
-        pm.group(group, f"{group}.DL")
-        pm.group(group, f"{group}.BL")
 
         pm.order(f"{group}.BS", location="top")
         pm.order(f"{group}.BL", location="top")
@@ -663,7 +686,9 @@ def get_dco(
 
         Calculates the Density Correlation Overlap (DCO).
         This is the total number of contacts (DC) dividev by
-        the  total number of contacts possible.
+        the sqrt of auto-contacts from both atom clouds
+        multiplied (an ideation of the maximum possible
+        number of contacts).
 
     ARGUMENTS
 
@@ -682,14 +707,16 @@ def get_dco(
         xyz2 = sel2
     else:
         xyz2 = _get_coords(sel2, state=state2)
-    dco = get_dc(
+    dc = get_dc(
         xyz1,
         xyz2,
         radius=radius,
         state1=state1,
         state2=state2
     )
-    dco = dco / (len(xyz1) * len(xyz2))
+    auto_dc1 = get_dc(xyz1, xyz1, radius=radius, state1=state1, state2=state1)
+    auto_dc2 = get_dc(xyz2, xyz2, radius=radius, state1=state2, state2=state2)
+    dco = dc / np.sqrt((auto_dc1 * auto_dc2))
     if not quiet:
         print(f"DCO: {dco:.2f}")
     return dco
@@ -714,7 +741,7 @@ def calc_univariate_hca(
     sele: Selection,
     dist_method: UnivariateMethod = UnivariateMethod.FO_AVG,
     radius: float = 2.0,
-    linkage_method: LinkageMethod = LinkageMethod.WARD,
+    linkage_method: LinkageMethod = LinkageMethod.AVERAGE,
     color_threshold: float = -1.0,
     nclusters: int = -1,
     omega_conservation: str = "*:.",
@@ -806,19 +833,19 @@ def calc_univariate_hca(
 
 
 def _calc_univariate_hca_spatial(
-        objects: list[Selection],
-        dist_method: UnivariateMethod,
-        radius: float,
+    hotspots: list[Selection],
+    dist_method: UnivariateMethod,
+    radius: float,
 ) -> list[float]:
 
     obj_coords = {}
-    for obj in objects:
+    for obj in hotspots:
         if obj not in obj_coords:
             obj_coords[obj] = _get_coords(obj)
 
     X = []
-    for idx1, obj1 in enumerate(objects):
-        for idx2, obj2 in enumerate(objects):
+    for idx1, obj1 in enumerate(hotspots):
+        for idx2, obj2 in enumerate(hotspots):
             if idx1 >= idx2:
                 continue
             coords1 = obj_coords[obj1]
@@ -836,7 +863,7 @@ def _calc_univariate_hca_spatial(
 
 
 def _calc_univariate_hca_aligned(
-    objects: list[Selection],
+    hotspots: list[Selection],
     dist_method: UnivariateMethod,
     radius: float,
     omega_conservation: str,
@@ -844,27 +871,27 @@ def _calc_univariate_hca_aligned(
 
     assert dist_method in [UnivariateMethod.JACCARD, UnivariateMethod.OVERLAP]
 
-    groups = (obj.split('.')[0] for obj in objects)
+    groups = (obj.split('.')[0] for obj in hotspots)
     proteins = [f'{g}.protein' for g in groups]
 
-    omega = clustal_omega(proteins, omega_conservation, objects)
-    ref_omega = omega[objects[0]]
+    omega = clustal_omega(proteins, omega_conservation, hotspots)
+    ref_omega = omega[hotspots[0]]
     alignments = {}
-    for obj, protein in zip(objects, proteins):
-        nearby_atoms = pm.get_model(f"(guide AND {protein}) WITHIN {radius} TO {obj}")
+    for hs, protein in zip(hotspots, proteins):
+        nearby_atoms = pm.get_model(f"(guide AND {protein}) WITHIN {radius} OF {hs}")
         residues = set()
-        obj_omega = omega[obj]
+        obj_omega = omega[hs]
         for nearby_atom in nearby_atoms.atom:
             for omega_idx, omega_residue in enumerate(obj_omega):
                 if nearby_atom.index == omega_residue.index:
                     assert nearby_atom.model == omega_residue.model
                     ref_residue = ref_omega[omega_idx]
                     residues.add((ref_residue.chain, ref_residue.resi))
-        alignments[obj] = residues
+        alignments[hs] = residues
 
     X = []
-    for idx1, obj1 in enumerate(objects):
-        for idx2, obj2 in enumerate(objects):
+    for idx1, obj1 in enumerate(hotspots):
+        for idx2, obj2 in enumerate(hotspots):
             if idx1 >= idx2:
                 continue
             residues1 = alignments[obj1]
@@ -1272,7 +1299,7 @@ def calc_fingerprints(
         if group := pm.get_property("Group", objects[0]):
             for obj in objects[:1]:
                 if pm.get_property("Group", obj) != group:
-                    raise ValueError(f"Bad selection: don't bound to a group: '{sele}'.")
+                    raise ValueError(f"Bad selection: objects within the same selection are bound to different groups: '{sele}'.")
             groups.append(group)
 
     polymers = [f"{g}.protein" for g in groups]
@@ -1318,7 +1345,12 @@ def calc_fingerprints(
 
             if not isinstance(fpt_axs, (np.ndarray, list)):
                 fpt_axs = [fpt_axs]
-
+        elif isinstance(fingerprints_plot, axes.Axes):
+            fpt_axs = []
+            height = 1/len(fpt)
+            for i, _ in enumerate(sele):
+                ax = fingerprints_plot.inset_axes([0, (i+1)*height, 1, 1])
+                fpt_axs.append(ax)
     assert isinstance(fpt_axs, (list, np.ndarray))
     assert len(fpt_axs) == len(fpts) and len(fpts) == len(seles)
 
@@ -1354,7 +1386,7 @@ def calc_fingerprints(
         if isinstance(fingerprints_plot, (str, Path)):
             fig.savefig(str(fingerprints_plot))
         elif fingerprints_plot is True:
-            pass
+            fig.show()
 
     corrs = []
     labels = []

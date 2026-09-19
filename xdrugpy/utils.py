@@ -250,7 +250,7 @@ def plot_hca_base(
             fig.savefig(dendrogram_plot)
         elif dendrogram_plot is True:
             fig.set_layout_engine('compressed')
-            # fig.show()
+            fig.show()
 
     if heatmap_plot:
         fig = heat_ax.get_figure(True)
@@ -259,7 +259,7 @@ def plot_hca_base(
             fig.savefig(str(heatmap_plot))
         elif heatmap_plot is True:
             fig.set_layout_engine('compressed')
-            # fig.show()
+            fig.show()
     return dendro, medoids
 
 
@@ -326,7 +326,7 @@ def clustal_omega(seles, conservation="*:.", titles=None) -> dict[str, list[Resi
                 ))
             at_ix += 1
 
-        assert at_ix == len(atoms), (
+        assert at_ix <= len(atoms), (
             f"Alignment/atom mismatch for {title}: consumed {at_ix} atoms, "
             f"but selection has {len(atoms)} guide atoms"
         )

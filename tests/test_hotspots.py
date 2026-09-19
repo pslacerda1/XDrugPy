@@ -217,7 +217,6 @@ def test_load():
     assert len(ftmap.eclusters) == 0
 
 
-@pytest.mark.skip(reason="Not implemented yet.")
 def test_load_eftmap():
     pm.reinitialize()
 
@@ -225,4 +224,6 @@ def test_load_eftmap():
         PKG_DATA_DIR / 'p38_MAPK_1R39_pharm.pdb',
         "1R39",
     )
-    assert len(ftmap.eclusters) > 0
+    assert len(ftmap.eclusters) == 43
+    assert ftmap.eclusters[37].ProbeType == 'apolar'
+    assert ftmap.eclusters[37].S == 104

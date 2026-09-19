@@ -20,3 +20,13 @@ dependencies = [
   "pymol_new_command @ https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip",
   "meeko @ https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip"
 ]
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["xdrugpy"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
