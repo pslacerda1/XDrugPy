@@ -63,19 +63,16 @@ def xdrugpy_install(
 ):
     try:
         check_call([
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
+            sys.executable, "-m", "pip", "install",
             f"https://github.com/pslacerda1/XDrugPy/archive/{plugin_version}.zip",
-            "-r",
-            f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
         ])
-
+        check_call([
+            sys.executable, "-m", "pip", "install",
+            "-r", f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
+        ])
         check_call([
             'conda', 'install', '-y', 'bioconda::clustalo'
         ])
-
         try:
             check_call([
                 sys.executable, "-m", "pip", "install", "--no-deps",
