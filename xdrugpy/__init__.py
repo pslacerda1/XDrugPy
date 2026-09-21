@@ -52,29 +52,39 @@ RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
-XDRUGPY_PLUGIN_VERSION_DEFAULT = "heads/master"
-XDRUGPY_PROGRAM_VERSION_DEFAULT = "latest"
+PLUGIN_VERSION_DEFAULT = "master"
+PROGRAM_VERSION_DEFAULT = "latest"
 
 
 @pm.extend
 def xdrugpy_install(
-    plugin_version=XDRUGPY_PLUGIN_VERSION_DEFAULT,
-    program_version=XDRUGPY_PROGRAM_VERSION_DEFAULT
+    plugin_version=PLUGIN_VERSION_DEFAULT,
+    program_version=PROGRAM_VERSION_DEFAULT
 ):
     try:
         check_call([
-            sys.executable, "-m", "pip", "install", "-U",
-            f"https://github.com/pslacerda1/XDrugPy/archive/refs/{plugin_version}.zip"
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            f"https://github.com/pslacerda1/XDrugPy/archive/{plugin_version}.zip",
+            "-r",
+            f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
         ])
+
         check_call([
             'conda', 'install', '-y', 'bioconda::clustalo'
         ])
+
         try:
-            check_call([  ## pyproject.toml --no-deps limitation
-                sys.executable, "-m", "pip", "install", "--no-deps", "pyKVFinder==0.9.0",
+            check_call([
+                sys.executable, "-m", "pip", "install", "--no-deps",
+                "pyKVFinder==0.9.0",
+                "https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip"
             ])
         except CalledProcessError as exc:
             print("Continuing without pyKVFinder.")
+
     except CalledProcessError as exc:
         raise SystemError(f"XDrugPy: Installation failed.") from exc
 
@@ -98,7 +108,6 @@ def xdrugpy_install(
         exe = exe.with_suffix('.exe')
     if exe.exists():
         os.unlink(exe)
-    print(f"Downloading {url} into {exe}")
     urlretrieve(url, exe)
     os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
 
@@ -162,10 +171,14 @@ def __init_plugin__(app=None):
 os.environ["PATH"] = str(RESOURCES_DIR) + os.pathsep + os.environ["PATH"]
 os.environ["PATH"] = str(RESOURCES_DIR) + "/PyMOL" + os.pathsep + os.environ["PATH"]
 
-from .hotspots import (
-    load_ftmap, get_fo, get_dc, get_dce,
-    calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
-    calc_fingerprints,
-    LinkageMethod, OverlapFunction, UnivariateMethod, MultivariateDistanceMethod
-)
-from .utils import configure_matplotlib
+try:
+    from .hotspots import (
+        load_ftmap, get_fo, get_dc, get_dce,
+        calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
+        calc_fingerprints,
+        LinkageMethod, OverlapFunction, UnivariateMethod, MultivariateDistanceMethod
+    )
+    from .utils import configure_matplotlib
+except ImportError as exc:
+    import traceback
+    traceback.print_exc()

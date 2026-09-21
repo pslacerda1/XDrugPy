@@ -1,0 +1,68 @@
+name: tests
+
+on: ["push", "pull_request"]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -l {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest",]
+        python-version: ["3.12",]
+        pymol-version: [
+          "schrodinger::pymol==3.1.7.2",
+          # "schrodinger::pymol==3.1.6.1",
+          # "conda-forge::pymol-open-source==3.1.0",
+        ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Conda environment
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: ${{ matrix.python-version }}
+          channels: schrodinger, conda-forge, defaults
+          activate-environment: test-env
+          auto-activate: true
+
+      - name: Setup Rattle Solver
+        run: |
+          conda install --name base conda-rattler-solver
+          conda config --set solver rattler
+          conda config --append channels conda-pypi
+
+      - name: Install PyMOL and Conda Dependencies
+        run: |
+          conda install \
+            ${{ matrix.pymol-version }} \
+            conda-forge::catch2==3.13 \
+            conda-forge::font-ttf-dejavu
+
+      - name: Install XDrugPy
+        run: |
+          pip install -e .
+          python -c '
+          from xdrugpy import xdrugpy_install
+          xdrugpy_install("${{ github.sha }}")
+          '
+
+      - name: Run pytest
+        run: |
+          pytest
+
+      - name: Upload Failed Plots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-images
+          path: |
+            tests/data/*_gen.svg
+            tests/data/*_ref.svg
+          retention-days: 5

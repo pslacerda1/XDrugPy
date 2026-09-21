@@ -65,7 +65,7 @@ def fetch_similar(
             chain = new_chain
             sequences.append("")
         sequences[-1] += oneletter
-    
+
     results = {}
     for seq in set(sequences):
         if len(seq) < 25:
@@ -98,10 +98,10 @@ def fetch_similar(
                 obj = pdb_id
             else:
                 obj = '%s_%s' % (pdb_id, asm_id)
-            
+
             if obj.upper() in object_list:
                 continue
-            
+
             try:
                 pm.fetch(pdb_id, obj, type="pdb%s" % asm_id)
             except (Exception, CmdException) as exc:
@@ -135,7 +135,7 @@ def fetch_similar(
                 sele = f"(%{obj} AND NOT (polymer OR resn {mols})) NEAR_TO {site_radius} OF ({site_sele})"
                 for at in pm.get_model(sele).atom:
                     ligands.add((at.resn, at.chain, at.resi))
-            
+
             if check_peptides:
                 # Peptides of length <=25 are deemed ligands
                 this_peptides = set()
@@ -214,13 +214,17 @@ def rmsf(
     frames = []
     for obj in pm.get_object_list(selection):
             frames.append(obj)
-    
+
     site_sele = f"{reference} & polymer & ({reference} within {site_radius} of ({ref_site}))"
     site_resis = []
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
         site_resis.append((at.model, at.index))
     if not quiet:
         print(f"Aligning structures to {reference} with method {align_method}...")
+
+    if reference in frames:
+        frames.remove(reference)
+
     try:
         pm.extra_fit(
             selection=' '.join(frames),
@@ -274,17 +278,17 @@ def rmsf(
         pm.hide("everything", site_sele)
         pm.show("line", site_sele)
         pm.spectrum("p.rmsf", "rainbow", site_sele)
-    
+
     if axis:
         if isinstance(axis, (str, Path)):
             _, ax = plt.subplots(ncols=1, nrows=1)
         if isinstance(axis, matplotlib.axes.Axes):
             ax = axis
-        
+
         ax.bar(LABELS, RMSF)
         ax.set_ylabel("RMSF")
         ax.tick_params(axis="x", rotation=90)
-        
+
         if isinstance(axis, (str, Path)):
             fig = ax.get_figure(True)
             fig.set_layout_engine('compressed')
@@ -327,7 +331,7 @@ class FechSimilarWidget(QWidget):
 
         layout = self.layout = QFormLayout()
         self.setLayout(layout)
-        
+
         self.sequenceCombo = PyMOLComboObjectBox()
         layout.addRow("Query sequence:", self.sequenceCombo)
 
@@ -365,7 +369,7 @@ class FechSimilarWidget(QWidget):
 
         self.ignoreLigandsLine = QLineEdit(PROSTHETIC_GROUPS)
         layout.addRow("Ignore ligands:", self.ignoreLigandsLine)
-        
+
         self.alignMethodCombo = QComboBox()
         self.alignMethodCombo.addItems(list(map(str, AligMethod)))
         self.alignMethodCombo.setCurrentText(AligMethod.CEALIGN)
@@ -383,7 +387,7 @@ class FechSimilarWidget(QWidget):
         findButton = QPushButton("Find")
         findButton.clicked.connect(self.find)
         layout.addWidget(findButton)
-    
+
     def find(self):
         data = fetch_similar(
             sequence_sele=self.sequenceCombo.currentText(),
@@ -416,7 +420,7 @@ class FechSimilarResultsDialog(QDialog):
         self.tree.header().hide()
         self.tree.header().setSectionResizeMode(QHeaderView.Stretch)
         self.layout.addWidget(self.tree)
-        
+
         for pdb_id, asm_id in data.keys():
             pdb_item = QTreeWidgetItem([f"PDB {pdb_id} Assembly {asm_id}", "", ""])
             self.tree.addTopLevelItem(pdb_item)
@@ -424,7 +428,7 @@ class FechSimilarResultsDialog(QDialog):
             for org, macromol in data[(pdb_id, asm_id)]['organisms']:
                 orgItem = QTreeWidgetItem([org, macromol, ""])
                 pdb_item.addChild(orgItem)
-            
+
             ligands = list(data[(pdb_id, asm_id)]['ligands'])
             visited = set()
             for resn, _, _, in ligands:
@@ -438,7 +442,7 @@ class FechSimilarResultsDialog(QDialog):
                 pdb_item.addChild(lig_item)
         self.tree.expandAll()
 
-    
+
 class RmsfWidget(QWidget):
 
     def __init__(self):

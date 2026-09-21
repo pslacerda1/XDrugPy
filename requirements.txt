@@ -1,0 +1,13 @@
+numpy==1.26.0
+cairosvg==2.9.1
+matplotlib==3.11.2
+pandas==3.0.6
+Pillow==12.3.0
+PyQt5==5.15.11
+pytest==9.0.3
+scipy==1.15.1
+StrEnum==0.4.0
+watchdog==6.0.0
+rcsb-api==1.7.3
+https://github.com/forlilab/molscrub/archive/c68e88d26fd1fa1c6ca3ad7d02c0633d43aefe44.zip
+https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip

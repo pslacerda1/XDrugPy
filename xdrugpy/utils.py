@@ -314,6 +314,7 @@ def clustal_omega(seles, conservation="*:.", titles=None) -> dict[str, list[Resi
     for (title, seq), sele in zip(sequences.items(), seles):
         atoms = [a for a in pm.get_model(f"({sele}) & present & guide & polymer").atom]
         at_ix = 0
+        assert len(seq) >= len(atoms)
         for aln_ix, (seq_char, clu_char) in enumerate(zip(seq, clu)):
             if seq_char == '-':
                 continue

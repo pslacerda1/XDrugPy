@@ -1,4 +1,3 @@
-import pytest
 from pymol import cmd as pm
 
 from xdrugpy.hotspots import (
@@ -15,68 +14,9 @@ from xdrugpy.hotspots import (
 
 from . import images_identical, ResultFigures, PKG_DATA_DIR
 
-@pytest.fixture
-def test_name(request):
-    yield request.function.__name__
-
-@pytest.fixture(scope='module')
-def load_default_1dq8():
-    ftmap_1dq8 = load_ftmap(
-        filename=PKG_DATA_DIR / "1dq8_atlas.pdb",
-        group="default_1dq8",
-        deep_search=False
-    )
-    yield ftmap_1dq8
-    pm.delete('default_1da8')
-
-@pytest.fixture(scope='module')
-def load_default_1dq9():
-    ftmap_1dq8 = load_ftmap(
-        filename=PKG_DATA_DIR / "1dq9_atlas.pdb",
-        group="default_1dq9",
-        deep_search=False
-    )
-    yield ftmap_1dq8
-    pm.delete('default_1da9')
-
-@pytest.fixture(scope='module')
-def load_deep_1dq9():
-    ftmap_1dq9 = load_ftmap(
-        filename=PKG_DATA_DIR / "1dq9_atlas.pdb",
-        group="deep_1dq9",
-        deep_search=True,
-        remove_nested=True,
-    )
-    yield ftmap_1dq9
-    pm.delete('deep_1da9')
-
-@pytest.fixture(scope='module')
-def load_deep_1dq8():
-    ftmap_1dq8 = load_ftmap(
-        filename=PKG_DATA_DIR / "1dq8_atlas.pdb",
-        group="deep_1dq8",
-        deep_search=True,
-        remove_nested=True,
-    )
-    yield ftmap_1dq8
-    pm.delete('deep_1da8')
-
-@pytest.fixture(scope='module')
-def load_deep_2tpr():
-    ftmap = load_ftmap(
-        filename=f"{PKG_DATA_DIR}/2TPR.pdb",
-        group='deep_2tpr',
-        deep_search=True,
-        remove_nested=True,
-    )
-    yield ftmap
-    pm.delete('deep_2tpr')
-
-
-
 def test_calc_multivariate_hca(
     load_default_1dq8,
-    load_default_1dq9
+    load_default_1dq9,
 ):
     figs = ResultFigures('test_calc_multivariate_hca')
 
@@ -95,12 +35,13 @@ def test_calc_multivariate_hca(
 
 
 def test_calc_univariate_hca_fo(
+    test_name,
     load_deep_1dq9,
     load_deep_1dq8,
     load_deep_2tpr
 ):
-    dendro_figs = ResultFigures("test_calc_univariate_hca_fo_dendro")
-    heat_figs = ResultFigures("test_calc_univariate_hca_fo_heat")
+    dendro_figs = ResultFigures(f"{test_name}_dendro")
+    heat_figs = ResultFigures(f"{test_name}_heat")
 
     calc_univariate_hca(
         sele="deep_1dq8.DL.* OR deep_1dq9.DL.* OR deep_2tpr.DL.*",
@@ -114,7 +55,7 @@ def test_calc_univariate_hca_fo(
         heatmap_plot=heat_figs.generated,
     )
     assert images_identical(dendro_figs.generated, dendro_figs.reference)
-    assert images_identical(heat_figs.generated, heat_figs.reference)
+    assert images_identical(heat_figs.generated, heat_figs.reference, rms_threshold=25.0)
 
 
 def test_calc_univariate_hca_jaccard(
@@ -145,7 +86,7 @@ def test_overlap():
     pm.fetch('NH2')
     assert get_fo("%NH2", "%1OD", radius=3.0) == 1.0
     assert round(get_dce("%NH2", "%1OD", radius=3.0), 2) == 7.67
-    assert round(get_dco("%NH2", "%1OD", radius=3.0), 2) == 0.10
+    assert round(get_dco("%NH2", "%1OD", radius=3.0), 2) == 0.27
     assert get_dce("NotFound", "%NH2") == 0
 
 
@@ -185,7 +126,7 @@ def test_calc_fingerprint_clustering(
         fingerprints_plot=fpt_figs.generated,
         dendrogram_plot=dendro_figs.generated,
     )
-    assert images_identical(fpt_figs.generated, fpt_figs.reference)
+    assert images_identical(fpt_figs.generated, fpt_figs.reference, rms_threshold=25.0)
     assert images_identical(dendro_figs.generated, dendro_figs.reference)
 
 

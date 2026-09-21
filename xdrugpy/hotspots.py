@@ -817,7 +817,9 @@ def calc_univariate_hca(
             X = _calc_univariate_hca_spatial(objects, dist_method, radius)
 
     dendro, medoids = plot_hca_base(
-        X, objects, linkage_method,
+        X,
+        labels=objects,
+        linkage_method=linkage_method,
         nclusters=nclusters,
         color_threshold=color_threshold,
         only_medoids=only_medoids,
@@ -1404,7 +1406,7 @@ def calc_fingerprints(
 
     dendro, medoids = plot_hca_base(
         corrs,
-        labels,
+        labels=labels,
         linkage_method=linkage_method,
         color_threshold=color_threshold,
         nclusters=nclusters,
