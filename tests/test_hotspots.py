@@ -166,5 +166,5 @@ def test_load_eftmap():
         "1R39",
     )
     assert len(ftmap.eclusters) == 43
-    assert ftmap.eclusters[37].ProbeType == 'apolar'
+    assert ftmap.eclusters[37].Class == 'apolar'
     assert ftmap.eclusters[37].S == 104

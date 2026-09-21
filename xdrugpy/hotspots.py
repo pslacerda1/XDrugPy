@@ -15,7 +15,6 @@ from scipy.spatial import distance_matrix, distance
 from scipy.cluster.hierarchy import linkage, leaves_list
 from matplotlib import pyplot as plt
 from strenum import StrEnum
-import pymol
 from pymol import cmd as pm
 from pymol_new_command import new_command
 
@@ -81,8 +80,12 @@ class Cluster(BaseHotspot):
 @dataclass
 class ECluster(BaseHotspot):
     S: int
-    ProbeType: str
+    Class: str
     Type: Literal["ACS"] = field(default="ACS", repr=False)
+    MD: float = field(init=False)
+
+    def __post_init__(self):
+        self.MD = distance.pdist(self.Coords).max()
 
 
 @dataclass
@@ -112,7 +115,6 @@ def _selections_from_kvfinder(group: str, kvfound: Dict[str, List[str]]) -> List
             pm.select(cavity, f'{cavity} OR (i. {resi} AND c. {chain})')
         pm.select(cavity, f'{cavity} AND {group}.protein')
         cavities.append(cavity)
-        pm.group(group, ' '.join(cavities))
     return cavities
 
 
@@ -207,8 +209,6 @@ def _extract_data_from_pdb_string(
             )
             cs.save_into_properties()
             clusters.append(cs)
-            pm.group(cs.Group, cs.Object)
-
 
         elif not d['Object'].endswith('.protein'):
             hs = Hotspot(
@@ -238,7 +238,6 @@ def _extract_data_from_pdb_string(
             hs.Kavity = max_cavity
             hs.save_into_properties()
             hotspots.append(hs)
-            pm.group(hs.Group, hs.Object)
 
     return clusters, hotspots
 
@@ -315,7 +314,6 @@ def _process_eftmap(filename: Path, group: str) -> HotspotResults:
         pm.read_pdbstr(pdbstr, oname=f'{group}.protein')
 
     eclusters = []
-    idx = 0
     for line in pdbstr.splitlines():
         if line.startswith('HEADER'):
             if line.endswith('_protein'):
@@ -339,7 +337,7 @@ def _process_eftmap(filename: Path, group: str) -> HotspotResults:
                     Group=group,
                     S=int(probe_count),
                     Coords=pm.get_coordset(new_name),
-                    ProbeType=probe_type,
+                    Class=probe_type,
                 )
                 ecluster.save_into_properties()
                 eclusters.append(ecluster)
@@ -514,14 +512,43 @@ def _load_ftmap(
         pm.set("mesh_mode", 1)
         pm.orient("all")
 
-        groups = [
-            name
-            for name in pm.get_names('group_objects')
-            if name.startswith(f"{group}.")
-                and pm.count_atoms(f"%{name}.*") == 0
-        ]
-        for grp in groups:
-            pm.delete(grp)
+        pm.group(group, f'{group}.protein')
+
+        if results.cavities:
+            pm.group(group, f'{group}.KV')
+            pm.group(f'{group}.KV', ' '.join(results.cavities))
+
+        if results.clusters:
+            pm.group(group, f'{group}.CS')
+            pm.group(f'{group}.CS', ' '.join(cs.Object for cs in results.clusters))
+
+        for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL']:
+            hs_list = [
+                hs.Object
+                for hs in results.hotspots
+                if hs.Class == klass
+            ]
+            if hs_list:
+                pm.group(group, f'{group}.{klass}')
+                pm.group(f'{group}.{klass}', ' '.join(hs_list))
+
+        for klass in ['acceptor',  'donor', 'halogen', 'aromatic', 'apolar']:
+            acs_list = [
+                acs.Object
+                for acs in results.eclusters
+                if acs.Class == klass
+            ]
+            if acs_list:
+                pm.group(group, f'{group}.{klass}')
+                pm.group(f'{group}.{klass}', ' '.join(acs_list))
+        # groups = [
+        #     name
+        #     for name in pm.get_names('group_objects')
+        #     if name.startswith(f"{group}.")
+        #         and pm.count_atoms(f"%{name}.*") == 0
+        # ]
+        # for grp in groups:
+        #     pm.delete(grp)
 
     return results
 
@@ -1563,6 +1590,10 @@ def calc_multivariate_hca(
         n_props = 4
     elif hs_type == "CS":
         n_props = 1
+    elif hs_type == "ACS":
+        n_props = 2
+    else:
+        raise NotImplementedError(f"Hotspots of type '{hs_type}' are not supported yet.")
     labels = []
 
     p = np.zeros((len(object_list), n_props + 3))
@@ -1580,7 +1611,7 @@ def calc_multivariate_hca(
             S = pm.get_property("S", obj)
             p[ix, :] = np.array([S, x, y, z])
         elif hs_type == "ACS":
-            ST = pm.get_property("ST", obj)
+            ST = pm.get_property("S", obj)
             MD = pm.get_property("MD", obj)
             p[ix, :] = np.array([ST, MD, x, y, z])
 
@@ -1912,6 +1943,7 @@ class TableWidget(QWidget):
                 "Kavity",
             ],
             ("CS", "CS"): ["S"],
+            ("ACS", "ACS"): ["Class", "S", "MD",]
         }
         self.tables = {}
         for (title, key), props in self.hotspotsMap.items():
@@ -1945,30 +1977,30 @@ class TableWidget(QWidget):
                 self.tables[title].removeRow(0)
 
             # append new rows
-            for obj in pm.get_names("objects"):
-                if pm.get_type(obj) in ['object:group', 'selection']:
+            for obj_name in pm.get_names("objects"):
+                if pm.get_type(obj_name) in ['object:group', 'selection']:
                     continue
-                if not pm.get_property_list(obj):
+                if not pm.get_property_list(obj_name):
                     continue
-                obj_type = pm.get_property("Type", obj)
+                obj_type = pm.get_property("Type", obj_name)
                 if obj_type == key:
-                    if obj in self.selected_objs:
-                        if isinstance(obj, float):
-                            stringfy = lambda o: f'{o:.2f}'
-                        else:
-                            stringfy = str
-                        self.appendRow(title, key, obj, stringfy)
+                    if obj_name in self.selected_objs:
+                        self.appendRow(title, key, obj_name)
 
             self.tables[title].setSortingEnabled(True)
 
-    def appendRow(self, title, key, obj, stringfy):
+    def appendRow(self, title, key, obj_name):
         self.tables[title].insertRow(self.tables[title].rowCount())
         line = self.tables[title].rowCount() - 1
 
-        self.tables[title].setItem(line, 0, SortableItem(obj, stringfy))
+        self.tables[title].setItem(line, 0, SortableItem(obj_name, str))
 
         for idx, prop in enumerate(self.hotspotsMap[(title, key)]):
-            prop_value = pm.get_property(prop, obj)
+            prop_value = pm.get_property(prop, obj_name)
+            if isinstance(prop_value, float):
+                stringfy = lambda o: f'{o:.2f}'
+            else:
+                stringfy = str
             self.tables[title].setItem(line, idx + 1, SortableItem(prop_value, stringfy))
 
     def updateCurrentList(self):
