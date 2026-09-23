@@ -8,3 +8,5 @@ description = "Protein hotspot detection, visualization and comparative analysis
 dependencies = [
   # managed by code
 ]
+[tool.setuptools]
+packages = ["xdrugpy"]
