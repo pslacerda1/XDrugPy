@@ -82,28 +82,28 @@ def xdrugpy_install(
     except CalledProcessError as exc:
         raise SystemError(f"XDrugPy: Installation failed.") from exc
 
-    #
-    # Install Vina
-    #
-    system = platform.system().lower()
-    match system:
-        case "windows":
-            web_name = "vina_1.2.7_win.exe"
-        case "linux":
-            web_name = "vina_1.2.7_linux_x86_64"
-        case "darwin":
-            web_name = "vina_1.2.7_mac_x86_64"
-        case _:
-            raise RuntimeError("Unexpected system.")
+    # #
+    # # Install Vina
+    # #
+    # system = platform.system().lower()
+    # match system:
+    #     case "windows":
+    #         web_name = "vina_1.2.7_win.exe"
+    #     case "linux":
+    #         web_name = "vina_1.2.7_linux_x86_64"
+    #     case "darwin":
+    #         web_name = "vina_1.2.7_mac_x86_64"
+    #     case _:
+    #         raise RuntimeError("Unexpected system.")
 
-    url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{web_name}"
-    exe = RESOURCES_DIR / 'vina'
-    if system == "windows":
-        exe = exe.with_suffix('.exe')
-    if exe.exists():
-        os.unlink(exe)
-    urlretrieve(url, exe)
-    os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
+    # url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{web_name}"
+    # exe = RESOURCES_DIR / 'vina'
+    # if system == "windows":
+    #     exe = exe.with_suffix('.exe')
+    # if exe.exists():
+    #     os.unlink(exe)
+    # urlretrieve(url, exe)
+    # os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
 
     #
     # Install Clustal Omega
