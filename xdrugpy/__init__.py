@@ -82,10 +82,10 @@ def xdrugpy_install(
     except CalledProcessError as exc:
         raise SystemError(f"XDrugPy: Installation failed.") from exc
 
+    system = platform.system().lower()
     # #
     # # Install Vina
     # #
-    # system = platform.system().lower()
     # match system:
     #     case "windows":
     #         web_name = "vina_1.2.7_win.exe"
