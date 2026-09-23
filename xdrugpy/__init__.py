@@ -70,9 +70,6 @@ def xdrugpy_install(
             sys.executable, "-m", "pip", "install",
             "-r", f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
         ])
-        check_call([
-            'conda', 'install', '-y', 'bioconda::clustalo'
-        ])
         try:
             check_call([
                 sys.executable, "-m", "pip", "install", "--no-deps",
@@ -107,6 +104,28 @@ def xdrugpy_install(
         os.unlink(exe)
     urlretrieve(url, exe)
     os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
+
+    #
+    # Install Clustal Omega
+    #
+    match system:
+        case "windows":
+            web_name = "clustal-omega-1.2.2-win64.zip"
+            local_zip = RESOURCES_DIR / web_name
+            local_exe = RESOURCES_DIR / 'clustalo.exe'
+            if not local_exe.exists():
+                urlretrieve(
+                    f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/bin/{web_name}",
+                    local_zip
+                )
+                import zipfile
+                zipfile.ZipFile(local_zip).extractall(RESOURCES_DIR)
+                os.chmod(local_exe, stat.S_IEXEC)
+
+        case "darwin" | "linux":
+            check_call([
+                'conda', 'install', '-y', 'bioconda::clustalo'
+            ])
 
     #
     # Install My (alpha) Rust Project
