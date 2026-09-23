@@ -9,5 +9,5 @@ scipy
 StrEnum
 watchdog
 rcsb-api
-https://github.com/forlilab/molscrub/archive/c68e88d26fd1fa1c6ca3ad7d02c0633d43aefe44.zip
-https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip
+# https://github.com/forlilab/molscrub/archive/c68e88d26fd1fa1c6ca3ad7d02c0633d43aefe44.zip
+# https://github.com/pslacerda/Meeko/archive/refs/heads/patch-1.zip
