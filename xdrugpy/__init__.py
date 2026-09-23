@@ -1,6 +1,7 @@
 import sys
 import os
 import platform
+import shutil
 import stat
 from tempfile import mkdtemp
 from pathlib import Path
@@ -120,6 +121,8 @@ def xdrugpy_install(
                 )
                 import zipfile
                 zipfile.ZipFile(local_zip).extractall(RESOURCES_DIR)
+                for file in (RESOURCES_DIR / "clustal-omega-1.2.2-win64").glob("*"):
+                    shutil.copy(file, RESOURCES_DIR)
                 os.chmod(local_exe, stat.S_IEXEC)
 
         case "darwin" | "linux":
