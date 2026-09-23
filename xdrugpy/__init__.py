@@ -3,6 +3,7 @@ import os
 import platform
 import shutil
 import stat
+import zipfile
 from tempfile import mkdtemp
 from pathlib import Path
 from urllib.request import urlretrieve
@@ -104,7 +105,7 @@ def xdrugpy_install(
     # if exe.exists():
     #     os.unlink(exe)
     # urlretrieve(url, exe)
-    # os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
+    # os.chmod(exe, stat.S_IXUSR)
 
     #
     # Install Clustal Omega
@@ -114,16 +115,16 @@ def xdrugpy_install(
             web_name = "clustal-omega-1.2.2-win64.zip"
             local_zip = RESOURCES_DIR / web_name
             local_exe = RESOURCES_DIR / 'clustalo.exe'
-            if not local_exe.exists():
-                urlretrieve(
-                    f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/misc/{web_name}",
-                    local_zip
-                )
-                import zipfile
-                zipfile.ZipFile(local_zip).extractall(RESOURCES_DIR)
-                for file in (RESOURCES_DIR / "clustal-omega-1.2.2-win64").glob("*"):
-                    shutil.copy(file, RESOURCES_DIR)
-                os.chmod(local_exe, stat.S_IEXEC)
+            if local_zip.exists():
+                os.unlink(local_zip)
+            urlretrieve(
+                f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/misc/{web_name}",
+                local_zip
+            )
+            zipfile.ZipFile(local_zip).extractall(RESOURCES_DIR)
+            for file in (RESOURCES_DIR / "clustal-omega-1.2.2-win64").glob("*"):
+                shutil.move(file, RESOURCES_DIR)
+            os.chmod(local_exe, stat.S_IEXEC)
 
         case "darwin" | "linux":
             check_call([
@@ -152,7 +153,7 @@ def xdrugpy_install(
     if exe.exists():
         os.unlink(exe)
     urlretrieve(url, exe)
-    os.chmod(exe, stat.S_IRUSR | stat.S_IXUSR)
+    os.chmod(exe, stat.S_IXUSR)
 
 
 def __init_plugin__(app=None):
