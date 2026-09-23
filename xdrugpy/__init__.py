@@ -115,7 +115,7 @@ def xdrugpy_install(
             local_exe = RESOURCES_DIR / 'clustalo.exe'
             if not local_exe.exists():
                 urlretrieve(
-                    f"bhttps://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/misc/{web_name}",
+                    f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/misc/{web_name}",
                     local_zip
                 )
                 import zipfile
