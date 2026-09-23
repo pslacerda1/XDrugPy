@@ -137,14 +137,14 @@ def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> dict[str, list[list
     nthreads = None
     verbose = False
 
-    with tempfile.NamedTemporaryFile("w", suffix=".pdb", delete=True, dir=TEMPDIR) as tmp:
-        first_header = pdbstr.find('HEADER')
-        second_header = pdbstr.find('HEADER', first_header+1)
+    _, tmp = tempfile.mkstemp(suffix=".pdb", dir=TEMPDIR)
 
-        tmp.write(pdbstr[first_header:second_header])
-        tmp.flush()
+    first_header = pdbstr.find('HEADER')
+    second_header = pdbstr.find('HEADER', first_header+1)
 
-        atomic = read_pdb(tmp.name)
+    Path(tmp).write_text(pdbstr[first_header:second_header])
+    try:
+        atomic = read_pdb(tmp)
         vertices = get_vertices(atomic, probe_out, step)
         ncav, cavities = detect(
             atomic,
@@ -161,21 +161,23 @@ def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> dict[str, list[list
             nthreads,
             verbose,
         )
+    finally:
+        os.unlink(tmp)
 
-        if ncav <= 0:
-            return {}
+    if ncav <= 0:
+        return {}
 
-        residues = constitutional(
-            cavities,
-            atomic,
-            vertices,
-            step,
-            probe_in,
-            ignore_backbone,
-            None,
-            nthreads,
-            verbose,
-        )
+    residues = constitutional(
+        cavities,
+        atomic,
+        vertices,
+        step,
+        probe_in,
+        ignore_backbone,
+        None,
+        nthreads,
+        verbose,
+    )
     return residues
 
 
