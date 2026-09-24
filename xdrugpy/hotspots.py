@@ -125,7 +125,6 @@ def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> dict[str, list[list
     except ImportError:
         return {}
 
-    # hello GPT
     step = 0.6
     probe_in = 1.4
     probe_out = 4.0
@@ -137,32 +136,34 @@ def _kvfinder_constitutional_from_pdb_string(pdbstr: str) -> dict[str, list[list
     nthreads = None
     verbose = False
 
-    _, tmp = tempfile.mkstemp(suffix=".pdb", dir=TEMPDIR)
-
     first_header = pdbstr.find('HEADER')
     second_header = pdbstr.find('HEADER', first_header+1)
 
-    Path(tmp).write_text(pdbstr[first_header:second_header])
-    try:
-        atomic = read_pdb(tmp)
-        vertices = get_vertices(atomic, probe_out, step)
-        ncav, cavities = detect(
-            atomic,
-            vertices,
-            step,
-            probe_in,
-            probe_out,
-            removal_distance,
-            volume_cutoff,
-            None,
-            ligand_cutoff,
-            False,
-            surface,
-            nthreads,
-            verbose,
+    tmp_file = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".pdb", dir=TEMPDIR, delete=False,
+    )
+    tmp_file.write(pdbstr[first_header:second_header])
+    tmp_file.close()
+
+    atomic = read_pdb(tmp_file.name)
+    # os.unlink(tmp)  # FIXME bug on windows
+
+    vertices = get_vertices(atomic, probe_out, step)
+    ncav, cavities = detect(
+        atomic,
+        vertices,
+        step,
+        probe_in,
+        probe_out,
+        removal_distance,
+        volume_cutoff,
+        None,
+        ligand_cutoff,
+        False,
+        surface,
+        nthreads,
+        verbose,
         )
-    finally:
-        os.unlink(tmp)
 
     if ncav <= 0:
         return {}
@@ -1334,7 +1335,6 @@ def calc_fingerprints(
             groups.append(group)
 
     polymers = [f"{g}.protein" for g in groups]
-    assert len(polymers) > 0, "Please review your selections"
 
     ref_sele = seles[0]
     ref_polymer = polymers[0]

@@ -42,7 +42,8 @@ QStandardPaths = Qt.QtCore.QStandardPaths
 
 RESOURCES_DIR = Path(
     QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
-)
+) / "XDrugPy"
+
 RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
 
 LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/ligands/")
@@ -84,7 +85,6 @@ def xdrugpy_install(
     except CalledProcessError as exc:
         raise SystemError(f"XDrugPy: Installation failed.") from exc
 
-    system = platform.system().lower()
     # #
     # # Install Vina
     # #
@@ -110,6 +110,7 @@ def xdrugpy_install(
     #
     # Install Clustal Omega
     #
+    system = platform.system().lower()
     match system:
         case "windows":
             web_name = "clustal-omega-1.2.2-win64.zip"
