@@ -25,19 +25,29 @@ for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
         ### advanced options below ###
 
         max_num_cs=8,   # Read up to x consensus sites of the structure.
-                        #   Try to increase and check if you get more hotspots,
-                        #   but it may freeze the script as may exists too
-                        #   many combinations to generate hotspots.
-        min_cs_strength=5,
+                        #   Try to increase and check if you get more hotspots.
+                        #   However it may freeze the script as may exists too
+                        #   many combinations to look for hotspots (combinatorial
+                        #   explosion).
+        min_cs_strength=5,  # Consensus sites with less than 5 probe clusters are
+                            #   ignored.
 
-        # combinatory search
-        deep_search=True,
-        remove_nested=True,
+        # Combinatory search.
+        deep_search=True,   # Do combinatorial search. Unrelated to neural networks.
+        remove_nested=True, # If a hotspot is subset of another, keep only the
+                            #   bigger.
 
-        # clash algorithm
-        clash_threshold=0.15,
-        num_pseudoatoms=25,
-        pseudoatom_radius=0.5
+        # Steric clash detection algorithm.
+        #   Clashes may turn a hotspot infeasible, if the clash is circunvented
+        #   with the interaction mediated by another consensus site, this re-enables
+        #   the hotspot.
+        #
+        num_pseudoatoms=25, # For any two atoms from two consensus sites in a
+                            #   potential hotspot, 25 in-between points will
+                            #   be checked for collision.
+        clash_threshold=0.15,   # Tolerate up to 15% of collision accounting all
+                                #   in-between points.
+        pseudoatom_radius=1.5,  # The points are pseudo-atoms with 1.5 radii.
     )
 
     # now show me the results
@@ -49,4 +59,4 @@ for pdb in ['1dqa', '1dq8', '1dq9']:  # ... pdb files inside the folder
     print(f"\n\n############# {my_label}")
     print("**** HOTSPOTS ****")
     for hs in ftmap.hotspots:
-        pp(hs)
+        pp(object=hs)
