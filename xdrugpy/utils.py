@@ -263,7 +263,7 @@ def plot_hca_base(
     return dendro, medoids
 
 
-def clustal_omega(seles, conservation="*:.", titles=None) -> dict[str, list[Residue]]:
+def clustal_omega(seles, conservation="*:. ", titles=None) -> dict[str, list[Residue]]:
     replaced_dict = {}
     replaced_list = []
     if not titles:

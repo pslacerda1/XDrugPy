@@ -1353,6 +1353,7 @@ def calc_fingerprints(
     fpts = []
     for poly, (hs, map) in zip(polymers, mapping.items()):
         fpt = {}
+        assert len(map) == len(ref_map)
         for ref_res, res in zip(ref_map, map):
             if (ref_polymer, ref_res.index) not in site_resis:
                 continue

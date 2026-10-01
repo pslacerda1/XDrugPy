@@ -1,9 +1,22 @@
+import subprocess
 import pytest
 from pymol import cmd as pm
 
 from xdrugpy.hotspots import load_ftmap
 
 from . import PKG_DATA_DIR
+
+
+@pytest.fixture(autouse=True, scope='session')
+def xdrugpy_install():
+    try:
+        subprocess.run(
+            ['xdrugpy_xhf', '--help'],
+            stdout=subprocess.DEVNULL
+        )
+    except FileNotFoundError:
+        import xdrugpy
+        xdrugpy.xdrugpy_install()
 
 
 @pytest.fixture
@@ -60,10 +73,24 @@ def load_deep_1dq8():
 @pytest.fixture(scope='session')
 def load_deep_2tpr():
     ftmap = load_ftmap(
-        filename=f"{PKG_DATA_DIR}/2TPR.pdb",
+        filename=PKG_DATA_DIR / "2TPR.pdb",
         group='deep_2tpr',
         deep_search=True,
         remove_nested=True,
     )
     yield ftmap
     pm.delete('deep_2tpr')
+
+
+@pytest.fixture(scope='session')
+def load_1byq_and_lbaf3():
+    load_ftmap(
+        filename=PKG_DATA_DIR / "1BYQ.pdb",
+        deep_search=False,
+    )
+    load_ftmap(
+        filename=PKG_DATA_DIR / "LB_AF3.pdb",
+        deep_search=False,
+    )
+    yield
+    pm.delete('1BYQ LB_AF3')

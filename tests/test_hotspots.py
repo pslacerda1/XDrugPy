@@ -67,7 +67,7 @@ def test_calc_univariate_hca_jaccard(
     heat_figs = ResultFigures(f"{test_name}_heat")
 
     calc_univariate_hca(
-        sele="deep_1dq8.DL.* OR deep_1dq0.DL.*",
+        sele="deep_1dq8.DL.* OR deep_1dq9.DL.*",
         dist_method=UnivariateMethod.JACCARD,
         linkage_method=LinkageMethod.AVERAGE,
         only_medoids=False,
@@ -90,7 +90,7 @@ def test_overlap():
     assert get_dce("NotFound", "%NH2") == 0
 
 
-def test_calc_fingerprint(test_name, load_deep_1dq8):
+def test_calc_fingerprint1(test_name, load_deep_1dq8):
 
     fpt_figs = ResultFigures(test_name)
     calc_fingerprints(
@@ -101,6 +101,23 @@ def test_calc_fingerprint(test_name, load_deep_1dq8):
         share_ylim=True,
         fingerprints_plot=fpt_figs.generated,
         nbins=50,
+        heatmap_plot=False,
+        dendrogram_plot=False,
+    )
+    assert images_identical(fpt_figs.generated, fpt_figs.reference)
+
+
+def test_calc_fingerprint2(test_name, load_1byq_and_lbaf3):
+    fpt_figs = ResultFigures(test_name)
+    calc_fingerprints(
+        "1BYQ.CS.* / LB_AF3.ACS.*",
+        site="i. 110-130",
+        site_radius=0,
+        contact_radius=4.0,
+        sharex=False,
+        share_ylim=True,
+        fingerprints_plot=fpt_figs.generated,
+        nbins=21,
         heatmap_plot=False,
         dendrogram_plot=False,
     )
