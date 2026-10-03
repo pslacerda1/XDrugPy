@@ -32,14 +32,9 @@ def configure_matplotlib(style=None, backend=None, params=None):
     if style:
         matplotlib.style.use(style)
 
-    plt.rcParams.update({
-        **{
-            'font.size': 14,
-            'figure.figsize': (10, 6),
-            'svg.fonttype': 'none',
-        },
-        **(params or {}),
-    })
+    plt.rcParams.update(
+        **(params or {})
+    )
 
 
 class AligMethod(StrEnum):

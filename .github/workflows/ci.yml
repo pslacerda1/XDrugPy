@@ -11,13 +11,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["ubuntu-latest",]
-        python-version: ["3.12",]
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+        python-version: ["3.12", "3.11", "3.10"]
         pymol-version: [
           "schrodinger::pymol==3.1.7.2",
-          # "schrodinger::pymol==3.1.6.1",
+          "schrodinger/label/pending::pymol==3.1.8",
           # "conda-forge::pymol-open-source==3.1.0",
         ]
+        exclude:
+          - os: "macos-latest"
+            pymol-version: "schrodinger::pymol==3.1.7.2"
+          - os: "ubuntu-latest"
+            python-version: "3.11"
+    env:
+      FORCE_COLOR: "1"
 
     steps:
       - name: Checkout repository
@@ -28,7 +35,7 @@ jobs:
         with:
           auto-update-conda: true
           python-version: ${{ matrix.python-version }}
-          channels: schrodinger, conda-forge, defaults
+          channels: schrodinger/label/pending, schrodinger, conda-forge, defaults
           activate-environment: test-env
           auto-activate: true
 
@@ -42,8 +49,12 @@ jobs:
         run: |
           conda install \
             ${{ matrix.pymol-version }} \
-            conda-forge::catch2==3.13 \
-            conda-forge::font-ttf-dejavu
+            conda-forge::fontconfig \
+            conda-forge::cairo
+
+          if [[ "${{ matrix.pymol-version }}" != *"3.1.8" ]]; then
+            conda install conda-forge::catch2==3.13
+          fi
 
       - name: Install XDrugPy
         run: |
@@ -55,14 +66,14 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest
+          pytest -v
 
       - name: Upload Failed Plots
         uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: debug-images
           path: |
-            tests/data/*_gen.svg
-            tests/data/*_ref.svg
+            tests/data/*_gen.png
+            tests/data/*_ref.png
           retention-days: 5

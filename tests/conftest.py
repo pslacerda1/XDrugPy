@@ -20,6 +20,21 @@ def xdrugpy_install():
         xdrugpy.xdrugpy_install()
 
 
+@pytest.fixture(scope='session', autouse=True)
+def configure_matplotlib():
+    from xdrugpy import configure_matplotlib
+    import numpy as np
+    np.random.seed(42)
+    configure_matplotlib(
+        backend='svg',
+        params={
+            'font.sans-serif': ['DejaVu Sans Mono', 'Arial', 'Helvetica'],
+            'font.family': 'sans-serif',
+            'svg.fonttype': 'none',
+            'svg.hashsalt': 'fixed_salt_123',
+        }
+    )
+
 @pytest.fixture(scope='session')
 def load_1dq9():
     from xdrugpy.hotspots import load_ftmap

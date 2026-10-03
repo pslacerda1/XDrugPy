@@ -6,21 +6,19 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageStat
 
 
-mpl.use('SVG')
-mpl.rcParams['svg.hashsalt'] = 'fixed_salt_123'
-mpl.rcParams['svg.fonttype'] = 'none'
-np.random.seed(42)
-
 PKG_DATA_DIR = Path(__file__).parent / "data"
 
 
 def images_identical(img1_path: Path, img2_path: Path, rms_threshold: float = 20.0) -> bool:
-    def rasterize(svg_path):
-        png_data = cairosvg.svg2png(url=str(svg_path))
+    def rasterize(img_path) -> Image.Image:
+        png_data = cairosvg.svg2png(url=str(img_path))
         return Image.open(io.BytesIO(png_data)).convert("RGB")
 
     img1 = rasterize(img1_path)
     img2 = rasterize(img2_path)
+
+    img1.save(img1_path.with_suffix(".png"))
+    img2.save(img2_path.with_suffix(".png"))
 
     # Garante que têm o mesmo tamanho para evitar erros no comparador
     if img1.size != img2.size:

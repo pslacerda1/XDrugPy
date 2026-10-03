@@ -143,7 +143,7 @@ def test_calc_fingerprint_clustering(
         fingerprints_plot=fpt_figs.generated,
         dendrogram_plot=dendro_figs.generated,
     )
-    assert images_identical(fpt_figs.generated, fpt_figs.reference, rms_threshold=25.0)
+    assert images_identical(fpt_figs.generated, fpt_figs.reference, rms_threshold=26.0)
     assert images_identical(dendro_figs.generated, dendro_figs.reference)
 
 

@@ -40,8 +40,16 @@ __ALL__ = [
 QStandardPaths = Qt.QtCore.QStandardPaths
 
 
+try:
+    data_location = QStandardPaths.AppLocalDataLocation
+except AttributeError:
+    try:
+        data_location = QStandardPaths.AppDataLocation
+    except AttributeError:
+        data_location = QStandardPaths.StandardLocation.AppDataLocation
+
 RESOURCES_DIR = Path(
-    QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
+    QStandardPaths.writableLocation(data_location)
 ) / "XDrugPy"
 
 RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
