@@ -1,6 +1,7 @@
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, call
 from pathlib import Path
+import pytest
 from pymol import cmd as pm
 from xdrugpy.docking import VinaEngine
 
@@ -8,6 +9,7 @@ from xdrugpy.docking import VinaEngine
 pkg_data = Path(__file__).parent / "data"
 
 
+@pytest.mark.skip(reason="No vina available")
 def test_vina_engine():
     pm.reinitialize()
     #

@@ -76,7 +76,7 @@ def xdrugpy_install(
         try:
             check_call([
                 sys.executable, "-m", "pip", "install", "--no-deps",
-                "pyKVFinder==0.9.0",
+                "pyKVFinder==0.9.5",
                 "https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip"
             ])
         except CalledProcessError as exc:

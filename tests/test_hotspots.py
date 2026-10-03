@@ -15,20 +15,20 @@ from xdrugpy.hotspots import (
 from . import images_identical, ResultFigures, PKG_DATA_DIR
 
 def test_calc_multivariate_hca(
-    load_default_1dq8,
-    load_default_1dq9,
+    load_1dq9,
+    load_1dq8,
 ):
     figs = ResultFigures('test_calc_multivariate_hca')
 
     *_, medoids = calc_multivariate_hca(
-        sele="(default_1dq8.CS.* OR default_1dq9.CS.*) AND p.S>13",
+        sele="(deep_1dq8.CS.* OR deep_1dq9.CS.*) AND p.S>13",
         color_threshold=2,
         annotate=True,
         linkage_method=LinkageMethod.WARD,
         dendrogram_plot=figs.generated,
     )
-    assert medoids["C1"].pop() in ["default_1dq8.CS.0", "default_1dq9.CS.0"]
-    assert medoids["C1"].pop() in ["default_1dq8.CS.0", "default_1dq9.CS.0"]
+    assert medoids["C1"].pop() in ["deep_1dq8.CS.0", "deep_1dq9.CS.0"]
+    assert medoids["C1"].pop() in ["deep_1dq8.CS.0", "deep_1dq9.CS.0"]
     assert len(medoids["C1"]) == 0
 
     assert images_identical(figs.generated, figs.reference)
@@ -36,9 +36,9 @@ def test_calc_multivariate_hca(
 
 def test_calc_univariate_hca_fo(
     test_name,
-    load_deep_1dq9,
-    load_deep_1dq8,
-    load_deep_2tpr
+    load_1dq9,
+    load_1dq8,
+    load_2tpr
 ):
     dendro_figs = ResultFigures(f"{test_name}_dendro")
     heat_figs = ResultFigures(f"{test_name}_heat")
@@ -60,8 +60,8 @@ def test_calc_univariate_hca_fo(
 
 def test_calc_univariate_hca_jaccard(
     test_name,
-    load_deep_1dq8,
-    load_deep_1dq9
+    load_1dq8,
+    load_1dq9
 ):
     dendro_figs = ResultFigures(f"{test_name}_dendro")
     heat_figs = ResultFigures(f"{test_name}_heat")
@@ -90,7 +90,7 @@ def test_overlap():
     assert get_dce("NotFound", "%NH2") == 0
 
 
-def test_calc_fingerprint1(test_name, load_deep_1dq8):
+def test_calc_fingerprint1(test_name, load_1dq8):
 
     fpt_figs = ResultFigures(test_name)
     calc_fingerprints(
@@ -126,8 +126,8 @@ def test_calc_fingerprint2(test_name, load_1byq_and_lbaf3):
 
 def test_calc_fingerprint_clustering(
     test_name,
-    load_deep_1dq8,
-    load_deep_1dq9
+    load_1dq8,
+    load_1dq9
 ):
     fpt_figs = ResultFigures(f"{test_name}_fpt")
     dendro_figs = ResultFigures(f"{test_name}_dendro")
@@ -148,8 +148,6 @@ def test_calc_fingerprint_clustering(
 
 
 def test_load():
-    pm.reinitialize()
-
     ftmap = load_ftmap(
         f"{PKG_DATA_DIR}/2TPR.pdb",
         deep_search=True,
@@ -176,8 +174,6 @@ def test_load():
 
 
 def test_load_eftmap():
-    pm.reinitialize()
-
     ftmap = load_ftmap(
         PKG_DATA_DIR / 'p38_MAPK_1R39_pharm.pdb',
         "1R39",

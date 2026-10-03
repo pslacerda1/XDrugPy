@@ -9,9 +9,9 @@ from . import images_identical, ResultFigures
 
 def test_rmsf(
     test_name,
-    load_deep_1dq9,
-    load_deep_1dq8,
-    load_deep_2tpr,
+    load_1dq9,
+    load_1dq8,
+    load_2tpr,
 ):
     figs = ResultFigures(test_name)
     rmsf(

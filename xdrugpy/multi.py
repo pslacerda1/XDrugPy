@@ -216,9 +216,9 @@ def rmsf(
             frames.append(obj)
 
     site_sele = f"{reference} & polymer & ({reference} within {site_radius} of ({ref_site}))"
-    site_resis = []
+    site_resis = set()
     for at in pm.get_model(f"({site_sele}) & present & guide & polymer").atom:
-        site_resis.append((at.model, at.index))
+        site_resis.add((at.model, at.index))
     if not quiet:
         print(f"Aligning structures to {reference} with method {align_method}...")
 
