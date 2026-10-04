@@ -2,7 +2,7 @@
 # General
 numpy
 matplotlib
-
+StrEnum
 
 #
 # Tests
@@ -14,7 +14,6 @@ Pillow
 # Hotspots
 pandas
 scipy
-StrEnum
 
 #
 # Docking
