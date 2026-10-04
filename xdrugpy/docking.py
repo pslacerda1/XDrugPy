@@ -427,7 +427,7 @@ class Commander:
 
         # build and mit the text log
         text = ""
-        text += f"Return:\n\t{return_value}\n"
+        text += f"Return Value: {return_value}\n"
         if output:
             text += "Output:\n" + textwrap.indent(output, '\t')
         self.thread.logText.emit(text)
@@ -436,8 +436,8 @@ class Commander:
         success = return_value == 0
         color = {False: "red", True: "green"}[bool(success)]
         html = ""
-        html += "<br><b><i>Return Value</i></b>"
-        html += f"<font color={color}><pre>{return_value}</pre></font>"
+        html += "<br><br><b><i>Return Value</i></b>"
+        html += f"<font color={color}><p>{return_value}</p></font>"
         if output:
             html += f"<br><b><i>Output</i></b>"
             html += f"<br><font color={color}><pre>{escape_html(output)}</pre></font>"
