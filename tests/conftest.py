@@ -12,10 +12,13 @@ def test_name(request):
 @pytest.fixture(scope='session', autouse=True)
 def xdrugpy_install():
     try:
-        subprocess.check_call(
+        subprocess.check_output(
             ['xdrugpy_xhf', '--help']
         )
-    except subprocess.CalledProcessError:
+        subprocess.check_output(
+            ['vina', '--help']
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
         import xdrugpy
         xdrugpy.xdrugpy_install()
 

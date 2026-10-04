@@ -81,11 +81,18 @@ def xdrugpy_install(
             sys.executable, "-m", "pip", "install",
             "-r", f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
         ])
+        check_call([
+            sys.executable, "-m", "pip", "install", "numpy>=1.26.4,<2"
+        ])
+
+        check_call([
+            sys.executable, "-m", "pip", "install", "--no-deps",
+            "https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip"
+        ])
         try:
             check_call([
                 sys.executable, "-m", "pip", "install", "--no-deps",
                 "pyKVFinder==0.9.5",
-                "https://github.com/pslacerda1/pymol_new_command/archive/refs/heads/main.zip"
             ])
         except CalledProcessError as exc:
             print("Continuing without pyKVFinder.")
@@ -93,32 +100,32 @@ def xdrugpy_install(
     except CalledProcessError as exc:
         raise SystemError(f"XDrugPy: Installation failed.") from exc
 
-    # #
-    # # Install Vina
-    # #
-    # match system:
-    #     case "windows":
-    #         web_name = "vina_1.2.7_win.exe"
-    #     case "linux":
-    #         web_name = "vina_1.2.7_linux_x86_64"
-    #     case "darwin":
-    #         web_name = "vina_1.2.7_mac_x86_64"
-    #     case _:
-    #         raise RuntimeError("Unexpected system.")
+    #
+    # Install Vina
+    #
+    system = platform.system().lower()
+    match system:
+        case "windows":
+            web_name = "vina_1.2.7_win.exe"
+        case "linux":
+            web_name = "vina_1.2.7_linux_x86_64"
+        case "darwin":
+            web_name = "vina_1.2.7_mac_x86_64"
+        case _:
+            raise RuntimeError("Unexpected system.")
 
-    # url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{web_name}"
-    # exe = RESOURCES_DIR / 'vina'
-    # if system == "windows":
-    #     exe = exe.with_suffix('.exe')
-    # if exe.exists():
-    #     os.unlink(exe)
-    # urlretrieve(url, exe)
-    # os.chmod(exe, stat.S_IXUSR)
+    url = f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/{web_name}"
+    exe = RESOURCES_DIR / 'vina'
+    if system == "windows":
+        exe = exe.with_suffix('.exe')
+    if exe.exists():
+        os.unlink(exe)
+    urlretrieve(url, exe)
+    os.chmod(exe, stat.S_IXUSR)
 
     #
     # Install Clustal Omega
     #
-    system = platform.system().lower()
     match system:
         case "windows":
             web_name = "clustal-omega-1.2.2-win64.zip"
@@ -133,7 +140,7 @@ def xdrugpy_install(
             zipfile.ZipFile(local_zip).extractall(RESOURCES_DIR)
             for file in (RESOURCES_DIR / "clustal-omega-1.2.2-win64").glob("*"):
                 shutil.move(file, RESOURCES_DIR)
-            os.chmod(local_exe, stat.S_IEXEC)
+            os.chmod(local_exe, stat.S_IXUSR)
 
         case "darwin" | "linux":
             check_call([

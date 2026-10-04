@@ -11,7 +11,7 @@ import textwrap
 from glob import glob
 from html import escape as escape_html
 from pathlib import Path
-from typing import List
+from typing import Literal
 from operator import itemgetter
 from os.path import (
     expanduser,
@@ -149,7 +149,6 @@ def parse_out_pdbqt(ligand_pdbqt):
                         "mode": mode,
                     }
                 )
-
     return poses
 
 
@@ -401,7 +400,7 @@ class Commander:
     def __init__(self, thread: VinaThread) -> None:
         self.thread: VinaThread = thread
 
-    def _log_init(self, title: str, command: str) -> None:
+    def log_init(self, title: str, command: str) -> None:
         """
         Initialize a two-phase command log.
 
@@ -419,7 +418,7 @@ class Commander:
         html += f'<br><pre>{command}</pre>'
         self.thread.logHtml.emit(html)
 
-    def _log_finish(self, return_value: int, output: str | None) -> None:
+    def log_finish(self, return_value: int, output: str | None) -> None:
         """
         Finish a two-phase command log.
 
@@ -446,12 +445,12 @@ class Commander:
         self.thread.logHtml.emit(html)
 
     def run(self, title, command):
-        self._log_init(title, command)
+        self.log_init(title, command)
         process = subprocess.Popen(
             command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         output, _ = process.communicate()
-        self._log_finish(process.returncode, output[-1024*10:])
+        self.log_finish(process.returncode, output[-1024*10:])
         return process.returncode
 
 
@@ -523,6 +522,7 @@ class VinaEngine:
         box_margin: float = 0.0,
         ph: float = 7.0,
         allow_bad_res: bool = False,
+        whitepace: bool = True,
         from_lib: str = "",
         save_lib: str = "",
     ) -> bool:
@@ -558,34 +558,46 @@ class VinaEngine:
             center_x, center_y, center_z = center
             self.box_size = np.array((size_x, size_y, size_z)).round(2).tolist()
             self.box_center = np.array((center_x, center_y, center_z)).round(2).tolist()
-            receptor_pdb1 = self.project_dir / "receptor1.pdb"
-            receptor_pdb2 = self.project_dir / "receptor2.pdb"
+            receptor_pdb = self.project_dir / "receptor.pdb"
             receptor_pqr = self.project_dir / "receptor.pqr"
 
             #
             # Protonate receptor
             #
-            pm.save(receptor_pdb1, receptor_sele)
+            flags = ""
+            if whitepace:
+                flags += " --whitespace"
+
+            pm.save(receptor_pdb, receptor_sele)
             command = (
-                f'pdb2pqr --keep-chain --whitespace --ff PARSE --pdb-output "{receptor_pdb2}" --with-ph {ph}'
-                f' "{receptor_pdb1}" "{receptor_pqr}"'
+                f'pdb2pqr --keep-chain --ff AMBER --with-ph {ph}'
+                + flags +
+                f' "{receptor_pdb}" "{receptor_pqr}"'
             )
             rv = self.cmd.run('ADDING_RECEPTOR_HYDROGENS', command)
             if rv != 0:
                 return False
 
+            pm.delete(".receptor_pqr")
+            pm.load(receptor_pqr, ".receptor_pqr")
+            pm.save(str(receptor_pdb), ".receptor_pqr")
+            pm.delete(".receptor_pqr")
+
             #
             # Run Meeko to prepare the receptor
             #
-            allow_bad_res = "--allow_bad_res" if allow_bad_res else ""
+            flags = ""
+            if allow_bad_res:
+                flags += " --allow_bad_res"
+
             command = (
                 f"python -m meeko.cli.mk_prepare_receptor"
-                f" {allow_bad_res}"
-                f' --read_pdb "{receptor_pdb2}"'
+                f' --read_pdb "{receptor_pdb}"'
                 f' -p "{self.receptor_pdbqt}"'
                 f" --default_altloc A"
                 f" --box_center {center_x:.2f} {center_y:.2f} {center_z:.2f}"
                 f" --box_size {size_x:.2f} {size_y:.2f} {size_z:.2f}"
+                + flags
             )
             rv = self.cmd.run('PREPARING_RECEPTOR', command)
             if rv != 0:
@@ -605,16 +617,26 @@ class VinaEngine:
 
     def prepare_ligands(
             self,
-            ligands_files_list: List[str | Path] | None = None,
-            ph: float = 7.0,
+            ligands_file: str | Path | None = None,
+            min_ph: float = 7.0,
+            max_ph: float = 7.0,
             cpu: int = 1,
             seed: int = 0,
-            skip_acidbase: bool = True,
-            skip_tautomers: bool = True,
+            skip_optmize_geometry: bool = False,
+            skip_alternate_ring_conformations: bool = False,
+            skip_tautomers: bool = False,
+            skip_enumerate_chiral_mol: bool = False,
+            skip_enumerate_double_bonds: bool = False,
+            let_tautomers_change_chirality: bool = False,
+            use_durrant_lab_filters: bool = False,
+            job_manager: Literal["multiprocessing", "mpi", "serial"] = "serial",
+            debug: bool = False,
             from_lib: str = "",
             save_lib: str = "",
     ) -> bool:
         self.queue_dir = self.project_dir / "queue"
+        self.prep_dir = self.project_dir / "preparation"
+
         from_lib_dir = LIGAND_LIBRARIES_DIR / from_lib
         save_lib_dir = LIGAND_LIBRARIES_DIR / save_lib
 
@@ -630,40 +652,78 @@ class VinaEngine:
             return True
 
         else:
-            skip_acidbase = "--skip_acidbase" if skip_acidbase else ""
-            skip_tautomers = "--skip_tautomers" if skip_tautomers else ""
-            scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.py'
-            if not scrub_path.exists():
-                scrub_path = Path(sysconfig.get_path('scripts')) / 'scrub.exe'
+            assert ligands_file, "Ligands files list must be provided or a library must be used."
 
-            for idx, ligands_file in enumerate(ligands_files_list):
-                ligands_sdf = self.project_dir / f"ligands_{idx}.sdf"
+            #
+            # Define parameters
+            #
 
-                # Scrubbing ligands
-                rv = self.cmd.run('SCRUBBING_LIGANDS', (
-                    f'python "{scrub_path}" -o "{ligands_sdf}" --cpu={cpu} --etkdg_rng_seed={seed}'
-                    f' --ph_high={ph} --ph_low={ph} {skip_acidbase} {skip_tautomers} "{ligands_file}"'
-                ))
-                if rv != 0:
-                    continue
+            flags = ""
+            if debug:
+                flags += " --add_pdb_output --add_html_output"
+            if skip_optmize_geometry:
+                flags += " --skip_optmize_geometry"
+            if skip_alternate_ring_conformations:
+                flags += " --skip_alternate_ring_conformations"
+            if skip_tautomers:
+                flags += " --skip_making_tautomers"
+            if skip_enumerate_chiral_mol:
+                flags += " --skip_enumerate_chiral_mol"
+            if skip_enumerate_double_bonds:
+                flags += " --skip_enumerate_double_bonds"
+            if let_tautomers_change_chirality:
+                flags += " --let_tautomers_change_chirality"
+            if use_durrant_lab_filters:
+                flags += " --use_durrant_lab_filters"
 
-                # Converting to PDBQT
-                rv = self.cmd.run('CONVERTING_LIGANDS_TO_PDBQT', (
-                    f"python -m meeko.cli.mk_prepare_ligand"
-                    f' -i "{ligands_sdf}" --multimol_outdir "{self.queue_dir}"'
-                ))
-                if rv != 0:
-                    continue
+            match job_manager:
+                case "mpi":
+                    runner = f"mpi4py -n {cpu} python -m mpi4py -m"
+                    job_manager_flags = " --job_manager mpi"
+                case "multiprocessing":
+                    runner = "python -m"
+                    job_manager_flags = f" --job_manager multiprocessing --num_processor {cpu}"
+                case "serial":
+                    runner = "python -m"
+                    job_manager_flags = f" --job_manager serial"
 
-            if save_lib:
-                shutil.rmtree(save_lib_dir, ignore_errors=True)
-                shutil.copytree(self.queue_dir, save_lib_dir)
-                n_ligands = len(os.listdir(save_lib_dir))
-                self.log('SAVED_STORED_LIGANDS', dict(
-                    save_lib_dir=save_lib_dir,
-                    n_ligands=n_ligands,
-                ))
-            return True
+            #
+            # Preparing ligands
+            #
+            ligands_file = Path(ligands_file)
+
+            #
+            # Generating 3D coordinates, protomers, etc
+            max_ph = max(max_ph, min_ph)
+            min_ph = min(max_ph, min_ph)
+            self.cmd.run(
+                'PREPARING_LIGAND_MODELS', (
+                    f'{runner} gypsum_dl'
+                    f' --source "{ligands_file}" --output_folder "{self.prep_dir}"'
+                    f' --max_ph={max_ph} --min_ph={min_ph}'
+                    f' --random_seed {seed}'
+                    + job_manager_flags
+                    + flags
+                )
+            )
+
+            #
+            # Converting to PDBQT
+            ligands_sdf = self.prep_dir / "gypsum_dl_success.sdf"
+            self.cmd.run('CONVERTING_LIGANDS_TO_PDBQT', (
+                f"python -m meeko.cli.mk_prepare_ligand"
+                f' -i "{ligands_sdf}" --multimol_outdir "{self.queue_dir}"'
+            ))
+
+        if save_lib:
+            shutil.rmtree(save_lib_dir, ignore_errors=True)
+            shutil.copytree(self.queue_dir, save_lib_dir)
+            n_ligands = len(os.listdir(save_lib_dir))
+            self.log('SAVED_STORED_LIGANDS', dict(
+                save_lib_dir=save_lib_dir,
+                n_ligands=n_ligands,
+            ))
+        return True
 
     def run_docking(
         self,
@@ -712,10 +772,9 @@ class VinaEngine:
                 project_dir=self.project_dir,
                 hr=True,
             ))
-        self.log('RUNNING_DOCKING', dict(
-            vina_command=vina_command,
-            hr=True,
-        ))
+
+        self.cmd.log_init('RUNNING_DOCKING', vina_command)
+
         self.janitor = ProgressJanitor(self, self.queue_dir, self.results_dir)
         self.observer = Observer()
         self.observer.schedule(self.janitor, str(self.results_dir))
@@ -741,10 +800,8 @@ class VinaEngine:
             stdout, _ = self.process.communicate()[-4096:]
             success = self.process.returncode == 0
 
-            self.log('DOCKING_FINISHED', dict(
-                success=success,
-                output=stdout,
-            ))
+            self.cmd.log_finish(self.process.returncode, stdout)
+
             self.janitor.ensure_integrity()
 
             n_results = len(list(self.results_dir.glob("*.pdbqt")))
@@ -1099,45 +1156,70 @@ def docking_gui():
     tab1_widget.setLayout(tab1_layout)
     tab_ligand.addTab(tab1_widget, "New library")
 
-    ligands_files_list = None
+    ligands_file = None
     ligands_button = QPushButton("Choose file...")
     tab1_layout.addRow("Ligands file:", ligands_button)
 
-    ligand_ph_spin = QDoubleSpinBox()
-    ligand_ph_spin.setRange(0.0, 14.0)
-    ligand_ph_spin.setValue(7.0)
-    ligand_ph_spin.setSingleStep(0.1)
-    ligand_ph_spin.setDecimals(1)
-    tab1_layout.addRow("Ligand pH:", ligand_ph_spin)
+    ligand_min_ph_spin = QDoubleSpinBox()
+    ligand_min_ph_spin.setRange(0.0, 14.0)
+    ligand_min_ph_spin.setValue(6.8)
+    ligand_min_ph_spin.setSingleStep(0.1)
+    ligand_min_ph_spin.setDecimals(1)
+    tab1_layout.addRow("Ligand pH:", ligand_min_ph_spin)
 
-    enumerate_acidbase_check = QCheckBox()
-    enumerate_acidbase_check.setChecked(False)
-    tab1_layout.addRow("Enumerate acid/base conjugates:", enumerate_acidbase_check)
+    ligand_max_ph_spin = QDoubleSpinBox()
+    ligand_max_ph_spin.setRange(0.0, 14.0)
+    ligand_max_ph_spin.setValue(7.4)
+    ligand_max_ph_spin.setSingleStep(0.1)
+    ligand_max_ph_spin.setDecimals(1)
+    tab1_layout.addRow("Max pH:", ligand_max_ph_spin)
 
-    enumerate_tautomers_check = QCheckBox()
-    enumerate_tautomers_check.setChecked(False)
-    tab1_layout.addRow("Enumerate tautomers:", enumerate_tautomers_check)
+    skip_optimize_geometry = QCheckBox()
+    skip_optimize_geometry.setChecked(False)
+    tab1_layout.addRow('Skip geometry optmization', skip_optimize_geometry)
 
-    molscrub_seed_spin = QSpinBox()
-    molscrub_seed_spin.setRange(0, 10000)
-    molscrub_seed_spin.setValue(1)
-    tab1_layout.addRow("Molscrub random seed:", molscrub_seed_spin)
+    skip_alternate_ring_conformations_check = QCheckBox()
+    skip_alternate_ring_conformations_check.setChecked(False)
+    tab1_layout.addRow('Skip ring conformations', skip_alternate_ring_conformations_check)
+
+    skip_tautomers_check = QCheckBox()
+    skip_tautomers_check.setChecked(False)
+    tab1_layout.addRow('Skip tautomers', skip_tautomers_check)
+
+    skip_enumerate_chiral_mol_check = QCheckBox()
+    skip_enumerate_chiral_mol_check.setChecked(False)
+    tab1_layout.addRow('Skip enumerate chiral centers', skip_enumerate_chiral_mol_check)
+
+    skip_enumerate_double_bonds_check = QCheckBox()
+    skip_enumerate_double_bonds_check.setChecked(False)
+    tab1_layout.addRow('Skip enumerate double bonds', skip_enumerate_double_bonds_check)
+
+    let_tautomers_change_chirality_check = QCheckBox()
+    let_tautomers_change_chirality_check.setChecked(False)
+    tab1_layout.addRow('Allow tautomers change chirality', let_tautomers_change_chirality_check)
+
+    use_durrant_lab_filters_check = QCheckBox()
+    use_durrant_lab_filters_check.setChecked(False)
+    tab1_layout.addRow('Use Durrant lab filters', use_durrant_lab_filters_check)
+
+    gypsum_seed_spin = QSpinBox()
+    gypsum_seed_spin.setRange(0, 10000)
+    gypsum_seed_spin.setValue(1)
+    tab1_layout.addRow("Gypsum-DL random seed:", gypsum_seed_spin)
 
     @ligands_button.clicked.connect
     def choose_ligands():
-        nonlocal ligands_files_list
-        ligands_files_list, _ = QFileDialog.getOpenFileNames(
+        nonlocal ligands_file
+        ligands_file, _ = QFileDialog.getOpenFileName(
             ligands_button,
-            "Ligand files",
+            "Ligands file",
             "",
-            "Ligand files (*.smi *.mol *.sdf)",
+            "Ligands files (*.smi *.sdf)",
         )
-        if not ligands_files_list:
+        if not ligands_file:
             return
-        label = basename(ligands_files_list[0])
-        if len(ligands_files_list) > 1:
-            label += ", ..."
-        ligands_button.setText(label)
+        label = Path(ligands_file)
+        ligands_button.setText(label.stem)
 
     #
     # Molecular library
@@ -1292,16 +1374,22 @@ def docking_gui():
                 # Handle ligands
                 #
                 if tab_lig_idx == 0:
-                    if not ligands_files_list:
+                    if not ligands_file:
                         return
 
                     engine.prepare_ligands(
-                        ligands_files_list=ligands_files_list,
-                        ph=ligand_ph_spin.value(),
-                        seed=molscrub_seed_spin.value(),
+                        ligands_file=ligands_file,
+                        min_ph=ligand_min_ph_spin.value(),
+                        max_ph=ligand_max_ph_spin.value(),
+                        seed=gypsum_seed_spin.value(),
                         cpu=cpu_spin.value(),
-                        skip_acidbase=not enumerate_acidbase_check.isChecked(),
-                        skip_tautomers=not enumerate_tautomers_check.isChecked(),
+                        skip_optmize_geometry=skip_optimize_geometry.isChecked(),
+                        skip_alternate_ring_conformations=skip_alternate_ring_conformations_check.isChecked(),
+                        skip_tautomers=skip_tautomers_check.isChecked(),
+                        skip_enumerate_chiral_mol=skip_enumerate_chiral_mol_check.isChecked(),
+                        skip_enumerate_double_bonds=skip_enumerate_double_bonds_check.isChecked(),
+                        let_tautomers_change_chirality=let_tautomers_change_chirality_check.isChecked(),
+                        use_durrant_lab_filters=use_durrant_lab_filters_check.isChecked(),
                         save_lib=compound_library_line.text().strip(),
                     )
                 elif tab_lig_idx == 1:
