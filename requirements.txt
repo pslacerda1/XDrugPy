@@ -18,7 +18,7 @@ scipy
 #
 # Docking
 watchdog
-https://github.com/durrantlab/gypsum_dl.git@v2.0.0#egg=gypsum_dl
+https://github.com/durrantlab/gypsum_dl/archive/refs/tags/v2.0.0.zip
     mpi4py>=4.0.1,<5
 meeko
     rdkit
