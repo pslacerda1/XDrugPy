@@ -82,7 +82,7 @@ def xdrugpy_install(
             "-r", f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
         ])
         check_call([
-            sys.executable, "-m", "pip", "install", "numpy>=1.26.4,<2"
+            sys.executable, "-m", "pip", "install", "numpy>=1.26.4,<2", "scipy>=1.17.1,<1.18"
         ])
 
         check_call([
