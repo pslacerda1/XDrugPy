@@ -630,7 +630,6 @@ class VinaEngine:
             skip_enumerate_double_bonds: bool = False,
             let_tautomers_change_chirality: bool = False,
             use_durrant_lab_filters: bool = False,
-            job_manager: Literal["multiprocessing", "mpi", "serial"] = "serial",
             debug: bool = False,
             from_lib: str = "",
             save_lib: str = "",
@@ -677,16 +676,10 @@ class VinaEngine:
             if use_durrant_lab_filters:
                 flags += " --use_durrant_lab_filters"
 
-            match job_manager:
-                case "mpi":
-                    runner = f"mpi4py -n {cpu} python -m mpi4py -m"
-                    job_manager_flags = " --job_manager mpi"
-                case "multiprocessing":
-                    runner = "python -m"
-                    job_manager_flags = f" --job_manager multiprocessing --num_processor {cpu}"
-                case "serial":
-                    runner = "python -m"
-                    job_manager_flags = f" --job_manager serial"
+            if cpu == 1:
+                job_manager_flags = f" --job_manager serial"
+            else:
+                job_manager_flags = f" --job_manager multiprocessing --num_processor {cpu}"
 
             #
             # Preparing ligands
@@ -699,7 +692,7 @@ class VinaEngine:
             min_ph = min(max_ph, min_ph)
             self.cmd.run(
                 'PREPARING_LIGAND_MODELS', (
-                    f'{runner} gypsum_dl'
+                    f'python -m gypsum_dl'
                     f' --source "{ligands_file}" --output_folder "{self.prep_dir}"'
                     f' --max_ph={max_ph} --min_ph={min_ph}'
                     f' --random_seed {seed}'
@@ -1010,6 +1003,7 @@ class VinaThreadDialog(QDialog):
 
 
 dialog = None
+CPU_COUNT = QThread.idealThreadCount()
 
 def docking_gui():
     global dialog
@@ -1161,6 +1155,11 @@ def docking_gui():
     ligands_button = QPushButton("Choose file...")
     tab1_layout.addRow("Ligands file:", ligands_button)
 
+    gypsum_cpu_spin = QSpinBox()
+    gypsum_cpu_spin.setRange(1, CPU_COUNT)
+    gypsum_cpu_spin.setValue(CPU_COUNT - 1)
+    tab1_layout.addRow("Number of CPUs:", gypsum_cpu_spin)
+
     ligand_min_ph_spin = QDoubleSpinBox()
     ligand_min_ph_spin.setRange(0.0, 14.0)
     ligand_min_ph_spin.setValue(6.8)
@@ -1282,11 +1281,10 @@ def docking_gui():
     energy_range_spin.setValue(3.0)
     options_group_layout.addRow("Energy range:", energy_range_spin)
 
-    cpu_count = QThread.idealThreadCount()
-    cpu_spin = QSpinBox()
-    cpu_spin.setRange(1, cpu_count)
-    cpu_spin.setValue(cpu_count - 1)
-    options_group_layout.addRow("Number of CPUs:", cpu_spin)
+    vina_cpu_spin = QSpinBox()
+    vina_cpu_spin.setRange(1, CPU_COUNT)
+    vina_cpu_spin.setValue(CPU_COUNT - 1)
+    options_group_layout.addRow("Number of CPUs:", vina_cpu_spin)
 
     vina_seed_spin = QSpinBox()
     vina_seed_spin.setRange(0, 10000)
@@ -1383,7 +1381,7 @@ def docking_gui():
                         min_ph=ligand_min_ph_spin.value(),
                         max_ph=ligand_max_ph_spin.value(),
                         seed=gypsum_seed_spin.value(),
-                        cpu=cpu_spin.value(),
+                        cpu=gypsum_cpu_spin.value(),
                         skip_optmize_geometry=skip_optimize_geometry.isChecked(),
                         skip_alternate_ring_conformations=skip_alternate_ring_conformations_check.isChecked(),
                         skip_tautomers=skip_tautomers_check.isChecked(),
@@ -1405,7 +1403,7 @@ def docking_gui():
                     num_modes=num_modes_spin.value(),
                     min_rmsd=min_rmsd_spin.value(),
                     energy_range=energy_range_spin.value(),
-                    cpu=cpu_spin.value(),
+                    cpu=vina_cpu_spin.value(),
                     seed=vina_seed_spin.value(),
                     continuation=False
                 )
