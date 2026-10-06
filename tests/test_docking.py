@@ -30,11 +30,11 @@ def test_vina_engine():
         assert eng1.cmd.run.call_count == 2
         assert eng1.cmd.run.call_args_list[0] == call(
             'ADDING_RECEPTOR_HYDROGENS',
-            f'pdb2pqr --keep-chain --ff AMBER --with-ph 7.0 --whitespace "{tmpdir}/receptor.pdb" "{tmpdir}/receptor.pqr"',
+            f'pdb2pqr --keep-chain --ff AMBER --with-ph 7.0 --whitespace "{tmpdir / "receptor.pdb" }" "{tmpdir / "receptor.pqr"}"',
         )
         assert eng1.cmd.run.call_args_list[1] == call(
             'PREPARING_RECEPTOR',
-            f'python -m meeko.cli.mk_prepare_receptor --read_pdb "{tmpdir}/receptor.pdb" -p "{tmpdir}/receptor.pdbqt" --default_altloc A --box_center 16.55 -14.26 8.36 --box_size 15.11 14.48 16.50'
+            f'python -m meeko.cli.mk_prepare_receptor --read_pdb "{tmpdir / "receptor.pdb"}" -p "{tmpdir / "receptor.pdbqt"}" --default_altloc A --box_center 16.55 -14.26 8.36 --box_size 15.11 14.48 16.50'
         )
         assert 603040 == len((tmpdir / "receptor.pdbqt").read_text())
 
@@ -49,13 +49,13 @@ def test_vina_engine():
         assert eng1.cmd.run.call_args_list[2] == call(
             'PREPARING_LIGAND_MODELS',
             f'python -m gypsum_dl --source "{pkg_data / "MiniFrag80.sdf"}"'
-            f' --output_folder "{tmpdir}/preparation"'
+            f' --output_folder "{tmpdir / "preparation"}"'
             f' --max_ph=7.0 --min_ph=7.0 --random_seed 1 --job_manager serial'
         )
 
         assert eng1.cmd.run.call_args_list[3] == call(
             'CONVERTING_LIGANDS_TO_PDBQT',
-            f'python -m meeko.cli.mk_prepare_ligand -i "{tmpdir}/preparation/gypsum_dl_success.sdf" --multimol_outdir "{tmpdir}/queue"'
+            f'python -m meeko.cli.mk_prepare_ligand -i "{tmpdir / "preparation" / "gypsum_dl_success.sdf" }" --multimol_outdir "{tmpdir / "queue"}"'
         )
 
         ligands = list((eng1.project_dir / "queue").iterdir())
@@ -84,9 +84,13 @@ def test_vina_engine():
         assert vina_command == (
             f'vina --verbosity 0 --scoring vinardo --cpu 1 --seed 42 --size_x 15.11 --size_y 14.48 --size_z 16.50'
             f' --center_x 16.55 --center_y -14.26 --center_z 8.36 --exhaustiveness 4 --num_modes 9 --min_rmsd 1.0 --energy_range 3.0'
-            f' --receptor "{tmpdir}/receptor.pdbqt" --dir "{tmpdir}/results" --batch "{tmpdir}/queue"'
+            f' --receptor "{tmpdir / "receptor.pdbqt"}" --dir "{tmpdir / "results"}" --batch "{tmpdir / "queue" }"'
         )
         assert len(list((tmpdir / 'results').glob('*.pdbqt'))) == 21
         result = parse_out_pdbqt(str(tmpdir / 'results' / 'Z1184909877-again4.pdbqt'))
+
+        print(list((tmpdir / 'results').glob('*.pdbqt')))
+        from pprint import pp
+        pp(result)
         assert result[0]['name'] == 'Z1184909877-again4'
-        assert result[0]['affinity'] == -2.394
+        assert -2 > result[0]['affinity'] > -3

@@ -82,7 +82,7 @@ def xdrugpy_install(
             "-r", f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
         ])
         check_call([
-            sys.executable, "-m", "pip", "install", "numpy>=1.26.4,<2", "scipy>=1.17.1,<1.18"
+            sys.executable, "-m", "pip", "install", "numpy==1.26.4", "scipy==1.15.3"
         ])
 
         check_call([
@@ -160,9 +160,9 @@ def xdrugpy_install(
         case _:
             raise RuntimeError("Unexpected system.")
     if program_version == "latest":
-        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/latest/download/{web_name}"
+        url = f"https://github.com/pslacerda1/xdrugpy_xhf/releases/latest/download/{web_name}"
     else:
-        url = f"https://github.com/pslacerda1/xdrugpy_hotspot_finder/releases/download/{program_version}/{web_name}"
+        url = f"https://github.com/pslacerda1/xdrugpy_xhf/releases/download/{program_version}/{web_name}"
     exe = RESOURCES_DIR / "xdrugpy_xhf"
     if system == "windows":
         exe = exe.with_suffix('.exe')

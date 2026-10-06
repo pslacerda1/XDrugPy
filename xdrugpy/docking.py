@@ -131,7 +131,8 @@ def display_box(name, max_coords, min_coords):
 
 
 def parse_out_pdbqt(ligand_pdbqt):
-    name = basename(ligand_pdbqt)[:-6]
+    ligand_pdbqt = Path(ligand_pdbqt)
+    name = ligand_pdbqt.stem
     poses = []
     with open(ligand_pdbqt) as file:
         for line in file:

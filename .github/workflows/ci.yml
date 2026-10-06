@@ -39,12 +39,6 @@ jobs:
           activate-environment: test-env
           auto-activate: true
 
-      - name: Setup Rattle Solver
-        run: |
-          conda install --name base conda-rattler-solver
-          conda config --set solver rattler
-          conda config --append channels conda-pypi
-
       - name: Install PyMOL and Conda Dependencies
         run: |
           conda install \
@@ -66,7 +60,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest -v
+          pytest -vv --maxfail=1 -rf
 
       - name: Upload Failed Plots
         uses: actions/upload-artifact@v4
