@@ -1,4 +1,5 @@
 import sys
+import json
 import os
 import platform
 import shutil
@@ -6,8 +7,10 @@ import stat
 import zipfile
 from tempfile import mkdtemp
 from pathlib import Path
+import urllib.request
 from urllib.request import urlretrieve
 from subprocess import check_call, CalledProcessError
+from textwrap import dedent
 from pymol import cmd as pm
 from pymol import Qt
 
@@ -64,22 +67,33 @@ TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
 PLUGIN_VERSION_DEFAULT = "master"
-PROGRAM_VERSION_DEFAULT = "latest"
+RUST_PROGRAM_VERSION = "v.40"
+
+VERSION_FILE = Path(RESOURCES_DIR) / "version.txt"
 
 
 @pm.extend
-def xdrugpy_install(
-    plugin_version=PLUGIN_VERSION_DEFAULT,
-    program_version=PROGRAM_VERSION_DEFAULT
-):
+def xdrugpy_install(plugin_version=PLUGIN_VERSION_DEFAULT):
+
+    # Record a version file
+    github_repo_url = f"https://api.github.com/repos/pslacerda1/XDrugPy/commits/{plugin_version}"
+    with urllib.request.urlopen(github_repo_url) as response:
+        text = response.read().decode("utf-8")
+    
+    data = json.loads(text)
+    version_sha = data['sha']
+    version_date = data['commit']['committer']['date']
+
+    VERSION_FILE.write_text(version_sha + '\n' + version_date)
+    
     try:
         check_call([
             sys.executable, "-m", "pip", "install",
-            f"https://github.com/pslacerda1/XDrugPy/archive/{plugin_version}.zip",
+            f"https://github.com/pslacerda1/XDrugPy/archive/{version_sha}.zip",
         ])
         check_call([
             sys.executable, "-m", "pip", "install",
-            "-r", f"https://raw.githubusercontent.com/pslacerda1/XDrugPy/{plugin_version}/requirements.txt"
+            "-r", f"http://raw.githubusercontent.com/pslacerda1/XDrugPy/{version_sha}/requirements.txt"
         ])
         check_call([
             sys.executable, "-m", "pip", "install", "numpy==1.26.4", "scipy==1.15.3"
@@ -159,10 +173,7 @@ def xdrugpy_install(
             web_name = "xdrugpy_xhf-macos"
         case _:
             raise RuntimeError("Unexpected system.")
-    if program_version == "latest":
-        url = f"https://github.com/pslacerda1/xdrugpy_xhf/releases/latest/download/{web_name}"
-    else:
-        url = f"https://github.com/pslacerda1/xdrugpy_xhf/releases/download/{program_version}/{web_name}"
+    url = f"https://github.com/pslacerda1/xdrugpy_xhf/releases/download/{RUST_PROGRAM_VERSION}/{web_name}"
     exe = RESOURCES_DIR / "xdrugpy_xhf"
     if system == "windows":
         exe = exe.with_suffix('.exe')
@@ -197,10 +208,12 @@ def __init_plugin__(app=None):
     __init_docking__()
     __init_multi__()
 
-    from textwrap import dedent
-    print(dedent("""
-        DRUGpy version 2.0a (a.k.a. Newer and Faster).
-            Please read and cite: http://doi.com.br
+    version_sha, version_date = VERSION_FILE.read_text().strip().splitlines()
+    print(dedent(f"""
+        XDrugPy pre-release candidate
+         Cite the old DOI:  https://doi.org/10.1007/s10822-021-00403-8
+            Github commit:  {version_sha}
+              Commit date:  {version_date}
     """))
 
 
