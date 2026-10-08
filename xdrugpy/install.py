@@ -9,13 +9,14 @@ import urllib.request
 from urllib.request import urlretrieve
 from subprocess import check_call, CalledProcessError
 
+from . import VERSION_FILE, RESOURCES_DIR
+
 
 RUST_PROGRAM_VERSION = "v.40"
 
 
 def install_plugin(plugin_version):
 
-    from .commons import VERSION_FILE, RESOURCES_DIR
 
     #
     # Record a version file

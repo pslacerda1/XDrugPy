@@ -18,7 +18,8 @@ from scipy.spatial import distance, distance_matrix
 from scipy.stats import pearsonr
 from strenum import StrEnum
 
-from .commons import TEMPDIR, Selection, clustal_omega, plot_hca_base
+from . import TEMPDIR
+from .commons import Selection, clustal_omega, plot_hca_base
 
 
 def _get_coords(sel: Selection, state=1):

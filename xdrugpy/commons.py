@@ -5,7 +5,6 @@ import subprocess
 import sys
 from collections import defaultdict, namedtuple
 from pathlib import Path
-from tempfile import mkdtemp
 
 import scipy.cluster.hierarchy as sch
 from matplotlib import axes
@@ -17,40 +16,11 @@ from scipy.cluster.hierarchy import linkage
 from scipy.spatial import distance
 from strenum import StrEnum
 
-#
-# Important directories
-#
-
-
-
-QStandardPaths = Qt.QtCore.QStandardPaths
-try:
-    _data_location = QStandardPaths.AppLocalDataLocation
-except AttributeError:
-    try:
-        _data_location = QStandardPaths.AppDataLocation
-    except AttributeError:
-        _data_location = QStandardPaths.StandardLocation.AppDataLocation
-RESOURCES_DIR = Path(
-    QStandardPaths.writableLocation(_data_location)
-) / "XDrugPy"
-RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
-
-LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/ligands/")
-LIGAND_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
-
-RECEPTOR_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/receptors/")
-RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
-
-TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
-
-
-VERSION_FILE = Path(RESOURCES_DIR) / "version.txt"
+from . import RESOURCES_DIR
 
 #
 # Configure executable PATH
 #
-import os
 os.environ["PATH"] = str(RESOURCES_DIR) + os.pathsep + os.environ["PATH"]
 os.environ["PATH"] = str(RESOURCES_DIR) + "/PyMOL" + os.pathsep + os.environ["PATH"]
 

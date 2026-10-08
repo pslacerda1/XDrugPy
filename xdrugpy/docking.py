@@ -1,50 +1,65 @@
-import re
-import os
-import subprocess
 import itertools
-import shutil
-import textwrap
 import json
+import os
+import re
+import shutil
+import subprocess
 import sys
-import sysconfig
 import textwrap
 from glob import glob
 from html import escape as escape_html
-from pathlib import Path
-from typing import Literal
 from operator import itemgetter
 from os.path import (
+    basename,
     expanduser,
     splitext,
-    basename,
 )
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from pymol import cmd as pm
-from pymol.cgo import CYLINDER, SPHERE, COLOR
 from pymol import Qt
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, DirCreatedEvent
-
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from pymol import cmd as pm
+from pymol.cgo import COLOR, CYLINDER, SPHERE
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QIcon, QPalette, QTextCursor
 from PyQt5.QtWidgets import (
-    QWidget, QScrollArea, QFileDialog, QFormLayout, QPushButton,
-    QSpinBox, QDoubleSpinBox, QDockWidget, QLineEdit, QCheckBox,
-    QApplication, QVBoxLayout, QTextEdit, QDialog, QDialogButtonBox,
-    QDesktopWidget, QProgressBar, QComboBox, QTabWidget, QTableWidget,
-    QTableWidgetItem, QHeaderView, QFrame, QMessageBox
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDesktopWidget,
+    QDialog,
+    QDialogButtonBox,
+    QDockWidget,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHeaderView,
+    QLineEdit,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt5.QtGui import QPalette, QTextCursor, QIcon
+from watchdog.events import DirCreatedEvent, FileCreatedEvent, FileSystemEventHandler
+from watchdog.observers import Observer
 
-
-from .commons import (
-    kill_process,
-    PyMOLComboObjectBox,
+from . import (
     LIGAND_LIBRARIES_DIR,
     RECEPTOR_LIBRARIES_DIR,
 )
-
+from .commons import (
+    PyMOLComboObjectBox,
+    kill_process,
+)
 
 #
 # General utilities
