@@ -7,5 +7,8 @@ def xdrugpy_install(plugin_version):
     install.install_plugin(plugin_version)
 
 
-from .public import *
+from .hotspots import *
+from .docking import *
+from .multi import *
+
 from .public import __ALL__, __init_plugin__
