@@ -18,9 +18,12 @@ def xdrugpy_install():
         subprocess.check_output(
             ['vina', '--help']
         )
+        subprocess.check_output(
+            ['python', '-m', 'pdb2pqr', '--help']
+        )
     except (subprocess.CalledProcessError, FileNotFoundError):
         import xdrugpy
-        xdrugpy.xdrugpy_install()
+        xdrugpy.xdrugpy_install("master")
 
 
 @pytest.fixture(scope='session', autouse=True)

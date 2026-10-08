@@ -30,7 +30,7 @@ def test_vina_engine():
         assert eng1.cmd.run.call_count == 2
         assert eng1.cmd.run.call_args_list[0] == call(
             'ADDING_RECEPTOR_HYDROGENS',
-            f'pdb2pqr --keep-chain --ff AMBER --with-ph 7.0 --whitespace "{tmpdir / "receptor.pdb" }" "{tmpdir / "receptor.pqr"}"',
+            f'python -m pdb2pqr --keep-chain --ff AMBER --with-ph 7.0 --whitespace "{tmpdir / "receptor.pdb" }" "{tmpdir / "receptor.pqr"}"',
         )
         assert eng1.cmd.run.call_args_list[1] == call(
             'PREPARING_RECEPTOR',

@@ -571,7 +571,7 @@ class VinaEngine:
 
             pm.save(receptor_pdb, receptor_sele)
             command = (
-                f'pdb2pqr --keep-chain --ff AMBER --with-ph {ph}'
+                f'python -m pdb2pqr --keep-chain --ff AMBER --with-ph {ph}'
                 + flags +
                 f' "{receptor_pdb}" "{receptor_pqr}"'
             )
