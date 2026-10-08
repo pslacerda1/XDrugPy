@@ -1,39 +1,39 @@
 import itertools
 import os
-import subprocess
 import signal
+import subprocess
 import sys
+from collections import defaultdict, namedtuple
 from pathlib import Path
 from tempfile import mkdtemp
-import scipy.cluster.hierarchy as sch
-from collections import defaultdict
-from shutil import rmtree
-from matplotlib import pyplot as plt, axes
-from scipy.spatial import distance
-from scipy.cluster.hierarchy import linkage
-from collections import namedtuple
-from strenum import StrEnum
-from pymol import Qt, cmd as pm
-from pymol_new_command import new_command
 
+import scipy.cluster.hierarchy as sch
+from matplotlib import axes
+from matplotlib import pyplot as plt
 from pymol import Qt
+from pymol import cmd as pm
+from pymol_new_command import new_command
+from scipy.cluster.hierarchy import linkage
+from scipy.spatial import distance
+from strenum import StrEnum
+
+#
+# Important directories
+#
+
 
 
 QStandardPaths = Qt.QtCore.QStandardPaths
-
-
 try:
-    data_location = QStandardPaths.AppLocalDataLocation
+    _data_location = QStandardPaths.AppLocalDataLocation
 except AttributeError:
     try:
-        data_location = QStandardPaths.AppDataLocation
+        _data_location = QStandardPaths.AppDataLocation
     except AttributeError:
-        data_location = QStandardPaths.StandardLocation.AppDataLocation
-
+        _data_location = QStandardPaths.StandardLocation.AppDataLocation
 RESOURCES_DIR = Path(
-    QStandardPaths.writableLocation(data_location)
+    QStandardPaths.writableLocation(_data_location)
 ) / "XDrugPy"
-
 RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
 
 LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/ligands/")
@@ -45,20 +45,25 @@ RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
 
-PLUGIN_VERSION_DEFAULT = "master"
-
 VERSION_FILE = Path(RESOURCES_DIR) / "version.txt"
 
-
+#
+# Configure executable PATH
+#
+import os
 os.environ["PATH"] = str(RESOURCES_DIR) + os.pathsep + os.environ["PATH"]
 os.environ["PATH"] = str(RESOURCES_DIR) + "/PyMOL" + os.pathsep + os.environ["PATH"]
 
 
-Selection = str
 
+Selection = str
 
 Residue = namedtuple("Residue", "model index resi chain resn oneletter conservation")
 
+
+#
+# Utilties
+#
 
 def configure_matplotlib(style=None, backend=None, params=None):
     import matplotlib.style

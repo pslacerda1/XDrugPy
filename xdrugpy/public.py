@@ -1,5 +1,3 @@
-from textwrap import dedent
-
 __ALL__ = [
     "xdrugpy_install",
 
@@ -52,8 +50,9 @@ def __init_plugin__(app=None):
     __init_docking__()
     __init_multi__()
     
+    from textwrap import dedent
     from .commons import VERSION_FILE
-    
+
     version_sha, version_date = VERSION_FILE.read_text().strip().splitlines()
     print(dedent(f"""
         XDrugPy pre-release candidate
@@ -62,14 +61,15 @@ def __init_plugin__(app=None):
               Commit date:  {version_date}
     """))
 
-# try:
-#     from .hotspots import (
-#         load_ftmap, get_fo, get_dc, get_dce,
-#         calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
-#         calc_fingerprints,
-#         LinkageMethod, OverlapFunction, UnivariateMethod, MultivariateDistanceMethod
-#     )
-#     from .commons import configure_matplotlib
-# except ImportError as exc:
-#     import traceback
-#     traceback.print_exc()
+
+try:
+    from .hotspots import (
+        load_ftmap, get_fo, get_dc, get_dce,
+        calc_multivariate_hca, calc_univariate_hca, calc_overlap_matrix,
+        calc_fingerprints,
+        LinkageMethod, OverlapFunction, UnivariateMethod, MultivariateDistanceMethod
+    )
+    from .commons import configure_matplotlib
+except ImportError as exc:
+    import traceback
+    traceback.print_exc()

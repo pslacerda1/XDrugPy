@@ -4,26 +4,21 @@ import os.path
 import re
 import subprocess
 import tempfile
+from dataclasses import Field, asdict, dataclass, field
 from pathlib import Path
-from dataclasses import dataclass, field, asdict, Field
-from typing import Any, Optional, Literal, List, Dict, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr
-from scipy.spatial import distance_matrix, distance
-from scipy.cluster.hierarchy import linkage, leaves_list
 from matplotlib import pyplot as plt
-from strenum import StrEnum
 from pymol import cmd as pm
 from pymol_new_command import new_command
+from scipy.cluster.hierarchy import leaves_list, linkage
+from scipy.spatial import distance, distance_matrix
+from scipy.stats import pearsonr
+from strenum import StrEnum
 
-from .commons import (
-    Selection,
-    plot_hca_base,
-    clustal_omega,
-    TEMPDIR
-)
+from .commons import TEMPDIR, Selection, clustal_omega, plot_hca_base
 
 
 def _get_coords(sel: Selection, state=1):
@@ -43,11 +38,11 @@ class BaseHotspot:
 
     Coords: Any = field(repr=False, hash=False)
 
-    def save_into_properties(self):
-        d = asdict(self)
+    def save_into_properties(this):
+        d = asdict(this)
         del d['Coords']
         del d['Object']
-        _set_properties(self.Object, d)
+        _set_properties(this.Object, d)
 
     @classmethod
     def from_object_name(cls, obj_name: str):
