@@ -4,7 +4,10 @@ authors = [
   {name = "Pedro Sousa Lacerda", email = "pslacerda@gmail.com"},
 ]
 version = "2.0.0"
-description = "Protein hotspot detection, visualization and comparative analysis."
+description = """
+  Protein hotspot detection, visualization and comparative analysis \
+  on top of FTMap, FTMove, E-FTMap packed as a PyMOL plugin. \
+"""
 dependencies = [
   # managed by code
 ]
