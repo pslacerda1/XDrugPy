@@ -18,11 +18,11 @@ from strenum import StrEnum
 from pymol import cmd as pm
 from pymol_new_command import new_command
 
-from . import TEMPDIR
-from .utils import (
+from .commons import (
     Selection,
     plot_hca_base,
     clustal_omega,
+    TEMPDIR
 )
 
 

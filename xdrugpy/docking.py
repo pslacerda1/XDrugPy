@@ -38,14 +38,11 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPalette, QTextCursor, QIcon
 
 
-from . import (
-    LIGAND_LIBRARIES_DIR,
-    RECEPTOR_LIBRARIES_DIR,
-)
-
-from .utils import (
+from .commons import (
     kill_process,
     PyMOLComboObjectBox,
+    LIGAND_LIBRARIES_DIR,
+    RECEPTOR_LIBRARIES_DIR,
 )
 
 
@@ -538,11 +535,11 @@ class VinaEngine:
                 box_data = json.load(f)
             self.box_size = tuple(box_data["size"])
             self.box_center = tuple(box_data["center"])
-            self.log('RECOVERED_STORED_RECEPTOR', dict(
-                from_lib_pdbqt=from_lib_pdbqt,
-                box_size=self.box_size,
-                box_center=self.box_center,
-            ))
+            self.log('RECOVERED_STORED_RECEPTOR', {
+                "from_lib_pdbqt": from_lib_pdbqt,
+                "box_size": self.box_size,
+                "box_center": self.box_center,
+            })
             return True
         else:
             assert receptor_sele, "Receptor selection must be provided."

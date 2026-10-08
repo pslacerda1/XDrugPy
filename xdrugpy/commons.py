@@ -4,6 +4,7 @@ import subprocess
 import signal
 import sys
 from pathlib import Path
+from tempfile import mkdtemp
 import scipy.cluster.hierarchy as sch
 from collections import defaultdict
 from shutil import rmtree
@@ -15,6 +16,43 @@ from strenum import StrEnum
 from pymol import Qt, cmd as pm
 from pymol_new_command import new_command
 
+from pymol import Qt
+
+
+QStandardPaths = Qt.QtCore.QStandardPaths
+
+
+try:
+    data_location = QStandardPaths.AppLocalDataLocation
+except AttributeError:
+    try:
+        data_location = QStandardPaths.AppDataLocation
+    except AttributeError:
+        data_location = QStandardPaths.StandardLocation.AppDataLocation
+
+RESOURCES_DIR = Path(
+    QStandardPaths.writableLocation(data_location)
+) / "XDrugPy"
+
+RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
+
+LIGAND_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/ligands/")
+LIGAND_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
+
+RECEPTOR_LIBRARIES_DIR = Path(RESOURCES_DIR / "libs/receptors/")
+RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
+
+TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
+
+
+PLUGIN_VERSION_DEFAULT = "master"
+
+VERSION_FILE = Path(RESOURCES_DIR) / "version.txt"
+
+
+os.environ["PATH"] = str(RESOURCES_DIR) + os.pathsep + os.environ["PATH"]
+os.environ["PATH"] = str(RESOURCES_DIR) + "/PyMOL" + os.pathsep + os.environ["PATH"]
+
 
 Selection = str
 
@@ -23,7 +61,6 @@ Residue = namedtuple("Residue", "model index resi chain resn oneletter conservat
 
 
 def configure_matplotlib(style=None, backend=None, params=None):
-    """Configure Matplotlib for use in XDrugPy."""
     import matplotlib.style
     from matplotlib import pyplot as plt
 

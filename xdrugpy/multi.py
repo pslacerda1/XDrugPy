@@ -11,7 +11,7 @@ from pymol import CmdException
 from pymol.exporting import _resn_to_aa as RESN_TO_AA
 from pymol_new_command import new_command, Any
 
-from .utils import (
+from .commons import (
     PyMOLComboObjectBox,
     AligMethod,
     clustal_omega
