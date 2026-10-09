@@ -51,7 +51,7 @@ jobs:
             conda-forge::fontconfig \
             conda-forge::cairo
 
-          if [[ "${{ matrix.pymol-version }}" == "3.1.7.2]]
+          if [[ "${{ matrix.pymol-version }}" == "3.1.7.2"]]
           then
             conda install conda-forge::catch2==3.13
           fi
