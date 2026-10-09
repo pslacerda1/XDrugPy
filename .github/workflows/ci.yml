@@ -16,6 +16,7 @@ jobs:
         pymol-version: [
           "schrodinger::pymol==3.1.7.2",
           "schrodinger/label/pending::pymol==3.1.8",
+          "schrodinger/label/pending::pymol==3.1.9",
           # "conda-forge::pymol-open-source==3.1.0",
         ]
         exclude:
@@ -39,7 +40,7 @@ jobs:
           activate-environment: test-env
           auto-activate: true
 
-      - name: Install PyMOL
+      - name: Install PyMOL (and other conda dependencies for tests)
         run: |
           conda install \
             ${{ matrix.pymol-version }} \
