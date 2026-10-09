@@ -15,8 +15,8 @@ jobs:
         python-version: ["3.12", "3.11"]
         pymol-version: [
           "schrodinger::pymol==3.1.7.2",
+          "schrodinger::pymol==3.1.9",
           "schrodinger/label/pending::pymol==3.1.8",
-          "schrodinger/label/pending::pymol==3.1.9",
           # "conda-forge::pymol-open-source==3.1.0",
         ]
         exclude:
