@@ -1,10 +1,8 @@
 import io
-import numpy as np
-import matplotlib as mpl
-import cairosvg
 from pathlib import Path
-from PIL import Image, ImageChops, ImageStat
 
+import cairosvg
+from PIL import Image, ImageChops, ImageStat
 
 PKG_DATA_DIR = Path(__file__).parent / "data"
 

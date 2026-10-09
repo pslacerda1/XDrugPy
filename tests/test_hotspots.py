@@ -1,18 +1,19 @@
 from pymol import cmd as pm
 
 from xdrugpy.hotspots import (
-    load_ftmap,
-    calc_multivariate_hca,
-    calc_univariate_hca,
-    calc_fingerprints,
-    get_fo,
-    get_dce,
-    get_dco,
     LinkageMethod,
     UnivariateMethod,
+    calc_fingerprints,
+    calc_multivariate_hca,
+    calc_univariate_hca,
+    get_dce,
+    get_dco,
+    get_fo,
+    load_ftmap,
 )
 
-from . import images_identical, ResultFigures, PKG_DATA_DIR
+from . import PKG_DATA_DIR, ResultFigures, images_identical
+
 
 def test_calc_multivariate_hca(
     load_1dq9,
@@ -49,7 +50,7 @@ def test_calc_univariate_hca_fo(
         linkage_method=LinkageMethod.AVERAGE,
         only_medoids=False,
         radius=4,
-        annotate=False,
+        annotate=True,
         nclusters=3,
         dendrogram_plot=dendro_figs.generated,
         heatmap_plot=heat_figs.generated,

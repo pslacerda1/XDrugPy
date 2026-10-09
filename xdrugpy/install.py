@@ -93,7 +93,7 @@ def install_plugin(plugin_version):
         exe = exe.with_suffix('.exe')
     if exe.exists():
         os.unlink(exe)
-    urlretrieve(url, exe)
+    urlretrieve(url, filename=exe)
     os.chmod(exe, stat.S_IXUSR)
 
     #
@@ -141,3 +141,81 @@ def install_plugin(plugin_version):
             check_call([
                 'conda', 'install', '-y', 'bioconda::clustalo'
             ])
+
+
+# from pymol import Qt
+
+# QWidget = Qt.QtWidgets.QWidget
+# QFormLayout = Qt.QtWidgets.QFormLayout
+# QPushButton = Qt.QtWidgets.QPushButton
+# # QSpinBox = Qt.QtWidgets.QSpinBox
+# # QDoubleSpinBox = Qt.QtWidgets.QDoubleSpinBox
+# # QLineEdit = Qt.QtWidgets.QLineEdit
+# # QCheckBox = Qt.QtWidgets.QCheckBox
+# QVBoxLayout = Qt.QtWidgets.QVBoxLayout
+# # QHBoxLayout = Qt.QtWidgets.QHBoxLayout
+# QDialog = Qt.QtWidgets.QDialog
+# QComboBox = Qt.QtWidgets.QComboBox
+# # QTabWidget = Qt.QtWidgets.QTabWidget
+# # QLabel = Qt.QtWidgets.QLabel
+# # QTableWidget = Qt.QtWidgets.QTableWidget
+# # QTableWidgetItem = Qt.QtWidgets.QTableWidgetItem
+# # QGroupBox = Qt.QtWidgets.QGroupBox
+# QHeaderView = Qt.QtWidgets.QHeaderView
+# QTreeWidget = Qt.QtWidgets.QTreeWidget
+# QTreeWidgetItem = Qt.QtWidgets.QTreeWidgetItem
+
+# QtCore = Qt.QtCore
+# QIcon = Qt.QtGui.QIcon
+
+
+# def get_github_recent_commits() -> list[tuple[str, str]]:
+#     recent_commits_url = f"https://api.github.com/repos/pslacerda1/XDrugPy/commits"
+#     with urllib.request.urlopen(recent_commits_url) as response:
+#         text = response.read().decode("utf-8")
+#     data = json.loads(text)
+
+#     commit_ls: list[tuple[str, str]] = []
+#     for commit in data:
+#         sha = commit['sha']
+#         commit_url = f"https://api.github.com/repos/pslacerda1/XDrugPy/commits/{sha}"
+#         with urllib.request.urlopen(commit_url) as response:
+#             text = response.read().decode("utf-8")
+#             commit = json.loads(text)
+#             assert sha == commit['sha']
+#             date = commit['commiter']['date']
+#             commit_ls.append((sha, date))
+
+#     return commit_ls
+
+
+# class GithubShaComboBox(QComboBox):
+
+#     def __init__(self):
+#         super().__init__()
+#         self.setEditable(True)
+#         self.setInsertPolicy(QComboBox.NoInsert)
+#         self.setEditText("")
+#         self.recent_commits = get_github_recent_commits()
+
+#     def showPopup(self):
+#         currentText = self.currentText().strip()
+#         self.clear()
+#         self.addItems(self.recent_commits)
+#         if currentText != "":
+#             self.setCurrentText(currentText)
+#         super().showPopup()
+
+
+# class FechSimilarResultsDialog(QDialog):
+
+#     def __init__(self, data):
+#         super().__init__()
+#         self.setWindowTitle("(XDrugPy) Settings")
+
+#         self.layout = QFormLayout()
+#         self.setLayout(self.layout)
+
+#         self.shaCombo = GithubShaComboBox()
+#         layout.addRow("Github commit SHA:", self.shaCombo)
+

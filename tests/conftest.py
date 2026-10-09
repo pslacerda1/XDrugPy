@@ -1,6 +1,8 @@
 import subprocess
+
 import pytest
 from pymol import cmd as pm
+
 from . import PKG_DATA_DIR
 
 

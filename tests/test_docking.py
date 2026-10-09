@@ -1,9 +1,10 @@
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, call
-from pathlib import Path
-from pymol import cmd as pm
-from xdrugpy.docking import VinaEngine, parse_out_pdbqt
 
+from pymol import cmd as pm
+
+from xdrugpy.docking import VinaEngine, parse_out_pdbqt
 
 pkg_data = Path(__file__).parent / "data"
 
