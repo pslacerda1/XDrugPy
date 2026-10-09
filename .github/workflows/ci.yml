@@ -1,5 +1,9 @@
 name: tests
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 on: ["push", "pull_request"]
 
 jobs:
@@ -47,10 +51,20 @@ jobs:
             conda-forge::fontconfig \
             conda-forge::cairo
 
-          if [[ "${{ matrix.pymol-version }}" != *"3.1.8" ]]; then
+          if [[ "${{ matrix.pymol-version }}" == "3.1.7.2]]
+          then
             conda install conda-forge::catch2==3.13
           fi
+          if [[ "${{ matrix.pymol-version }}" == "3.1.8"]]
+          then
+            conda install conda-forge::catch2==3.16
+          fi
+          if [[ "${{ matrix.pymol-version }}" == "3.1.9"]]
+          then
+            conda install conda-forge::catch2==3.16
+          fi
 
+          
       - name: Install XDrugPy
         run: |
           pip install -e .
