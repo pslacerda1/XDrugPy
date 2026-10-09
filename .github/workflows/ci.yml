@@ -43,7 +43,13 @@ jobs:
           channels: schrodinger/label/pending, schrodinger, conda-forge, defaults
           activate-environment: test-env
           auto-activate: true
-
+      
+      # - name: Setup Rattle Solver
+      #   run: |
+      #     conda install conda-rattler-solver
+      #     conda config --set solver rattler
+      #     conda config --append channels conda-pypi
+        
       - name: Install PyMOL (and other conda dependencies for tests)
         run: |
           conda install \
@@ -93,12 +99,16 @@ jobs:
       
       - name: Conda-Lock
         if: always()
-        run: conda list --explicit > conda-lock.txt
+        run: |
+          conda list --explicit > conda-lock.txt
+          pip freeze > pip-lock.txt
       
       - name: Upload Conda-Lock
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: conda-lock
-          path: conda-lock.txt
+          name: lockfiles
+          path: |
+            conda-lock.txt
+            pip-lock.txt
           retention-days: 5
