@@ -1,22 +1,20 @@
-import sys
 import json
 import os
 import platform
 import shutil
 import stat
-import zipfile
+import sys
 import urllib.request
+import zipfile
+from subprocess import CalledProcessError, check_call
 from urllib.request import urlretrieve
-from subprocess import check_call, CalledProcessError
 
-from . import VERSION_FILE, RESOURCES_DIR
-
+from .paths import RESOURCES_DIR, VERSION_FILE
 
 RUST_PROGRAM_VERSION = "v.40"
 
 
 def install_plugin(plugin_version):
-
 
     #
     # Record a version file

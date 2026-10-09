@@ -16,7 +16,7 @@ from scipy.cluster.hierarchy import linkage
 from scipy.spatial import distance
 from strenum import StrEnum
 
-from . import RESOURCES_DIR
+from .paths import RESOURCES_DIR
 
 #
 # Configure executable PATH

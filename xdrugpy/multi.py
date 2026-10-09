@@ -1,22 +1,18 @@
-import time
 import logging
-from pathlib import Path
-from pymol import cmd as pm
-import numpy as np
+import time
 from collections import Counter
-from strenum import StrEnum
-import matplotlib.pyplot as plt
+from pathlib import Path
+
 import matplotlib.axes
+import matplotlib.pyplot as plt
+import numpy as np
 from pymol import CmdException
+from pymol import cmd as pm
 from pymol.exporting import _resn_to_aa as RESN_TO_AA
-from pymol_new_command import new_command, Any
+from pymol_new_command import Any, new_command
+from strenum import StrEnum
 
-from .commons import (
-    PyMOLComboObjectBox,
-    AligMethod,
-    clustal_omega
-)
-
+from .commons import AligMethod, PyMOLComboObjectBox, clustal_omega
 
 logging.getLogger("rcsbapi").setLevel(logging.CRITICAL)
 logging.getLogger("rcsbapi.search").setLevel(logging.CRITICAL)

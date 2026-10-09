@@ -51,7 +51,7 @@ def __init_plugin__(app=None):
     __init_multi__()
     
     from textwrap import dedent
-    from .commons import VERSION_FILE
+    from .paths import VERSION_FILE
 
     version_sha, version_date = VERSION_FILE.read_text().strip().splitlines()
     print(dedent(f"""

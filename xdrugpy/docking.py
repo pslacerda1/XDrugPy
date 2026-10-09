@@ -52,14 +52,11 @@ from PyQt5.QtWidgets import (
 from watchdog.events import DirCreatedEvent, FileCreatedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from . import (
-    LIGAND_LIBRARIES_DIR,
-    RECEPTOR_LIBRARIES_DIR,
-)
 from .commons import (
     PyMOLComboObjectBox,
     kill_process,
 )
+from .paths import LIGAND_LIBRARIES_DIR, RECEPTOR_LIBRARIES_DIR
 
 #
 # General utilities
