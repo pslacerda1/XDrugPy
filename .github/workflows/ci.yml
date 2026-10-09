@@ -39,7 +39,7 @@ jobs:
           activate-environment: test-env
           auto-activate: true
 
-      - name: Install PyMOL and Conda Dependencies
+      - name: Install PyMOL
         run: |
           conda install \
             ${{ matrix.pymol-version }} \
@@ -73,6 +73,6 @@ jobs:
         with:
           name: debug-images
           path: |
-            tests/data/*_gen.png
-            tests/data/*_ref.png
+            tests/data/*_gen.*
+            tests/data/*_ref.*
           retention-days: 5
