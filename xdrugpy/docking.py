@@ -54,7 +54,7 @@ from watchdog.observers import Observer
 
 from .commons import (
     PyMOLComboObjectBox,
-    kill_process,
+    kill_process_group,
 )
 from .paths import LIGAND_LIBRARIES_DIR, RECEPTOR_LIBRARIES_DIR
 
@@ -795,13 +795,15 @@ class VinaEngine:
             }
             if sys.platform == "win32":
                 kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+                kwargs["start_new_session"] = False
             else:
-                kwargs["preexec_fn"] = os.setsid
+                kwargs["creationflags"] = 0
+                kwargs["start_new_session"] = True
 
             self.process = subprocess.Popen(vina_command, **kwargs)
 
             stdout, _ = self.process.communicate()[-4096:]
-            success = self.process.returncode == 0
+            success: bool = self.process.returncode == 0
 
             self.cmd.log_finish(self.process.returncode, stdout)
 
@@ -811,22 +813,23 @@ class VinaEngine:
             n_queue = len(list(self.queue_dir.glob("*.pdbqt")))
             n_ligands = n_results + n_queue
 
-            self.log('DOCKING_SUMMARY', dict(
-                n_ligands=n_ligands,
-                n_results=n_results,
-                n_queue=n_queue,
-            ))
+            self.log('DOCKING_SUMMARY', {
+                "success": success,
+                "n_ligands": n_ligands,
+                "n_results": n_results,
+                "n_queue": n_queue,
+            })
         except Exception as exc:
-            self.log('EXCEPTION', dict(
-                exception=str(exc)
-            ))
+            self.log('EXCEPTION', {
+                "exception": str(exc)
+            })
         finally:
             self.stop()
 
     def stop(self):
         try:
             if self.process:
-                kill_process(self.process)
+                kill_process_group(self.process)
             if self.janitor:
                 self.janitor.stop_monitoring()
             if self.observer:

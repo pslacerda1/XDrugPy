@@ -345,41 +345,34 @@ def clustal_omega(seles, conservation="*:. ", titles=None) -> dict[str, list[Res
     return omega
 
 
-def kill_process(proc):
+def kill_process_group(proc, timeout=2):
     """
     Mata o processo corretamente, incluindo subprocessos
     """
     if proc.poll() is not None:
         return  # Já terminou
-
     try:
         if sys.platform == 'win32':
             # Windows - usar taskkill para matar árvore
             subprocess.call(
                 ['taskkill', '/F', '/T', '/PID', str(proc.pid)],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                timeout=timeout
             )
         else:
             # Unix - matar grupo de processos
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                proc.wait(timeout=3)
+                proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 # Se não terminou, força
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait()
-
-    except ProcessLookupError:
-        pass  # Processo já morreu
+        proc.wait(timeout=timeout)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        pass
     except Exception as e:
         print(f"Error killing process: {e}")
-        # Último recurso
-        try:
-            proc.kill()
-            proc.wait()
-        except:
-            pass
 
 
 from pymol import Qt

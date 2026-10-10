@@ -88,10 +88,7 @@ def test_vina_engine():
             f' --receptor "{tmpdir / "receptor.pdbqt"}" --dir "{tmpdir / "results"}" --batch "{tmpdir / "queue" }"'
         )
         assert len(list((tmpdir / 'results').glob('*.pdbqt'))) == 21
+        eng2.stop()
         result = parse_out_pdbqt(str(tmpdir / 'results' / 'Z1184909877-again4.pdbqt'))
-
-        print(list((tmpdir / 'results').glob('*.pdbqt')))
-        from pprint import pp
-        pp(result)
         assert result[0]['name'] == 'Z1184909877-again4'
         assert -2 > result[0]['affinity'] > -3
