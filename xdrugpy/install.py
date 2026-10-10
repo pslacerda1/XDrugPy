@@ -14,20 +14,32 @@ from .paths import RESOURCES_DIR, VERSION_FILE
 RUST_PROGRAM_VERSION = "v.40"
 
 
+def retrieve_github_url(url) -> bytes:
+    headers = {}
+    github_token = os.environ.get("GITHUB_TOKEN")
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        return resp.read()
+
+
 def install_plugin(plugin_version):
+
+    headers = {}
+    github_token = os.environ.get("GITHUB_TOKEN")
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
 
     #
     # Record a version file
     #
-    github_repo_url = f"https://api.github.com/repos/pslacerda1/XDrugPy/commits/{plugin_version}"
-    with urllib.request.urlopen(github_repo_url) as response:
-        text = response.read().decode("utf-8")
-    
+    url = f"https://api.github.com/repos/pslacerda1/XDrugPy/commits/{plugin_version}"
+    text = retrieve_github_url(url).decode()
     data = json.loads(text)
     version_sha = data['sha']
     version_date = data['commit']['committer']['date']
 
-    
     VERSION_FILE.write_text(version_sha + '\n' + version_date)
     
     #
@@ -91,9 +103,8 @@ def install_plugin(plugin_version):
     exe = RESOURCES_DIR / "xdrugpy_xhf"
     if system == "windows":
         exe = exe.with_suffix('.exe')
-    if exe.exists():
-        os.unlink(exe)
-    urlretrieve(url, filename=exe)
+    exe.unlink(missing_ok=True)
+    exe.write_bytes(retrieve_github_url(url))
     os.chmod(exe, stat.S_IXUSR)
 
     #
@@ -113,9 +124,8 @@ def install_plugin(plugin_version):
     exe = RESOURCES_DIR / 'vina'
     if system == "windows":
         exe = exe.with_suffix('.exe')
-    if exe.exists():
-        os.unlink(exe)
-    urlretrieve(url, exe)
+    exe.unlink(missing_ok=True)
+    exe.write_bytes(retrieve_github_url(url))
     os.chmod(exe, stat.S_IXUSR)
 
     #
@@ -123,15 +133,14 @@ def install_plugin(plugin_version):
     #   As a conda package (or downloading and unpacking the zipfile on Windows)
     match system:
         case "windows":
-            web_name = "clustal-omega-1.2.2-win64.zip"
             local_zip = RESOURCES_DIR / web_name
             local_exe = RESOURCES_DIR / 'clustalo.exe'
-            if local_zip.exists():
-                os.unlink(local_zip)
-            urlretrieve(
-                f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/misc/{web_name}",
-                local_zip
-            )
+            local_zip.unlink(missing_ok=True)
+            local_exe.unlink(missing_ok=True)
+            
+            url = f"https://github.com/pslacerda1/XDrugPy/raw/refs/heads/master/misc/clustal-omega-1.2.2-win64.zip"
+            local_zip.write_bytes(retrieve_github_url(url))
+
             zipfile.ZipFile(local_zip).extractall(RESOURCES_DIR)
             for file in (RESOURCES_DIR / "clustal-omega-1.2.2-win64").glob("*"):
                 shutil.move(file, RESOURCES_DIR)

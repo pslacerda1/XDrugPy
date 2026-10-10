@@ -5,6 +5,8 @@ from pymol import cmd as pm
 def xdrugpy_install(plugin_version):
     from . import install
     install.install_plugin(plugin_version)
+    print("XDrugPy installation finished!")
+
 
 
 from .public import *
