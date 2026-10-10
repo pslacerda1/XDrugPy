@@ -345,7 +345,7 @@ def clustal_omega(seles, conservation="*:. ", titles=None) -> dict[str, list[Res
     return omega
 
 
-def kill_process_group(proc, timeout=2):
+def kill_process_group(proc, timeout=5):
     """
     Mata o processo corretamente, incluindo subprocessos
     """
