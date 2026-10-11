@@ -7,11 +7,10 @@ import sys
 import urllib.request
 import zipfile
 from subprocess import CalledProcessError, check_call
-from urllib.request import urlretrieve
 
 from .paths import RESOURCES_DIR, VERSION_FILE
 
-RUST_PROGRAM_VERSION = "v.40"
+RUST_PROGRAM_VERSION = "v.46"
 
 
 def retrieve_github_url(url) -> bytes:

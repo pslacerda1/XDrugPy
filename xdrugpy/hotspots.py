@@ -208,13 +208,15 @@ def _extract_data_from_pdb_string(
             )
             cs.save_into_properties()
             clusters.append(cs)
-
-        elif not d['Object'].endswith('.protein'):
+        
+        elif '.K15.' in d['Object']:
+            klass = d['Class']
+            assert klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL']
             hs = Hotspot(
                 Group=d['Group'],
                 Object=d['Object'],
                 Coords=pm.get_coordset(d['Object']),
-                Class=d['Class'],
+                Class=klass,
                 ST=int(d['ST']),
                 S0=int(d['S0']),
                 S1=int(d['S1']),
@@ -475,19 +477,19 @@ def _load_ftmap(
         )
 
     for klass in ['D', 'DS', 'DL', 'B', 'BS', 'BL', 'CS', 'KV', 'ACS']:
-        pm.disable(f"{group}.{klass}")
+        pm.disable(f"{group}.K15.{klass}")
 
     if pretty:
         pm.hide("everything", f"{group}.*")
 
         pm.show("cartoon", f"{group}.protein")
-        pm.show("mesh", f"{group}.D* or {group}.B*")
+        pm.show("mesh", f"{group}.K15.D* or {group}.K15.B*")
 
         pm.show("spheres", f"{group}.ACS.*")
         pm.set("sphere_scale", 0.25, f"{group}.ACS.*")
 
-        pm.color("red", f"{group}.D*")
-        pm.color("salmon", f"{group}.B*")
+        pm.color("red", f"{group}.K15.D*")
+        pm.color("salmon", f"{group}.K15.B*")
 
         pm.color("red", f"{group}.ACS.acceptor.*")
         pm.color("blue", f"{group}.ACS.donor.*")
@@ -497,12 +499,12 @@ def _load_ftmap(
 
         pm.show("line", f"{group}.CS.*")
 
-        pm.order(f"{group}.BS", location="top")
-        pm.order(f"{group}.BL", location="top")
-        pm.order(f"{group}.B", location="top")
-        pm.order(f"{group}.DS", location="top")
-        pm.order(f"{group}.DL", location="top")
-        pm.order(f"{group}.D", location="top")
+        pm.order(f"{group}.K15.BS", location="top")
+        pm.order(f"{group}.K15.BL", location="top")
+        pm.order(f"{group}.K15.B", location="top")
+        pm.order(f"{group}.K15.DS", location="top")
+        pm.order(f"{group}.K15.DL", location="top")
+        pm.order(f"{group}.K15.D", location="top")
 
         pm.order(f"{group}.KV.*", location="top")
         pm.order(f"{group}.CS.*", location="top")
@@ -528,8 +530,8 @@ def _load_ftmap(
                 if hs.Class == klass
             ]
             if hs_list:
-                pm.group(group, f'{group}.{klass}')
-                pm.group(f'{group}.{klass}', ' '.join(hs_list))
+                pm.group(group, f'{group}.K15.{klass}')
+                pm.group(f'{group}.K15.{klass}', ' '.join(hs_list))
 
         for klass in ['acceptor',  'donor', 'halogen', 'aromatic', 'apolar']:
             acs_list = [
@@ -538,17 +540,9 @@ def _load_ftmap(
                 if acs.Class == klass
             ]
             if acs_list:
-                pm.group(group, f'{group}.{klass}')
-                pm.group(f'{group}.{klass}', ' '.join(acs_list))
-        # groups = [
-        #     name
-        #     for name in pm.get_names('group_objects')
-        #     if name.startswith(f"{group}.")
-        #         and pm.count_atoms(f"%{name}.*") == 0
-        # ]
-        # for grp in groups:
-        #     pm.delete(grp)
-
+                pm.group(group, f'{group}.K15.{klass}')
+                pm.group(f'{group}.K15.{klass}', ' '.join(acs_list))
+                
     return results
 
 

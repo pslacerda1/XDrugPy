@@ -17,7 +17,7 @@ def test_rmsf(
     rmsf(
         selection="deep_*.protein",
         reference="deep_1dq8.protein",
-        ref_site="deep_1dq8.DL.0",
+        ref_site="deep_1dq8.K15.DL.0",
         site_radius=4.0,
         axis=figs.generated,
     )

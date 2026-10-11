@@ -16,10 +16,11 @@ from . import PKG_DATA_DIR, ResultFigures, images_identical
 
 
 def test_calc_multivariate_hca(
+    test_name,
     load_1dq9,
     load_1dq8,
 ):
-    figs = ResultFigures('test_calc_multivariate_hca')
+    figs = ResultFigures(test_name)
 
     *_, medoids = calc_multivariate_hca(
         sele="(deep_1dq8.CS.* OR deep_1dq9.CS.*) AND p.S>13",
@@ -45,7 +46,7 @@ def test_calc_univariate_hca_fo(
     heat_figs = ResultFigures(f"{test_name}_heat")
 
     calc_univariate_hca(
-        sele="deep_1dq8.DL.* OR deep_1dq9.DL.* OR deep_2tpr.DL.*",
+        sele="deep_1dq8.K15.DL.* OR deep_1dq9.K15.DL.* OR deep_2tpr.K15.DL.*",
         dist_method=UnivariateMethod.FO_AVG,
         linkage_method=LinkageMethod.AVERAGE,
         only_medoids=False,
@@ -68,7 +69,7 @@ def test_calc_univariate_hca_jaccard(
     heat_figs = ResultFigures(f"{test_name}_heat")
 
     calc_univariate_hca(
-        sele="deep_1dq8.DL.* OR deep_1dq9.DL.*",
+        sele="deep_1dq8.K15.DL.* OR deep_1dq9.K15.DL.*",
         dist_method=UnivariateMethod.JACCARD,
         linkage_method=LinkageMethod.AVERAGE,
         only_medoids=False,
@@ -134,7 +135,7 @@ def test_calc_fingerprint_clustering(
     dendro_figs = ResultFigures(f"{test_name}_dendro")
 
     calc_fingerprints(
-        multi_seles="deep_1dq8.CS* OR deep_1dq8.D* / deep_1dq9.B* | deep_1dq9.D*",
+        multi_seles="deep_1dq8.CS* OR deep_1dq8.K15.D* / deep_1dq9.K15.B* | deep_1dq9.K15.D*",
         site='chain B',
         site_radius=0.0,
         contact_radius=4.0,
@@ -144,7 +145,7 @@ def test_calc_fingerprint_clustering(
         fingerprints_plot=fpt_figs.generated,
         dendrogram_plot=dendro_figs.generated,
     )
-    assert images_identical(fpt_figs.generated, fpt_figs.reference, rms_threshold=26.0)
+    assert images_identical(fpt_figs.generated, fpt_figs.reference)
     assert images_identical(dendro_figs.generated, dendro_figs.reference)
 
 
@@ -156,7 +157,7 @@ def test_load():
     )
     hotspots = ftmap.hotspots
     assert len(hotspots) == 42
-    assert hotspots[0].Object == '2TPR.DS.0'
+    assert hotspots[0].Object == '2TPR.K15.DS.0'
 
     ftmap = load_ftmap(
         f"{PKG_DATA_DIR}/1dqa_atlas.pdb",
