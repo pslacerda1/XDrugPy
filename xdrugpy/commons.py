@@ -95,14 +95,14 @@ def plot_hca_base(
     annotate,
     vmin=None,
     vmax=None,
-    rename_leafs=None,
+    rename_labels=None,
     nclusters=-1,
     color_threshold=-1.0,
     figure_title=None,
     dendrogram_plot=None,
     heatmap_plot=None,
 ):
-    for leaf_node, new_label in (rename_leafs or {}).items():
+    for leaf_node, new_label in (rename_labels or {}).items():
         idx = labels.index(leaf_node)
         labels[idx] = new_label
     if nclusters > 0 and color_threshold >= 0:

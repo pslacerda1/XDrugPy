@@ -6,11 +6,12 @@ import subprocess
 import tempfile
 from dataclasses import Field, asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 from pymol import cmd as pm
 from pymol_new_command import new_command
 from scipy.cluster.hierarchy import leaves_list, linkage
@@ -767,7 +768,7 @@ def calc_univariate_hca(
     omega_conservation: str = "*:.",
     only_medoids: bool = False,
     annotate: bool = False,
-    rename_leafs: Optional[Dict[str, str]] = None,
+    rename_labels: dict[str, str] | None = None,
     figure_title: str | None = None,
     dendrogram_plot: str | Path | bool  = True,
     heatmap_plot: str | Path | bool  = True,
@@ -812,7 +813,7 @@ def calc_univariate_hca(
             cells. Text color (black/white) is automatically adjusted for
             legibility based on the cell intensity.
 
-        rename_leafs:
+        rename_labels:
             A dictionary mapping PyMOL object names to user-friendly labels.
 
     RETURNS
@@ -846,7 +847,7 @@ def calc_univariate_hca(
         annotate=annotate,
         vmin=0.0,
         vmax=1.0,
-        rename_leafs=rename_leafs or {},
+        rename_labels=rename_labels or {},
         figure_title=figure_title,
         dendrogram_plot=dendrogram_plot,
         heatmap_plot=heatmap_plot,
@@ -941,12 +942,14 @@ class OverlapFunction(StrEnum):
 @new_command
 def calc_overlap_matrix(
     sele_a: str,
-    sele_b: Optional[str] = None,
-    function: OverlapFunction = OverlapFunction.FO,
+    sele_b: str | None = None,
+    function: OverlapFunction = OverlapFunction.FO_AVG,
     radius: float = 2.0,
     annotate: bool = False,
-    rename_leafs: Optional[Dict[str, str]] = None,
-    linkage_method: Optional[LinkageMethod] = None,
+    rename_labels: dict[str, str] | None = None,
+    linkage_method: LinkageMethod | None = None,
+    figure_title: str | None = None,
+    plot: str | Path | Axes | bool  = True,
 ):
     """
     DESCRIPTION
@@ -957,10 +960,6 @@ def calc_overlap_matrix(
         This is ideal for cross-comparing FTMap hotspots across different
         protein conformations or comparing a ligand to a set of probe clusters.
 
-    USAGE
-
-        plot_overlap_matrix sele_a [, sele_b [, function [, radius [, annotate]]]]
-
     ARGUMENTS
 
         sele_a: str
@@ -970,11 +969,9 @@ def calc_overlap_matrix(
             The selection for the horizontal axis (columns). If omitted or
             blank, it defaults to sele_a (creating a self-comparison matrix).
 
-        function: OverlapFunction, default=OverlapFunction.FO
-            The metric to calculate. Supported values:
-            - 'FO': Fraction of Overlap [0.0 - 1.0]
-            - 'DC': Distance Contacts (raw count)
-            - 'DCE': Distance Contact Efficiency (normalized)
+        function: OverlapFunction, default=fo_avg
+            The metric to calculate.
+            Values: fo, fo_avg, dc, dce, dco
 
         radius: float, default=2.0
             The distance cutoff (Angstroms) passed to the overlap function.
@@ -984,7 +981,7 @@ def calc_overlap_matrix(
             cells. Text color (black/white) is automatically adjusted for
             legibility based on the cell intensity.
 
-        rename_leafs:
+        rename_labels:
             A dictionary mapping PyMOL object names to user-friendly labels.
 
         linkage_method:
@@ -1031,12 +1028,15 @@ def calc_overlap_matrix(
         if obj not in obj_coords:
             obj_coords[obj] = _get_coords(obj)
 
+    rename_labels = rename_labels or {}
     for i1, a in enumerate(objs_a):
         row = []
+        lbl_a = rename_labels.get(a, a)
         for i2, b in enumerate(objs_b):
+            lbl_b = rename_labels.get(b, b)
             value = get_value(obj_coords[a], obj_coords[b], radius=radius)
             row.append(value)
-            ret.append([a, b, value])
+            ret.append([lbl_a, lbl_b, value])
         X.append(row)
 
     X = np.array(X)
@@ -1054,50 +1054,70 @@ def calc_overlap_matrix(
 
     X = X[idx_rows, :][:, idx_cols]
 
-    fig, ax = plt.subplots(constrained_layout=True)
-
+    ax = None
+    if plot:
+        if isinstance(plot, (str, Path)) or plot is True:
+            fig, ax = plt.subplots(constrained_layout=True)
+            if figure_title:
+                fig.suptitle(figure_title)
+        elif isinstance(plot, Axes):
+            ax = plot
+            fig = ax.get_figure(root=True)
+            assert fig
+            if figure_title:
+                ax.set_title(figure_title)
+    
     objs_a_lbl = []
     for obj_a in objs_a:
-        new_lbl = (rename_leafs or {}).get(obj_a, obj_a)
+        new_lbl = rename_labels.get(obj_a, obj_a)
         objs_a_lbl.append(new_lbl)
 
     objs_b_lbl = []
     for obj_b in objs_b:
-        new_lbl = (rename_leafs or {}).get(obj_b, obj_b)
+        new_lbl = rename_labels.get(obj_b, obj_b)
         objs_b_lbl.append(new_lbl)
+    if ax:
+        ax.set_yticks(range(len(objs_a)), np.array(objs_a_lbl)[idx_rows])
+        ax.set_xticks(range(len(objs_b)), np.array(objs_b_lbl)[idx_cols])
 
-    ax.set_yticks(range(len(objs_a)), np.array(objs_a_lbl)[idx_rows])
-    ax.set_xticks(range(len(objs_b)), np.array(objs_b_lbl)[idx_cols])
+        ax.tick_params(axis="x", rotation=90)
+        if function in [OverlapFunction.FO, OverlapFunction.FO_AVG, OverlapFunction.DCO]:
+            vmin = 0.0
+            vmax = 1.0
+        else:
+            vmin = None
+            vmax = None
+        image = ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
+        if not annotate:
+            fig.colorbar(image, ax=ax, shrink=0.8)
+        else:
+            nan_mask = np.isnan(X)
+            xmax = vmax or X[~nan_mask].max()
+            xmin = vmin or X[~nan_mask].min()
+            for i1 in range(len(objs_a)):
+                for i2 in range(len(objs_b)):
+                    y = X[i1, i2]
+                    if np.isnan(y):
+                        continue
+                    if (y - xmin)/(xmax - xmin) >= 0.5:
+                        color = "black"
+                    else:
+                        color = "white"
+                    if function == OverlapFunction.DC:
+                        label = f"{y}"
+                    else:
+                        label = f"{y:.2f}"
+                    ax.text(i2, i1, label, color=color, ha="center", va="center")
+    
+    if isinstance(plot, (str, Path)):
+        fig.set_layout_engine('compressed')
+        fig.savefig(str(plot))
+        plt.close(fig)
+    elif plot is True:
+        fig.show()
+    elif isinstance(plot, Axes):
+        pass
 
-    ax.tick_params(axis="x", rotation=90)
-    if function in [OverlapFunction.FO, OverlapFunction.FO_AVG]:
-        vmin = 0.0
-        vmax = 1.0
-    else:
-        vmin = None
-        vmax = None
-    image = ax.imshow(X, aspect="auto", vmin=vmin, vmax=vmax)
-    if not annotate:
-        fig.colorbar(image, ax=ax, shrink=0.8)
-
-    if annotate:
-        nan_mask = np.isnan(X)
-        xmax = vmax or X[~nan_mask].max()
-        xmin = vmin or X[~nan_mask].min()
-        for i1 in range(len(objs_a)):
-            for i2 in range(len(objs_b)):
-                y = X[i1, i2]
-                if np.isnan(y):
-                    continue
-                if (y - xmin)/(xmax - xmin) >= 0.5:
-                    color = "black"
-                else:
-                    color = "white"
-                if function == OverlapFunction.DC:
-                    label = f"{y}"
-                else:
-                    label = f"{y:.2f}"
-                ax.text(i2, i1, label, color=color, ha="center", va="center")
     return pd.DataFrame.from_records(ret, columns=['A', 'B', function.upper()])
 
 
@@ -1504,7 +1524,7 @@ def calc_multivariate_hca(
     only_medoids: bool = False,
     annotate: bool = False,
     dist_method: MultivariateDistanceMethod = MultivariateDistanceMethod.EUCLIDEAN,
-    rename_leafs: Optional[Dict[str, str]] = None,
+    rename_labels: dict[str, str] | None = None,
     figure_title: str | None = None,
     dendrogram_plot: str | Path | bool = True,
     heatmap_plot: str | Path | bool = True,
@@ -1551,7 +1571,7 @@ def calc_multivariate_hca(
         dist_method:
             The distance metric used to calculate the distance matrix (e.g., EUCLIDEAN).
 
-        rename_leafs:
+        rename_labels:
             A dictionary mapping internal PyMOL object names to user-friendly labels.
 
         figure_title:
@@ -1618,7 +1638,7 @@ def calc_multivariate_hca(
         nclusters=nclusters,
         only_medoids=only_medoids,
         annotate=annotate,
-        rename_leafs=rename_leafs or {},
+        rename_labels=rename_labels or {},
         figure_title=figure_title,
         heatmap_plot=heatmap_plot,
         dendrogram_plot=dendrogram_plot,
@@ -1680,6 +1700,141 @@ QDoubleValidator = Qt.QtGui.QDoubleValidator
 QKeySequence = Qt.QtGui.QKeySequence
 QValidator = Qt.QtGui.QValidator
 QApplication = Qt.QtWidgets.QApplication
+
+
+
+class SortableItem(QTableWidgetItem):
+    def __init__(self, obj, stringfy):
+        super().__init__()
+        self.setData(QtCore.Qt.ItemDataRole.EditRole, obj)
+        self.setData(QtCore.Qt.ItemDataRole.DisplayRole, stringfy(obj))
+
+    def __lt__(self, other):
+        this = self.data(QtCore.Qt.ItemDataRole.EditRole)
+        that = other.data(QtCore.Qt.ItemDataRole.EditRole)
+        return this < that
+
+
+class OptionalPositiveDoubleDelegate(QStyledItemDelegate):
+    """For the winner of ugliest API design championshop ever."""
+    class Validator(QDoubleValidator):
+        def validate(self, string, pos):
+            # Se a string estiver vazia, permitimos (retornamos Acceptable)
+            if not string:
+                return QValidator.Acceptable, string, pos
+
+            # Caso contrário, usamos a validação padrão de números
+            try:
+                float(string) > 0
+                return QValidator.Acceptable, string, pos
+            except ValueError:
+                return super().validate(string, pos)
+
+
+    def createEditor(self, parent, option, index):
+        editor = QLineEdit(parent)
+
+        validator = self.Validator(editor)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+
+        editor.setValidator(validator)
+        return editor
+
+
+class RenameTableWidget(QTableWidget):
+    """
+    Edit a list of fields mapping names to renames.
+
+    Display list as a table and get mappings as dict.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setColumnCount(2)
+        self.setHorizontalHeaderLabels(["Name", "Rename"])
+
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+
+        self.insertRow(0)
+        self.setItem(0, 0, QTableWidgetItem(""))
+        self.setItem(0, 1, QTableWidgetItem(""))
+
+        self.shortcut = QShortcut(QKeySequence("Ctrl+V"), self)
+        self.shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
+        self.shortcut.activated.connect(self._handle_pasted_data)
+        self.itemChanged.connect(self._handle_item_changed)
+
+    def _handle_item_changed(self, item: QTableWidgetItem):
+        self.blockSignals(True)
+        for row in range(self.rowCount()-1, -1, -1):
+            # 'Name' column
+            col0_text = self.item(row, 0) 
+            col0_text = col0_text.text().strip()
+
+            # 'Rename' column
+            col1_text = self.item(row, 1)
+            col1_text = col1_text.text().strip()
+
+            if (col0_text == "" and col1_text == ""):
+                self.removeRow(row)
+
+        row = self.rowCount()
+        self.insertRow(row)
+        self.setItem(row, 0, QTableWidgetItem(""))
+        self.setItem(row, 1, QTableWidgetItem(""))
+
+        self.blockSignals(False)
+
+    def _handle_pasted_data(self):
+        """Enable support to paste data from Excel and other tables."""
+
+        if not self.isVisible() or not self.isEnabled():
+            return
+
+        clipboard = QApplication.instance().clipboard()
+        mime_data = clipboard.mimeData()
+        if not mime_data.hasText():
+            return
+        text = mime_data.text()
+        rows = text.strip().split('\n')
+
+        self.blockSignals(True)
+
+        # clear table before paste
+        while self.rowCount() > 0:
+            self.removeRow(0)
+
+        for row_ix, row_text in enumerate(rows):
+            columns = row_text.split('\t')
+            self.insertRow(self.rowCount())
+
+            for col_ix, col_text in enumerate(columns):
+                if col_ix < self.columnCount():
+                    value = col_text.strip()#.replace(',', '.')
+                    item = QTableWidgetItem(value)
+                    self.setItem(row_ix, col_ix, item)
+        # Append empty row
+        self.insertRow(self.rowCount())
+        for col_ix in range(self.columnCount()):
+            self.setItem(row_ix+1, col_ix, QTableWidgetItem(""))
+
+        self.blockSignals(False)
+
+    def getRenameLabels(self) -> dict[str, str]:
+        """Get the maps as a dict."""
+
+        rows = self.rowCount()
+        data = {}
+        for r in range(rows):
+            obj = self.item(r, 0).text().strip()
+            lbl = self.item(r, 1).text().strip()
+            if obj == "":
+                continue
+            data[obj] = lbl
+        return data
+
 
 class LoadWidget(QWidget):
 
@@ -1839,45 +1994,6 @@ class LoadWidget(QWidget):
                 pseudoatom_radius=pseudoatom_radius,
                 pretty=pretty
             )
-
-
-class SortableItem(QTableWidgetItem):
-    def __init__(self, obj, stringfy):
-        super().__init__()
-        self.setData(QtCore.Qt.ItemDataRole.EditRole, obj)
-        self.setData(QtCore.Qt.ItemDataRole.DisplayRole, stringfy(obj))
-
-    def __lt__(self, other):
-        this = self.data(QtCore.Qt.ItemDataRole.EditRole)
-        that = other.data(QtCore.Qt.ItemDataRole.EditRole)
-        return this < that
-
-
-class OptionalPositiveDoubleDelegate(QStyledItemDelegate):
-    """For the winner of ugliest API design championshop ever."""
-    class Validator(QDoubleValidator):
-        def validate(self, string, pos):
-            # Se a string estiver vazia, permitimos (retornamos Acceptable)
-            if not string:
-                return QValidator.Acceptable, string, pos
-
-            # Caso contrário, usamos a validação padrão de números
-            try:
-                float(string) > 0
-                return QValidator.Acceptable, string, pos
-            except ValueError:
-                return super().validate(string, pos)
-
-
-    def createEditor(self, parent, option, index):
-        editor = QLineEdit(parent)
-
-        validator = self.Validator(editor)
-        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
-
-        editor.setValidator(validator)
-        return editor
-
 
 class TableWidget(QWidget):
 
@@ -2098,40 +2214,8 @@ class HcaWidget(QWidget):
         self.annotateCheck = QCheckBox()
         boxLayout.addRow("Annotate heatmap:", self.annotateCheck)
 
-        self.table = QTableWidget()
+        self.table = RenameTableWidget()
         tab.addTab(self.table, "Leaf names")
-        # self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        # self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.setColumnCount(2)
-        self.table.setHorizontalHeaderLabels(["Name", "Rename"])
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.insertRow(0)
-        self.table.setItem(0, 0, QTableWidgetItem(""))
-        self.table.setItem(0, 1, QTableWidgetItem(""))
-        self.shortcut = QShortcut(QKeySequence("Ctrl+V"), self.table)
-        self.shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
-        self.shortcut.activated.connect(self.paste_data)
-        @self.table.itemChanged.connect
-        def itemChanged(item):
-            self.table.blockSignals(True)
-            for row in range(self.table.rowCount()-1, -1, -1):
-                col0_text = self.table.item(row, 0)
-                col0_text = col0_text.text().strip()
-
-                col1_text = self.table.item(row, 1)
-                col1_text = col1_text.text().strip()
-
-                if (col0_text == "" and col1_text == ""):
-                    self.table.removeRow(row)
-
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(""))
-            self.table.setItem(row, 1, QTableWidgetItem(""))
-
-            self.table.blockSignals(False)
 
         layout = QHBoxLayout()
         container = QWidget(self)
@@ -2173,46 +2257,6 @@ class HcaWidget(QWidget):
         plotButton.clicked.connect(self.plot_multivariate_hca)
         boxLayout.addWidget(plotButton)
 
-    def paste_data(self):
-        if not self.table.isVisible() or not self.table.isEnabled():
-            return
-
-        clipboard = QApplication.instance().clipboard()
-        mime_data = clipboard.mimeData()
-        if not mime_data.hasText():
-            return
-        text = mime_data.text()
-        rows = text.strip().split('\n')
-
-        self.table.blockSignals(True)
-        while self.table.rowCount() > 0:
-            self.table.removeRow(0)
-
-        for row_ix, row_text in enumerate(rows):
-            columns = row_text.split('\t')
-            self.table.insertRow(self.table.rowCount())
-
-            for col_ix, col_text in enumerate(columns):
-                if col_ix < self.table.columnCount():
-                    value = col_text.strip().replace(',', '.')
-                    item = QTableWidgetItem(value)
-                    self.table.setItem(row_ix, col_ix, item)
-        self.table.insertRow(self.table.rowCount())
-        self.table.setItem(row_ix+1, 0, QTableWidgetItem(""))
-        self.table.setItem(row_ix+1, 1, QTableWidgetItem(""))
-        self.table.blockSignals(False)
-
-    def getLeafLabels(self):
-        rows = self.table.rowCount()
-        data = {}
-        for r in range(rows):
-            obj = self.table.item(r, 0).text().strip()
-            lbl = self.table.item(r, 1).text().strip()
-            if obj == "" or lbl == "":
-                continue
-            data[obj] = lbl
-        return data
-
     def plot_multivariate_hca(self):
         sele = self.hotspotSeleLine.text()
         linkage_method = self.linkageMethodCombo.currentText()
@@ -2231,7 +2275,7 @@ class HcaWidget(QWidget):
             nclusters=nclusters,
             only_medoids=only_medoids,
             annotate=annotate,
-            rename_leafs=self.getLeafLabels(),
+            rename_labels=self.table.getRenameLabels(),
             dendrogram_plot=True,
             heatmap_plot=heatmap_plot,
         )
@@ -2256,7 +2300,7 @@ class HcaWidget(QWidget):
             color_threshold=color_threshold,
             nclusters=nclusters,
             only_medoids=only_medoids,
-            rename_leafs=self.getLeafLabels(),
+            rename_labels=self.table.getRenameLabels(),
             annotate=annotate,
             dendrogram_plot=True,
             heatmap_plot=heatmap_plot,
@@ -2550,6 +2594,16 @@ class OverlapWidget(QWidget):
         exportButton.clicked.connect(self.export_overlap)
         hLayout1.addWidget(exportButton)
 
+        tab = QTabWidget()
+        layout.addRow(tab)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        tab.addTab(scroll, "Rename labels")
+
+        self.table = RenameTableWidget()
+        scroll.setWidget(self.table)
+
     def plot_overlap(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
@@ -2559,6 +2613,7 @@ class OverlapWidget(QWidget):
         linkage_method = self.linkageMethodCombo.currentText()
         if linkage_method.lower() == 'none':
             linkage_method = None
+        rename_labels = self.table.getRenameLabels()
 
         calc_overlap_matrix(
             sele_a=sele_a,
@@ -2566,25 +2621,26 @@ class OverlapWidget(QWidget):
             function=function,
             radius=radius,
             annotate=annotate,
-            linkage_method=linkage_method
+            linkage_method=linkage_method,
+            rename_labels=rename_labels,
+            plot=True,
         )
-        plt.show()
 
     def export_overlap(self):
         sele_a = self.aSeleLine.text().strip()
         sele_b = self.bSeleLine.text().strip()
         function = self.functionCombo.currentText()
         radius = self.radiusSpin.value()
-        annotate = self.annotateCheck.isChecked()
+        rename_labels = self.table.getRenameLabels()
 
         table_df = calc_overlap_matrix(
             sele_a=sele_a,
             sele_b=sele_b,
             function=function,
             radius=radius,
-            annotate=annotate
+            rename_labels=rename_labels,
+            plot=False,
         )
-        plt.close()
 
         fileDialog = QFileDialog()
         fileDialog.setNameFilter("Excel file (*.xlsx)")
@@ -2597,7 +2653,6 @@ class OverlapWidget(QWidget):
             # ext = os.path.splitext(filename)[1]
             with pd.ExcelWriter(filename) as xlsx_writer:
                 table_df.to_excel(xlsx_writer, sheet_name='Overlap', index=False)
-
 
 
 class FingerprintWidget(QWidget):
@@ -2822,8 +2877,6 @@ class FingerprintWidget(QWidget):
             color_threshold=color_threshold,
             nclusters=nclusters,
         )
-        plt.show()
-
 
 
 class MainDialog(QDialog):
