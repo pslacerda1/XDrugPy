@@ -1,10 +1,12 @@
 from pymol import cmd as pm
 
+from xdrugpy.commons import configure_matplotlib
 from xdrugpy.hotspots import (
     LinkageMethod,
     UnivariateMethod,
     calc_fingerprints,
     calc_multivariate_hca,
+    calc_overlap_matrix,
     calc_univariate_hca,
     get_dce,
     get_dco,
@@ -17,8 +19,8 @@ from . import PKG_DATA_DIR, ResultFigures, images_identical
 
 def test_calc_multivariate_hca(
     test_name,
-    load_1dq9,
     load_1dq8,
+    load_1dq9,
 ):
     figs = ResultFigures(test_name)
 
@@ -38,8 +40,8 @@ def test_calc_multivariate_hca(
 
 def test_calc_univariate_hca_fo(
     test_name,
-    load_1dq9,
     load_1dq8,
+    load_1dq9,
     load_2tpr
 ):
     dendro_figs = ResultFigures(f"{test_name}_dendro")
@@ -92,8 +94,32 @@ def test_overlap():
     assert get_dce("NotFound", "%NH2") == 0
 
 
-def test_calc_fingerprint_cs(test_name, load_1dq8):
+def test_calc_overlap_matrix(
+    test_name,
+    load_1dq8,
+    load_1dq9,
+    load_2tpr,
+):
+    configure_matplotlib(
+        params={
+            'figure.figsize': (10, 10)
+        }
+    )
+    figs = ResultFigures(test_name)
+    calc_overlap_matrix(
+        'deep_*.CS.*',
+        'deep_*.K15.*',
+        annotate = True,
+        figure_title="Random measures",
+        plot=figs.generated,
+        rename_labels={
+            'deep_1dq8.CS.0': 'my_cs',
+        }
+    )
+    assert images_identical(figs.generated, figs.reference)
 
+
+def test_calc_fingerprint_cs(test_name, load_1dq8):
     fpt_figs = ResultFigures(test_name)
     calc_fingerprints(
         "deep_1dq8.CS.0 / deep_1dq8.CS.3",
