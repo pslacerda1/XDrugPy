@@ -32,7 +32,7 @@ def xdrugpy_install():
         xdrugpy.xdrugpy_install("master")
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope='function', autouse=True)
 def setup_matplotlib():
     np.random.seed(42)
     configure_matplotlib(
@@ -42,6 +42,7 @@ def setup_matplotlib():
             'font.family': 'sans-serif',
             'svg.fonttype': 'none',
             'svg.hashsalt': 'fixed_salt_123',
+            'figure.figsize': (6.4, 4.8),
         }
     )
 
