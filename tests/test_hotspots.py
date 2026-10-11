@@ -92,7 +92,7 @@ def test_overlap():
     assert get_dce("NotFound", "%NH2") == 0
 
 
-def test_calc_fingerprint1(test_name, load_1dq8):
+def test_calc_fingerprint_cs(test_name, load_1dq8):
 
     fpt_figs = ResultFigures(test_name)
     calc_fingerprints(
@@ -109,7 +109,7 @@ def test_calc_fingerprint1(test_name, load_1dq8):
     assert images_identical(fpt_figs.generated, fpt_figs.reference)
 
 
-def test_calc_fingerprint2(test_name, load_1byq_and_lbaf3):
+def test_calc_fingerprint_mixed(test_name, load_1byq_and_lbaf3):
     fpt_figs = ResultFigures(test_name)
     calc_fingerprints(
         "1BYQ.CS.* / LB_AF3.ACS.*",
@@ -144,6 +144,7 @@ def test_calc_fingerprint_clustering(
         share_ylim=False,
         fingerprints_plot=fpt_figs.generated,
         dendrogram_plot=dendro_figs.generated,
+        heatmap_plot=False,
     )
     assert images_identical(fpt_figs.generated, fpt_figs.reference)
     assert images_identical(dendro_figs.generated, dendro_figs.reference)

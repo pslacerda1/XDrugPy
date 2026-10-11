@@ -1,7 +1,11 @@
 import subprocess
 
+import numpy as np
 import pytest
 from pymol import cmd as pm
+
+from xdrugpy import configure_matplotlib
+from xdrugpy.hotspots import load_ftmap
 
 from . import PKG_DATA_DIR
 
@@ -29,9 +33,7 @@ def xdrugpy_install():
 
 
 @pytest.fixture(scope='session', autouse=True)
-def configure_matplotlib():
-    from xdrugpy import configure_matplotlib
-    import numpy as np
+def setup_matplotlib():
     np.random.seed(42)
     configure_matplotlib(
         backend='svg',
@@ -45,7 +47,6 @@ def configure_matplotlib():
 
 @pytest.fixture(scope='session')
 def load_1dq9():
-    from xdrugpy.hotspots import load_ftmap
     ftmap = load_ftmap(
         filename=PKG_DATA_DIR / "1dq9_atlas.pdb",
         group="deep_1dq9",
@@ -58,7 +59,6 @@ def load_1dq9():
 
 @pytest.fixture(scope='session')
 def load_1dq8():
-    from xdrugpy.hotspots import load_ftmap
     ftmap = load_ftmap(
         filename=PKG_DATA_DIR / "1dq8_atlas.pdb",
         group="deep_1dq8",
@@ -71,7 +71,6 @@ def load_1dq8():
 
 @pytest.fixture(scope='session')
 def load_2tpr():
-    from xdrugpy.hotspots import load_ftmap
     ftmap = load_ftmap(
         filename=PKG_DATA_DIR / "2TPR.pdb",
         group='deep_2tpr',
@@ -84,7 +83,6 @@ def load_2tpr():
 
 @pytest.fixture(scope='session')
 def load_1byq_and_lbaf3():
-    from xdrugpy.hotspots import load_ftmap
     load_ftmap(
         filename=PKG_DATA_DIR / "1BYQ.pdb",
         deep_search=False,
