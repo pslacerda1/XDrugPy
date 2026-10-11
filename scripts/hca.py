@@ -30,9 +30,9 @@ configure_matplotlib(
 )
 
 # List all your FTMove PDB files but limits to the first 5
-# entries found. Use small lists when developing the script
+# entries found. Use small limits when testing the script
 # to speed up the process.
-files = glob("/home/peu/Desktop/PEPTI/atlas/*_atlas.pdb")
+files = glob("tests/data/*_atlas.pdb")
 for file in files[:5]:
 
     # Load structures and does hotspots ligability analysis.
@@ -46,40 +46,41 @@ for file in files[:5]:
     # plotting criteria. It also deletes *.protein structures. This
     # optimization reduces the number of PyMOL objects irrelevant to our
     # analysis improving the performance at high loads.
-    for obj in pm.get_object_list("NOT (*.D* AND p.S0>20)"):
-    #                             "NOT (*.D* AND p.S0>20 OR *.protein)"
+    for obj in pm.get_object_list("NOT (*.K15.* AND p.ST>10)"):
+    #                             "NOT (*.K15.D* AND p.S0>20 OR *.protein)"
         pm.delete(obj)
 
-# If you don't delete protein structures you can have a nice session!
+
+## If you don't delete protein structures you can have a nice session!
+## Uncomment the next line!!!
 # pm.save("/home/peu/MyFolder/almost_nice_session.pze")
+
 
 # The standard HCA based on the distance between hotspot properties, including
 # coordinates of center-of-mass.
 calc_multivariate_hca(
-    '*.D* AND p.S0>20',
+    '*.K15.* AND p.S0>10',
     dist_method=MultivariateDistanceMethod.EUCLIDEAN,
     linkage_method=LinkageMethod.WARD,
     nclusters=5,
     only_medoids=True,
     annotate=False,
     figure_title="MyProj HCA (Multivariate)",
-    dendrogram_plot="/home/peu/Downloads/dendro.png",  # you can use png
-    heatmap_plot="/home/peu/Downloads/heat.svg",       # or other formats
+    heatmap_plot="/home/peu/Downloads/heat.svg",       # you can use SVG
+    dendrogram_plot="/home/peu/Downloads/dendro.png",  # or other formats
 )
 
 # Dendrogram cluster analysis with distances based on reciprocal fractional
 # overlap average between hotspot objects.
 calc_univariate_hca(
-    '*.D* AND p.S0>20',
+    '*.K15.* AND p.ST>10',
     dist_method=UnivariateMethod.FO_AVG,
     linkage_method=LinkageMethod.AVERAGE,
     color_threshold=0.35,
     annotate=False,
     figure_title="MyProj HCA (Univariate)",
-    dendrogram_plot=True,   # can also opt to show on the screen
-    heatmap_plot=True,      # and save the image from the pop up window
-                            # or even set to False
+    dendrogram_plot=True,   # can also opt to show the plot only on the screen
+    heatmap_plot=False,     # or even set to False
 )
 
 plt.show()
-plt.waitforbuttonpress()

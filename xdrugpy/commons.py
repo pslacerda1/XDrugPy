@@ -251,19 +251,22 @@ def plot_hca_base(
 
     if dendro_ax:
         fig = dendro_ax.get_figure(True)
-
+        assert fig
         if isinstance(dendrogram_plot, (str, Path)):
             fig.set_layout_engine('compressed')
             fig.savefig(dendrogram_plot)
+            plt.close(fig)
         elif dendrogram_plot is True:
             fig.set_layout_engine('compressed')
             fig.show()
 
-    if heatmap_plot:
-        fig = heat_ax.get_figure(True)
+    if heat_ax:
+        fig = heat_ax.get_figure(root=True)
+        assert fig
         if isinstance(heatmap_plot, (str, Path)):
             fig.set_layout_engine('compressed')
             fig.savefig(str(heatmap_plot))
+            plt.close(fig)
         elif heatmap_plot is True:
             fig.set_layout_engine('compressed')
             fig.show()
