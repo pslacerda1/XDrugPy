@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ["ubuntu-latest", "windows-latest", "macos-latest"]
-        python-version: ["3.12", "3.11"]
+        python-version: ["3.12", "3.11", "3.10"]
         pymol-version: [
           "schrodinger::pymol==3.1.7.2",
           "schrodinger::pymol==3.1.9",
