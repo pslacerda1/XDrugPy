@@ -18,7 +18,7 @@ scipy
 #
 # Docking
 watchdog
-gypsum_dl[mpi]
+gypsum_dl
 meeko
     rdkit
     gemmi

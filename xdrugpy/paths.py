@@ -24,6 +24,4 @@ RECEPTOR_LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 
 TEMPDIR = Path(mkdtemp(prefix="XDrugPy-"))
 
-
 VERSION_FILE = Path(RESOURCES_DIR) / "version.txt"
-
